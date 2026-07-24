@@ -128,6 +128,22 @@ create table if not exists public.sync_events (
 comment on table public.sync_events is
   'Public realtime "doorbell" with no sensitive payload. Lets clients know to re-fetch invite codes without exposing codes over realtime.';
 
+create table if not exists public.tournament_participants (
+  account_id  uuid primary key references public.accounts(id) on delete cascade,
+  joined_at   timestamptz not null default now()
+);
+
+comment on table public.tournament_participants is
+  'Phase 4: players who have joined the current tournament. Public read (safe -- just account_id + joined_at). Only removed by leave_tournament, an explicit player action -- a disconnect or heartbeat timeout never removes a row here, per the Tournament Lobby product decision that participation and online status are separate concepts.';
+
+create table if not exists public.presence (
+  account_id    uuid primary key references public.accounts(id) on delete cascade,
+  last_seen_at  timestamptz not null default now()
+);
+
+comment on table public.presence is
+  'Public-safe last-seen timestamp per account, deliberately separate from the locked public.sessions table. Upserted by login/register, heartbeat, and every _current_session_account()-gated RPC call; deleted outright on explicit logout. Clients compare last_seen_at against the same _session_timeout() window used for session liveness to render Online/Disconnected in the Tournament Lobby, re-evaluating locally on a timer rather than requiring a server push for every tick of elapsed time.';
+
 -- ----------------------------------------------------------------------------
 -- 2. Row Level Security
 -- ----------------------------------------------------------------------------
@@ -137,6 +153,8 @@ alter table public.credentials  enable row level security;
 alter table public.invite_codes enable row level security;
 alter table public.sessions     enable row level security;
 alter table public.sync_events  enable row level security;
+alter table public.tournament_participants enable row level security;
+alter table public.presence                enable row level security;
 
 -- accounts: public read only (no password column exists on this table at all)
 drop policy if exists "accounts_public_read" on public.accounts;
@@ -159,6 +177,23 @@ create policy "sync_events_public_read" on public.sync_events
 revoke insert, update, delete on public.sync_events from anon, authenticated;
 grant select on public.sync_events to anon, authenticated;
 
+-- tournament_participants / presence: public read (Section: Tournament
+-- Lobby visibility -- everyone logged in can see who has joined and who's
+-- online), writes only via SECURITY DEFINER functions below.
+drop policy if exists "tournament_participants_public_read" on public.tournament_participants;
+create policy "tournament_participants_public_read" on public.tournament_participants
+  for select using (true);
+
+revoke insert, update, delete on public.tournament_participants from anon, authenticated;
+grant select on public.tournament_participants to anon, authenticated;
+
+drop policy if exists "presence_public_read" on public.presence;
+create policy "presence_public_read" on public.presence
+  for select using (true);
+
+revoke insert, update, delete on public.presence from anon, authenticated;
+grant select on public.presence to anon, authenticated;
+
 -- Enable Realtime on the two tables clients actually subscribe to.
 do $$
 begin
@@ -174,6 +209,20 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'sync_events'
   ) then
     alter publication supabase_realtime add table public.sync_events;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'tournament_participants'
+  ) then
+    alter publication supabase_realtime add table public.tournament_participants;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'presence'
+  ) then
+    alter publication supabase_realtime add table public.presence;
   end if;
 end $$;
 
@@ -219,6 +268,12 @@ begin
   if not found then
     raise exception 'invalid_session' using errcode = '28000';
   end if;
+
+  -- Any authenticated action doubles as presence too, not just the
+  -- dedicated heartbeat() RPC -- see public.presence comment above.
+  insert into public.presence (account_id, last_seen_at)
+  values (v_account_id, now())
+  on conflict (account_id) do update set last_seen_at = excluded.last_seen_at;
 
   select * into v_account from public.accounts where id = v_account_id;
 
@@ -307,6 +362,10 @@ begin
 
   insert into public.sessions (account_id) values (v_account.id) returning token into v_token;
 
+  insert into public.presence (account_id, last_seen_at)
+  values (v_account.id, now())
+  on conflict (account_id) do update set last_seen_at = excluded.last_seen_at;
+
   return jsonb_build_object(
     'token', v_token,
     'account', to_jsonb(v_account)
@@ -346,6 +405,13 @@ begin
 
   insert into public.sessions (account_id) values (v_account.id) returning token into v_token;
 
+  -- Logging back in restores Online status immediately (Tournament Lobby,
+  -- Phase 4) -- the player does not need to click Join Tournament again,
+  -- since tournament_participants was never touched by their disconnect.
+  insert into public.presence (account_id, last_seen_at)
+  values (v_account.id, now())
+  on conflict (account_id) do update set last_seen_at = excluded.last_seen_at;
+
   return jsonb_build_object(
     'token', v_token,
     'account', to_jsonb(v_account)
@@ -370,13 +436,26 @@ exception
 end;
 $$;
 
+-- An explicit logout is a deliberate "I'm leaving" signal, distinct from a
+-- disconnect/heartbeat timeout -- so it clears presence immediately instead
+-- of leaving a stale last_seen_at for the Tournament Lobby to age out on its
+-- own. tournament_participants is untouched: logging out never removes a
+-- player from the tournament, only leave_tournament does.
 create or replace function public.logout_session(p_token uuid)
 returns void
-language sql
+language plpgsql
 security definer
 set search_path = public, extensions, pg_temp
 as $$
-  delete from public.sessions where token = p_token;
+declare
+  v_account_id uuid;
+begin
+  delete from public.sessions where token = p_token returning account_id into v_account_id;
+
+  if v_account_id is not null then
+    delete from public.presence where account_id = v_account_id;
+  end if;
+end;
 $$;
 
 -- Called periodically by the client (see src/lib/sessionMonitor.js) to
@@ -406,6 +485,10 @@ begin
   if not found then
     return jsonb_build_object('ok', false);
   end if;
+
+  insert into public.presence (account_id, last_seen_at)
+  values (v_account_id, now())
+  on conflict (account_id) do update set last_seen_at = excluded.last_seen_at;
 
   return jsonb_build_object('ok', true);
 end;
@@ -549,7 +632,51 @@ end;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 6. Admin Dashboard: invite code management (Admin + Developer)
+-- 6. Tournament Lobby: join / leave (Phase 4, any logged-in account)
+-- ----------------------------------------------------------------------------
+
+-- Idempotent on purpose: clicking Join while already joined (e.g. a
+-- double-click, or two tabs racing) just leaves the existing row alone
+-- instead of erroring.
+create or replace function public.join_tournament(p_token uuid)
+returns public.tournament_participants
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_account public.accounts;
+  v_row     public.tournament_participants;
+begin
+  v_account := public._current_session_account(p_token);
+
+  insert into public.tournament_participants (account_id)
+  values (v_account.id)
+  on conflict (account_id) do nothing;
+
+  select * into v_row from public.tournament_participants where account_id = v_account.id;
+  return v_row;
+end;
+$$;
+
+-- The only thing that permanently removes a player from the tournament
+-- (Tournament Lobby product decision -- disconnects/timeouts never do).
+create or replace function public.leave_tournament(p_token uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_account public.accounts;
+begin
+  v_account := public._current_session_account(p_token);
+  delete from public.tournament_participants where account_id = v_account.id;
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 7. Admin Dashboard: invite code management (Admin + Developer)
 -- ----------------------------------------------------------------------------
 
 create or replace function public.list_invite_codes(p_token uuid)
@@ -635,6 +762,8 @@ grant execute on function
   public.delete_user(uuid, uuid),
   public.promote_user(uuid, uuid),
   public.demote_user(uuid, uuid),
+  public.join_tournament(uuid),
+  public.leave_tournament(uuid),
   public.list_invite_codes(uuid),
   public.create_invite_code(uuid, integer, timestamptz),
   public.delete_invite_code(uuid, uuid)
@@ -670,7 +799,7 @@ begin
 end $$;
 
 -- ----------------------------------------------------------------------------
--- 7. Storage bucket for avatars
+-- 8. Storage bucket for avatars
 -- ----------------------------------------------------------------------------
 
 insert into storage.buckets (id, name, public)
@@ -686,7 +815,7 @@ create policy "avatars_public_upload" on storage.objects
   for insert with check (bucket_id = 'avatars');
 
 -- ----------------------------------------------------------------------------
--- 8. Seed data: the real Developer account (admin / 111)
+-- 9. Seed data: the real Developer account (admin / 111)
 -- ----------------------------------------------------------------------------
 
 do $$

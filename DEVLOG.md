@@ -69,17 +69,18 @@ Registration, or the Admin Dashboard.
   a logout. A lost connection while the tab stays open shows a
   reconnect dialog instead of failing silently. See Section 15, Session
   Liveness: Heartbeat & Presence.
+- **Tournament Lobby** — the real destination for logged-in "User"
+  accounts (Admin/Developer accounts can also reach it from a nav
+  button on the Admin Dashboard, to monitor the tournament). Any
+  logged-in account can join or leave the tournament; the participant
+  list, each participant's Online/Disconnected status, and the live
+  statistics all sync in real time across every open browser. See
+  Section 16.
 
 ## 3. Current Limitations
 
 Intentional, not oversights:
 
-- **No real user-facing destination yet for the "User" permission
-  role.** Phase 3 only builds out Login/Registration/Admin Dashboard;
-  a logged-in "User"-role account currently sees a toast saying it has
-  no dashboard access, and its session is torn down immediately since
-  there's nowhere for it to go yet. The Tournament Lobby (Phase 4) is
-  where regular users will land.
 - **Sessions are simple bearer tokens, not JWTs.** There is no
   Supabase Auth, so there's no JWT-based RLS. Every privileged
   database function takes the session token as an explicit argument
@@ -296,7 +297,7 @@ In intended development order:
 1. Login & Registration — **done**
 2. Admin Dashboard — **done**
 3. Backend Foundation — **done** (see Section 15)
-4. Tournament Lobby
+4. Tournament Lobby — **done** (see Section 16)
 5. Tournament Configuration
 6. Draft System
 7. Spectator Page
@@ -496,3 +497,69 @@ This project targets Supabase only, not generic PostgreSQL.
 - Before considering any SQL complete, review it for Supabase
   compatibility (extensions, RPC functions, RLS, permissions,
   Storage, and Realtime).
+
+## 16. Tournament Lobby (Phase 4)
+
+The Tournament Lobby is the landing page for logged-in "User"
+accounts, and a page Admin/Developer accounts can also reach (via a
+nav button on the Admin Dashboard) to monitor the tournament. It
+introduces two small public tables and reuses everything else —
+sessions, the heartbeat system, and the Realtime architecture — as-is.
+
+### Participation vs. presence are two separate tables
+
+- `public.tournament_participants` (`account_id`, `joined_at`) is the
+  tournament roster. A row is only ever inserted by `join_tournament`
+  and only ever deleted by `leave_tournament`, both of which require a
+  live session. Nothing else touches this table — not a disconnect,
+  not a heartbeat timeout, not a logout. This is the direct
+  implementation of the product decision that "a player's tournament
+  participation and online status are two separate concepts."
+- `public.presence` (`account_id`, `last_seen_at`) is a public-safe
+  mirror of liveness, deliberately separate from the locked
+  `public.sessions` table (which stays server-only, per Section 15).
+  It is upserted by `login_account`, `register_account`, `heartbeat`,
+  and — via `_current_session_account()` — every other privileged RPC
+  call, so any authenticated action keeps a player's presence fresh,
+  not just the dedicated heartbeat tick. It is deleted outright by
+  `logout_session`, so an intentional logout reads as Disconnected
+  immediately rather than waiting out the timeout.
+
+Both tables are public read (RLS `using (true)`), like `accounts`
+already is; all writes go through `SECURITY DEFINER` functions. Both
+are added to the `supabase_realtime` publication.
+
+### Online/Disconnected is a client-side judgement, not a server push
+
+Nothing proactively flips a row to "disconnected" when a player goes
+quiet — there's no cron job walking `presence` looking for stale rows.
+Instead, the client compares `last_seen_at` against the same
+`_session_timeout()` window (45s) used for session liveness, and
+recomputes that comparison locally on a short timer (`tournamentApi.js`
+exports `PRESENCE_TIMEOUT_MS` and `isOnline()`; `TournamentLobby.jsx`
+ticks a `now` state every 3s). A realtime `presence` update on a fresh
+heartbeat/login snaps a player back to Online immediately; the passage
+of time with no new update is what silently ages someone into
+Disconnected. This mirrors the reasoning in Section 15's Heartbeat &
+Presence architecture, just surfaced to the UI instead of gating
+access.
+
+### Data flow
+
+`tournamentApi.js` fetches `tournament_participants`, `accounts`, and
+`presence` as three flat queries and merges them client-side (rather
+than relying on PostgREST's nested-embedding inference), then
+subscribes to all three tables on one Realtime channel and refetches
+on any change — join, leave, a heartbeat's fresh `last_seen_at`, or an
+account edit (display name/avatar) all land in the lobby live, the
+same "any relevant change re-runs a plain `select`" pattern the Admin
+Dashboard already uses.
+
+### Navigation
+
+- `App.jsx` sends Admin/Developer accounts to `#admin` and every other
+  account to `#lobby`, both on fresh login and on session restore.
+- The Admin Dashboard header has a "锦标赛大厅" button that sets the
+  hash to `#lobby`; the Tournament Lobby header has a matching "管理后台"
+  button (visible only to Admin/Developer accounts) that sets it back
+  to `#admin`. Neither page was otherwise redesigned.

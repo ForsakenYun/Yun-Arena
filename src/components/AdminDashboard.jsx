@@ -116,6 +116,12 @@ const Icon = {
       <path d="M6.5 12.5L12 18l5.5-5.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  flag: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M6 3.5v17" strokeLinecap="round" />
+      <path d="M6 4.5c2-1 4-1 6 0s4 1 6 0v9c-2 1-4 1-6 0s-4-1-6 0v-9Z" strokeLinejoin="round" />
+    </svg>
+  ),
 }
 
 const ROLE_LABEL = { captain: '队长', player: '队员' }
@@ -556,7 +562,7 @@ function TabNav({ tabs, activeTab, onChange }) {
 }
 
 /* ---------- main dashboard ---------- */
-export default function AdminDashboard({ account, onLogout }) {
+export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
   const isDeveloper = account.permission_role === 'developer'
 
   const [users, setUsers] = useState([])
@@ -715,24 +721,34 @@ export default function AdminDashboard({ account, onLogout }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 bg-panel border border-teal/15 rounded-xl pl-2.5 pr-2 py-2">
-            <Avatar
-              src={account.avatar_url}
-              alt={`${account.display_name} 的头像`}
-              size="w-8 h-8"
-            />
-            <div className="leading-tight">
-              <p className="text-xs text-ink-muted">当前登录</p>
-              <p className="text-sm text-ink-primary font-medium">{account.display_name}</p>
-            </div>
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1.5 ml-2 pl-3 border-l border-panel-line text-xs text-ink-muted hover:text-danger transition"
+              onClick={onOpenLobby}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
             >
-              <Icon.logout className="w-4 h-4" />
-              退出登录
+              <Icon.flag className="w-4 h-4" />
+              锦标赛大厅
             </button>
+            <div className="flex items-center gap-3 bg-panel border border-teal/15 rounded-xl pl-2.5 pr-2 py-2">
+              <Avatar
+                src={account.avatar_url}
+                alt={`${account.display_name} 的头像`}
+                size="w-8 h-8"
+              />
+              <div className="leading-tight">
+                <p className="text-xs text-ink-muted">当前登录</p>
+                <p className="text-sm text-ink-primary font-medium">{account.display_name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="inline-flex items-center gap-1.5 ml-2 pl-3 border-l border-panel-line text-xs text-ink-muted hover:text-danger transition"
+              >
+                <Icon.logout className="w-4 h-4" />
+                退出登录
+              </button>
+            </div>
           </div>
         </header>
 

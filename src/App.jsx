@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import AuthPage from './components/AuthPage.jsx'
 import AdminDashboard from './components/AdminDashboard.jsx'
+import TournamentLobby from './components/TournamentLobby.jsx'
 import DisconnectedModal from './components/DisconnectedModal.jsx'
 import { restoreSession, logout as logoutRequest, getStoredToken } from './lib/auth.js'
 import { startSessionMonitor } from './lib/sessionMonitor.js'
@@ -38,6 +39,8 @@ export default function App() {
           setAccount(restored)
           if (restored.permission_role === 'admin' || restored.permission_role === 'developer') {
             window.location.hash = 'admin'
+          } else {
+            window.location.hash = 'lobby'
           }
         }
       })
@@ -89,6 +92,8 @@ export default function App() {
     setAccount(loggedInAccount)
     if (loggedInAccount.permission_role === 'admin' || loggedInAccount.permission_role === 'developer') {
       window.location.hash = 'admin'
+    } else {
+      window.location.hash = 'lobby'
     }
   }
 
@@ -102,16 +107,30 @@ export default function App() {
     return <div className="min-h-screen w-full bg-void" />
   }
 
-  const isDashboard =
-    route === '#admin' && account && (account.permission_role === 'admin' || account.permission_role === 'developer')
+  const isStaff = account && (account.permission_role === 'admin' || account.permission_role === 'developer')
+  const isDashboard = route === '#admin' && isStaff
+
+  let view
+  if (isDashboard) {
+    view = <AdminDashboard account={account} onLogout={handleLogout} onOpenLobby={() => (window.location.hash = 'lobby')} />
+  } else if (account) {
+    // Default logged-in destination for everyone (Section: navigation).
+    // Admin/Developer accounts can reach this from the dashboard's
+    // Tournament Lobby button and jump back with the button rendered here.
+    view = (
+      <TournamentLobby
+        account={account}
+        onLogout={handleLogout}
+        onOpenAdmin={isStaff ? () => (window.location.hash = 'admin') : undefined}
+      />
+    )
+  } else {
+    view = <AuthPage onLoggedIn={handleLoggedIn} initialMessage={loginMessage} />
+  }
 
   return (
     <>
-      {isDashboard ? (
-        <AdminDashboard account={account} onLogout={handleLogout} />
-      ) : (
-        <AuthPage onLoggedIn={handleLoggedIn} initialMessage={loginMessage} />
-      )}
+      {view}
 
       {account && connectionStatus === 'disconnected' && (
         <DisconnectedModal onReconnect={() => monitorRef.current?.reconnectNow()} />
