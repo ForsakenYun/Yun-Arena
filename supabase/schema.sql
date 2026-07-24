@@ -46,7 +46,26 @@
 -- anon/authenticated roles for every write operation.
 -- ============================================================================
 
-create extension if not exists pgcrypto;
+-- Supabase projects conventionally install extensions into the
+-- `extensions` schema (not `public`). Every SECURITY DEFINER function
+-- below sets search_path to include `extensions`, so crypt()/gen_salt()
+-- resolve correctly however this ends up installed. This block is a
+-- no-op if pgcrypto is already installed anywhere (a fresh Supabase
+-- project pre-installs it into `extensions`), and falls back to
+-- installing into `public` on a plain Postgres instance that has no
+-- `extensions` schema at all.
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pgcrypto') then
+    return;
+  end if;
+
+  if exists (select 1 from pg_namespace where nspname = 'extensions') then
+    execute 'create extension pgcrypto with schema extensions';
+  else
+    execute 'create extension pgcrypto';
+  end if;
+end $$;
 
 -- ----------------------------------------------------------------------------
 -- 1. Tables
@@ -87,14 +106,17 @@ comment on table public.invite_codes is
   'Invite codes. RLS locked with zero policies — only readable/writable via Admin/Developer-gated RPC functions.';
 
 create table if not exists public.sessions (
-  token       uuid primary key default gen_random_uuid(),
-  account_id  uuid not null references public.accounts(id) on delete cascade,
-  created_at  timestamptz not null default now(),
-  expires_at  timestamptz not null default (now() + interval '7 days')
+  token        uuid primary key default gen_random_uuid(),
+  account_id   uuid not null references public.accounts(id) on delete cascade,
+  created_at   timestamptz not null default now(),
+  expires_at   timestamptz not null default (now() + interval '7 days'),
+  last_seen_at timestamptz not null default now()
 );
 
 comment on table public.sessions is
-  'Custom session tokens (stand-in for Supabase Auth JWTs, since Supabase Auth is intentionally not used).';
+  'Custom session tokens (stand-in for Supabase Auth JWTs, since Supabase Auth is intentionally not used). A session is only considered alive while both expires_at is in the future AND last_seen_at is within the heartbeat timeout -- see _session_timeout().';
+
+alter table public.sessions add column if not exists last_seen_at timestamptz not null default now();
 
 create table if not exists public.sync_events (
   id          bigint generated always as identity primary key,
@@ -159,24 +181,46 @@ end $$;
 -- 3. Helper functions (internal)
 -- ----------------------------------------------------------------------------
 
+-- Single source of truth for how long a session may go without a
+-- heartbeat before it's considered dead. The client pings well inside
+-- this window (see src/lib/sessionMonitor.js); this is deliberately a
+-- short grace period, not the 7-day expires_at hard cap, so that
+-- closing the tab/browser or losing connectivity ends the session
+-- quickly rather than leaving it live until expires_at.
+create or replace function public._session_timeout()
+returns interval
+language sql
+immutable
+as $$
+  select interval '45 seconds'
+$$;
+
+-- Confirms a session is alive (both under expires_at AND within the
+-- heartbeat timeout of last_seen_at) and, as a side effect, refreshes
+-- last_seen_at -- so every privileged RPC call implicitly counts as a
+-- heartbeat, not just the dedicated heartbeat() function below.
 create or replace function public._current_session_account(p_token uuid)
 returns public.accounts
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
-  v_account public.accounts;
+  v_account_id uuid;
+  v_account    public.accounts;
 begin
-  select a.* into v_account
-  from public.sessions s
-  join public.accounts a on a.id = s.account_id
-  where s.token = p_token
-    and s.expires_at > now();
+  update public.sessions
+  set last_seen_at = now()
+  where token = p_token
+    and expires_at > now()
+    and last_seen_at > now() - public._session_timeout()
+  returning account_id into v_account_id;
 
   if not found then
     raise exception 'invalid_session' using errcode = '28000';
   end if;
+
+  select * into v_account from public.accounts where id = v_account_id;
 
   return v_account;
 end;
@@ -186,7 +230,7 @@ create or replace function public._require_role(p_token uuid, p_roles text[])
 returns public.accounts
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_account public.accounts;
@@ -216,7 +260,7 @@ create or replace function public.register_account(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_invite     public.invite_codes;
@@ -277,19 +321,26 @@ create or replace function public.login_account(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_account public.accounts;
   v_hash    text;
   v_token   uuid;
 begin
-  select a.*, c.password_hash into v_account, v_hash
+  select a.* into v_account
   from public.accounts a
-  join public.credentials c on c.account_id = a.id
   where a.username = p_username;
 
-  if not found or v_hash is null or crypt(p_password, v_hash) <> v_hash then
+  if not found then
+    raise exception 'invalid_credentials' using errcode = '28P01';
+  end if;
+
+  select c.password_hash into v_hash
+  from public.credentials c
+  where c.account_id = v_account.id;
+
+  if v_hash is null or crypt(p_password, v_hash) <> v_hash then
     raise exception 'invalid_credentials' using errcode = '28P01';
   end if;
 
@@ -306,7 +357,7 @@ create or replace function public.validate_session(p_token uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_account public.accounts;
@@ -323,9 +374,41 @@ create or replace function public.logout_session(p_token uuid)
 returns void
 language sql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
   delete from public.sessions where token = p_token;
+$$;
+
+-- Called periodically by the client (see src/lib/sessionMonitor.js) to
+-- prove the tab is still alive and to refresh last_seen_at. Unlike the
+-- other RPC functions, this deliberately does NOT raise an exception on
+-- an expired/missing session -- a normal "not alive anymore" outcome and
+-- a genuine network/database error need to be distinguishable to the
+-- client (the former means "log the user out", the latter means "show
+-- the reconnecting dialog and retry"), so this always returns jsonb and
+-- lets a thrown error mean the latter.
+create or replace function public.heartbeat(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_account_id uuid;
+begin
+  update public.sessions
+  set last_seen_at = now()
+  where token = p_token
+    and expires_at > now()
+    and last_seen_at > now() - public._session_timeout()
+  returning account_id into v_account_id;
+
+  if not found then
+    return jsonb_build_object('ok', false);
+  end if;
+
+  return jsonb_build_object('ok', true);
+end;
 $$;
 
 -- ----------------------------------------------------------------------------
@@ -343,7 +426,7 @@ create or replace function public.edit_user(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_actor   public.accounts;
@@ -393,7 +476,7 @@ create or replace function public.delete_user(
 returns void
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_actor public.accounts;
@@ -416,7 +499,7 @@ create or replace function public.promote_user(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_actor   public.accounts;
@@ -444,7 +527,7 @@ create or replace function public.demote_user(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_actor   public.accounts;
@@ -473,7 +556,7 @@ create or replace function public.list_invite_codes(p_token uuid)
 returns setof public.invite_codes
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 begin
   perform public._require_role(p_token, array['admin', 'developer']);
@@ -489,7 +572,7 @@ create or replace function public.create_invite_code(
 returns public.invite_codes
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_actor  public.accounts;
@@ -531,7 +614,7 @@ create or replace function public.delete_invite_code(
 returns void
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 begin
   perform public._require_role(p_token, array['admin', 'developer']);
@@ -547,6 +630,7 @@ grant execute on function
   public.login_account(text, text),
   public.validate_session(uuid),
   public.logout_session(uuid),
+  public.heartbeat(uuid),
   public.edit_user(uuid, uuid, text, text, text, text),
   public.delete_user(uuid, uuid),
   public.promote_user(uuid, uuid),
@@ -555,6 +639,35 @@ grant execute on function
   public.create_invite_code(uuid, integer, timestamptz),
   public.delete_invite_code(uuid, uuid)
 to anon, authenticated;
+
+-- Best-effort physical cleanup of dead session rows. This is purely
+-- hygiene -- _current_session_account/heartbeat already refuse any
+-- session past _session_timeout() regardless of whether the row still
+-- exists, so security does not depend on this running. Skipped silently
+-- if pg_cron isn't available/enabled on this project (it's an optional
+-- extension, off by default on a fresh Supabase project) so this schema
+-- still runs cleanly everywhere.
+do $$
+begin
+  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
+    begin
+      create extension if not exists pg_cron;
+      perform cron.schedule(
+        'draftstage-session-cleanup',
+        '*/5 * * * *',
+        $cron$delete from public.sessions
+               where expires_at < now()
+                  or last_seen_at < now() - interval '1 hour';$cron$
+      );
+    exception
+      when others then
+        -- pg_cron present but not usable in this environment (e.g.
+        -- insufficient privilege) -- fine, fall back to the on-read
+        -- expiration checks above.
+        null;
+    end;
+  end if;
+end $$;
 
 -- ----------------------------------------------------------------------------
 -- 7. Storage bucket for avatars
@@ -580,6 +693,8 @@ do $$
 declare
   v_id uuid;
 begin
+  set local search_path = public, extensions, pg_temp;
+
   if not exists (select 1 from public.accounts where username = 'admin') then
     insert into public.accounts (username, display_name, tournament_role, permission_role)
     values ('admin', 'Developer', null, 'developer')

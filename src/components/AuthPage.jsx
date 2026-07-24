@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { login, register, uploadAvatar } from '../lib/auth.js'
+import { useEffect, useState, useRef } from 'react'
+import { login, register, uploadAvatar, logout } from '../lib/auth.js'
 
 /* ---------- inline icons (no external icon package needed) ---------- */
 const Icon = {
@@ -90,7 +90,7 @@ function PasswordField({ icon, visible, onToggle, ...props }) {
   )
 }
 
-export default function AuthPage({ onLoggedIn }) {
+export default function AuthPage({ onLoggedIn, initialMessage }) {
   const [mode, setMode] = useState('login') // 'login' | 'register'
   const [showPw, setShowPw] = useState(false)
   const [showPw2, setShowPw2] = useState(false)
@@ -106,6 +106,11 @@ export default function AuthPage({ onLoggedIn }) {
     setToast(msg)
     toastTimer.current = setTimeout(() => setToast(null), 2800)
   }
+
+  useEffect(() => {
+    if (initialMessage) showToast(initialMessage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleAvatarChange(e) {
     const file = e.target.files?.[0]
@@ -128,6 +133,10 @@ export default function AuthPage({ onLoggedIn }) {
         const account = await login({ username, password })
         if (account.permission_role !== 'admin' && account.permission_role !== 'developer') {
           // No dashboard/lobby exists yet for regular users in this phase.
+          // A session was still created server-side by login() -- tear it
+          // down immediately rather than leaving an orphaned session with
+          // no heartbeat monitor watching it.
+          await logout().catch(() => {})
           showToast('登录成功，但该账号暂无管理后台权限')
           setSubmitting(false)
           return

@@ -60,8 +60,15 @@ Registration, or the Admin Dashboard.
   every open browser with no page refresh. See Section 15 for how this
   works for invite codes specifically, since they can't be broadcast
   directly without undermining the invite gate.
-- **Logout** — invalidates the session token server-side and returns
-  to the Login page.
+- **Logout** — invalidates the session token server-side immediately,
+  and returns to the Login page.
+- **Live session / presence** — being logged in requires an active
+  heartbeat, not just a stored token. Closing the tab or browser (or a
+  crash) stops the heartbeat and the session expires server-side on
+  its own shortly after, with no reliance on the client getting to run
+  a logout. A lost connection while the tab stays open shows a
+  reconnect dialog instead of failing silently. See Section 15, Session
+  Liveness: Heartbeat & Presence.
 
 ## 3. Current Limitations
 
@@ -70,12 +77,14 @@ Intentional, not oversights:
 - **No real user-facing destination yet for the "User" permission
   role.** Phase 3 only builds out Login/Registration/Admin Dashboard;
   a logged-in "User"-role account currently sees a toast saying it has
-  no dashboard access. The Tournament Lobby (Phase 4) is where regular
-  users will land.
+  no dashboard access, and its session is torn down immediately since
+  there's nowhere for it to go yet. The Tournament Lobby (Phase 4) is
+  where regular users will land.
 - **Sessions are simple bearer tokens, not JWTs.** There is no
   Supabase Auth, so there's no JWT-based RLS. Every privileged
   database function takes the session token as an explicit argument
-  and checks it manually — see Section 15.
+  and checks both its validity and its liveness manually — see
+  Section 15.
 - **No password reset, no "remember me," no email anywhere** — by
   design, unchanged from Phase 1/2 decisions.
 
@@ -369,10 +378,10 @@ is no JWT, so Postgres Row Level Security can't use `auth.uid()` the
 way it normally would. Instead, `login_account` / `register_account`
 issue a random `sessions.token`, which the client stores in
 `localStorage` and passes as an explicit argument to every privileged
-database function. Each of those functions looks the token up, checks
-it hasn't expired, and checks the account's `permission_role` before
-doing anything — so permission enforcement lives in the database, not
-just in hidden UI buttons.
+database function. Each of those functions confirms the session is
+alive (see Session Liveness, below), checks the account's
+`permission_role`, and only then does anything — so permission
+enforcement lives in the database, not just in hidden UI buttons.
 
 **Table exposure, by design:**
 - `accounts` — safe columns only (no password), publicly readable,
@@ -387,7 +396,9 @@ just in hidden UI buttons.
   devtools, defeating the entire invite-only gate. Codes are only ever
   returned to a caller that `list_invite_codes` has confirmed is
   logged in as Admin/Developer.
-- `sessions` — locked the same way as `credentials`.
+- `sessions` — locked the same way as `credentials`. Beyond `token` and
+  `expires_at`, it now also tracks `last_seen_at`, which is what the
+  heartbeat system below is built on.
 - `sync_events` — a tiny public, Realtime-enabled table with no
   payload beyond a scope name (e.g. `{"scope": "invites"}`). Since
   invite codes can't be broadcast directly without leaking them, every
@@ -409,6 +420,79 @@ Storage bucket (created by the same schema file); the resulting public
 URL is stored in `accounts.avatar_url`.
 
 Frontend integration lives in `src/lib/`: `supabaseClient.js` (client
-singleton), `auth.js` (register/login/session), and `adminApi.js`
-(everything the Admin Dashboard calls, plus the two realtime
-subscriptions described above).
+singleton), `auth.js` (register/login/session/heartbeat), and
+`adminApi.js` (everything the Admin Dashboard calls, plus the two
+realtime subscriptions described above). `src/lib/sessionMonitor.js`
+and `src/components/DisconnectedModal.jsx` implement the heartbeat/
+presence system described next.
+
+### Session Liveness: Heartbeat & Presence
+
+This is a standing policy for the whole project, not just the Admin
+Dashboard: **a session is only considered alive while the client is
+actively proving it's still there.** Being logged in is treated as a
+live connection, not a durable flag — closing the tab, closing the
+browser, a crash, or losing connectivity all mean the session should
+end, without depending on the client getting a chance to say goodbye.
+
+**Server side.** `sessions.last_seen_at` tracks the last time a given
+session proved it was alive. `public._session_timeout()` is the single
+source of truth for how long a session may go without one — currently
+45 seconds. Every privileged database function funnels through
+`_current_session_account()`, which refuses the call and raises
+`invalid_session` if `last_seen_at` has gone stale (in addition to the
+existing `expires_at` hard cap), and refreshes `last_seen_at` on
+success — so any authenticated action doubles as a heartbeat, not just
+the dedicated one. This is enforced in the database itself, so it
+still works even if the browser crashes and never runs another line of
+JS. A `heartbeat(p_token)` RPC exists for the client to call on a
+regular interval purely to keep a session alive when the user isn't
+otherwise interacting with anything. `logout_session` still deletes
+the row outright for an immediate, explicit logout. Dead rows are also
+swept up periodically by an optional `pg_cron` job — pure hygiene,
+since the timeout check above already refuses stale sessions whether
+or not the row has been physically deleted yet, and the schema skips
+that job silently if `pg_cron` isn't enabled on the project.
+
+**Client side** (`src/lib/sessionMonitor.js`). While `account` is set,
+`App.jsx` runs a heartbeat loop: ping the server every 15 seconds
+(comfortably inside the 45-second server timeout). A successful `{ ok:
+true }` response keeps things quiet. A successful `{ ok: false }`
+response means the server has confirmed the session is genuinely gone
+(most commonly because heartbeats stopped for a while — the tab was
+closed and later reopened, or was suspended long enough to miss the
+window) — the app clears local state and returns to Login with "会话已过期，请重新登录".
+A thrown/network error is treated differently: it means "couldn't
+reach the server," not "session is invalid," so instead of logging the
+user out, the app shows the disconnect dialog (`DisconnectedModal.jsx`
+— "网络连接已断开 / 正在尝试重新连接…" with a 重新连接 button) and
+retries every 3 seconds in the background, plus immediately on the
+browser's `online` event and on a manual click of the button. As soon
+as a heartbeat succeeds again, the dialog closes on its own and the
+session resumes exactly where it left off, with no other interruption
+to the user. If the outage lasted long enough that the session expired
+server-side while disconnected, the next successful reconnect attempt
+simply reports `{ ok: false }` and the app falls through to the same
+expired-session redirect described above — a stale reconnect never
+misreports as success.
+
+Net effect: a closed tab/browser stops sending heartbeats and the
+session dies server-side within roughly a minute even though no
+client-side logout ever ran; a live tab that briefly loses connectivity
+gets a clear, honest "you're disconnected, we're retrying" state
+instead of silently-failing API calls or a false logout.
+
+### Supabase Compatibility
+
+This project targets Supabase only, not generic PostgreSQL.
+
+- Do not assume PostgreSQL default schemas or `search_path`.
+- All new SQL and `SECURITY DEFINER` functions must be written to work
+  on a fresh Supabase project.
+- Extension functions (such as `pgcrypto`'s `crypt()` and
+  `gen_salt()`) must be accessible either by including the
+  `extensions` schema in the function `search_path` or by explicitly
+  schema-qualifying them.
+- Before considering any SQL complete, review it for Supabase
+  compatibility (extensions, RPC functions, RLS, permissions,
+  Storage, and Realtime).

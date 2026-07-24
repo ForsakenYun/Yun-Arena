@@ -103,3 +103,15 @@ export async function logout() {
     await supabase.rpc('logout_session', { p_token: token }).catch(() => {})
   }
 }
+
+/* ---------- heartbeat / presence ---------- */
+// Distinct from the other RPC wrappers on purpose: it does NOT translate
+// or swallow errors. A thrown error here means "couldn't reach the
+// server" (network drop, etc.) -- the caller (sessionMonitor.js) needs to
+// tell that apart from a clean { ok: false } response, which means the
+// session itself is genuinely gone and the user should be logged out.
+export async function heartbeat(token) {
+  const { data, error } = await supabase.rpc('heartbeat', { p_token: token })
+  if (error) throw error
+  return data
+}
