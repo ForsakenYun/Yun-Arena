@@ -585,7 +585,9 @@ create or replace function public.edit_user(
   p_username       text,
   p_display_name   text,
   p_password       text,      -- pass null/empty to leave password unchanged
-  p_tournament_role text
+  p_tournament_role text,
+  p_gender         text,
+  p_avatar_url     text default null  -- pass null to leave the existing avatar unchanged
 )
 returns jsonb
 language plpgsql
@@ -594,9 +596,24 @@ set search_path = public, extensions, pg_temp
 as $$
 declare
   v_actor   public.accounts;
+  v_target  public.accounts;
   v_updated public.accounts;
 begin
   v_actor := public._require_role(p_token, array['admin', 'developer']);
+
+  select * into v_target from public.accounts where id = p_target_id;
+  if not found then
+    raise exception 'user_not_found' using errcode = 'P0002';
+  end if;
+
+  -- Developer Account Protection: only a Developer may edit another
+  -- Developer account. This is the actual enforcement point -- the
+  -- hidden 编辑 button in AdminDashboard.jsx for Developer rows when the
+  -- viewer is an Admin is only a convenience on top of it, so a crafted
+  -- RPC call that bypasses the UI is rejected here just the same.
+  if v_target.permission_role = 'developer' and v_actor.permission_role <> 'developer' then
+    raise exception 'cannot_edit_developer' using errcode = '42501';
+  end if;
 
   if p_username !~ '^[A-Za-z0-9]{1,20}$' then
     raise exception 'invalid_username' using errcode = '22000';
@@ -607,6 +624,9 @@ begin
   if p_tournament_role is not null and p_tournament_role not in ('captain', 'player') then
     raise exception 'invalid_tournament_role' using errcode = '22000';
   end if;
+  if p_gender not in ('male', 'female') then
+    raise exception 'invalid_gender' using errcode = '22000';
+  end if;
 
   if exists (select 1 from public.accounts where username = p_username and id <> p_target_id) then
     raise exception 'username_taken' using errcode = '23505';
@@ -615,13 +635,11 @@ begin
   update public.accounts
   set username = p_username,
       display_name = p_display_name,
-      tournament_role = p_tournament_role
+      tournament_role = p_tournament_role,
+      gender = p_gender,
+      avatar_url = coalesce(p_avatar_url, avatar_url)
   where id = p_target_id
   returning * into v_updated;
-
-  if not found then
-    raise exception 'user_not_found' using errcode = 'P0002';
-  end if;
 
   if p_password is not null and length(p_password) > 0 then
     update public.credentials
@@ -1026,7 +1044,7 @@ grant execute on function
   public.validate_session(uuid),
   public.logout_session(uuid),
   public.heartbeat(uuid),
-  public.edit_user(uuid, uuid, text, text, text, text),
+  public.edit_user(uuid, uuid, text, text, text, text, text, text),
   public.delete_user(uuid, uuid),
   public.promote_user(uuid, uuid),
   public.demote_user(uuid, uuid),

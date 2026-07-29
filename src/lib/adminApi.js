@@ -5,12 +5,14 @@ const ERROR_MESSAGES = {
   invalid_username: '用户名格式不正确',
   invalid_display_name: '昵称格式不正确',
   invalid_tournament_role: '身份无效',
+  invalid_gender: '请选择性别',
   username_taken: '用户名已被占用',
   insufficient_permission: '权限不足，仅开发者可执行该操作',
   invalid_session: '登录已过期，请重新登录',
   user_not_found: '用户不存在',
   cannot_delete_self: '不能删除自己的账号',
   cannot_delete_developer: '开发者账号不可删除',
+  cannot_edit_developer: '开发者账号不可编辑',
   user_not_found_or_not_promotable: '该用户当前无法被提升',
   user_not_found_or_not_demotable: '该用户当前无法被降级',
   invalid_max_uses: '最大使用次数无效',
@@ -49,7 +51,7 @@ export function subscribeUsers(onChange) {
   return () => supabase.removeChannel(channel)
 }
 
-export async function editUser({ id, username, displayName, password, tournamentRole }) {
+export async function editUser({ id, username, displayName, password, tournamentRole, gender, avatarUrl }) {
   const { data, error } = await supabase.rpc('edit_user', {
     p_token: requireToken(),
     p_target_id: id,
@@ -57,6 +59,8 @@ export async function editUser({ id, username, displayName, password, tournament
     p_display_name: displayName,
     p_password: password || null,
     p_tournament_role: tournamentRole,
+    p_gender: gender,
+    p_avatar_url: avatarUrl ?? null,
   })
   if (error) throw new Error(friendlyError(error, '更新用户失败'))
   return data

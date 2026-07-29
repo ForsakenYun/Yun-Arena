@@ -1079,3 +1079,44 @@ session/presence row is ever created for an account -- registration
 and login are now fully separate, matching the ask: a new account can
 log in immediately, and is not considered "online" until it actually
 does.
+
+## 21. Admin Dashboard: Edit User Improvements
+
+`EditUserModal` (in `AdminDashboard.jsx`) now also supports:
+
+- **Avatar editing**: the same picker UI as `AuthPage.jsx`'s
+  registration form (circular preview, camera-badge upload button),
+  pre-filled with the user's current avatar. It reuses
+  `uploadAvatar()` from `src/lib/auth.js` unchanged -- there is only
+  ever one avatar upload code path in the app. Choosing a new file
+  uploads it on submit, same timing as registration; leaving it
+  untouched sends `p_avatar_url = null` to `edit_user()`, which reads
+  as "don't touch the existing avatar" (`coalesce(p_avatar_url,
+  avatar_url)`), the same convention already used for the optional
+  password field.
+- **Gender editing**: a `GenderToggle` (男生/女生), same component
+  pattern as `RoleToggle`. `edit_user()` now takes a required
+  `p_gender` and validates it exactly like `register_account()` does.
+  Because both tables that display `GenderIcon` (已注册用户 and
+  参赛玩家) subscribe to realtime `accounts` changes already, an edit
+  here updates the icon everywhere immediately with no extra wiring.
+
+**Developer Account Protection** (security-relevant -- enforced at
+both layers, not just the UI):
+
+- Frontend: in the 已注册用户 table, the 编辑 button is hidden for any
+  row where `permission_role = 'developer'` unless the viewer
+  themselves is a Developer (`isDeveloper || u.permission_role !==
+  'developer'`). This mirrors how the 删除 button is already hidden
+  for Developer rows entirely.
+- Backend (the actual enforcement point): `edit_user()` now selects
+  the target account first and rejects with `cannot_edit_developer`
+  if the target's `permission_role` is `'developer'` and the acting
+  session's `permission_role` isn't -- regardless of what the UI
+  shows, so a crafted RPC call bypassing the hidden button is still
+  rejected. A Developer editing another Developer account is
+  unaffected. This is intentionally a different rule from
+  `delete_user()`'s Developer check (Section 10/16), which blocks
+  deleting a Developer account for *everyone*, including other
+  Developers -- editing a Developer account is allowed for Developers,
+  only Admins are blocked.

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import { uploadAvatar } from '../lib/auth.js'
 import {
   fetchUsers,
   subscribeUsers,
@@ -123,6 +124,12 @@ const Icon = {
       <path d="M6 4.5c2-1 4-1 6 0s4 1 6 0v9c-2 1-4 1-6 0s-4-1-6 0v-9Z" strokeLinejoin="round" />
     </svg>
   ),
+  camera: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1-1.8h7l1 1.8h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z" strokeLinejoin="round" />
+      <circle cx="12" cy="13" r="3.2" />
+    </svg>
+  ),
 }
 
 const ROLE_LABEL = { captain: '队长', player: '队员' }
@@ -199,6 +206,37 @@ function RoleToggle({ value, onChange }) {
             checked={value === opt.value}
             onChange={() => onChange(opt.value)}
             className="sr-only"
+          />
+          {opt.label}
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function GenderToggle({ value, onChange }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {[
+        { value: 'male', label: '男生' },
+        { value: 'female', label: '女生' },
+      ].map((opt) => (
+        <label
+          key={opt.value}
+          className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
+            value === opt.value
+              ? 'bg-teal/10 border-teal text-teal shadow-teal-glow'
+              : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
+          }`}
+        >
+          <input
+            type="radio"
+            name="edit-gender"
+            value={opt.value}
+            checked={value === opt.value}
+            onChange={() => onChange(opt.value)}
+            className="sr-only"
+            required
           />
           {opt.label}
         </label>
@@ -305,29 +343,71 @@ function ModalShell({ title, onClose, children, wide }) {
 }
 
 /* ---------- edit user modal ---------- */
-function EditUserModal({ user, onClose, onSave, saving }) {
+function EditUserModal({ user, onClose, onSave, onError, saving }) {
   const [form, setForm] = useState({
     username: user.username,
     displayName: user.display_name,
     password: '',
     role: user.tournament_role,
+    gender: user.gender,
   })
   const [showPw, setShowPw] = useState(false)
+  const [avatarPreview, setAvatarPreview] = useState(user.avatar_url)
+  const [avatarFile, setAvatarFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
 
-  function submit(e) {
+  function handleAvatarChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarFile(file)
+    setAvatarPreview(URL.createObjectURL(file))
+  }
+
+  async function submit(e) {
     e.preventDefault()
-    onSave({
-      id: user.id,
-      username: form.username,
-      displayName: form.displayName,
-      password: form.password,
-      tournamentRole: form.role,
-    })
+    if (uploading || saving) return
+    try {
+      let avatarUrl = null // null = leave the existing avatar unchanged
+      if (avatarFile) {
+        setUploading(true)
+        avatarUrl = await uploadAvatar(avatarFile)
+      }
+      onSave({
+        id: user.id,
+        username: form.username,
+        displayName: form.displayName,
+        password: form.password,
+        tournamentRole: form.role,
+        gender: form.gender,
+        avatarUrl,
+      })
+    } catch (err) {
+      onError?.(err.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
-    <ModalShell title="编辑用户" onClose={onClose}>
+    <ModalShell title="编辑用户" onClose={onClose} wide>
       <form onSubmit={submit} className="space-y-4">
+        <div className="flex flex-col items-center gap-2 pb-1">
+          <label className="relative cursor-pointer group">
+            <div className="w-20 h-20 rounded-lg bg-panel-alt border border-panel-line overflow-hidden flex items-center justify-center transition group-hover:border-teal">
+              {avatarPreview ? (
+                <img src={avatarPreview} alt="头像预览" className="w-full h-full object-cover" />
+              ) : (
+                <Icon.user className="w-8 h-8 text-ink-muted" />
+              )}
+            </div>
+            <span className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-teal flex items-center justify-center border-2 border-panel">
+              <Icon.camera className="w-3 h-3 text-void" />
+            </span>
+            <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+          </label>
+          <span className="text-[11px] text-ink-faint">点击上传或更换头像</span>
+        </div>
+
         <div className="space-y-1.5">
           <label className="block text-xs text-ink-muted">用户名</label>
           <Field
@@ -372,6 +452,10 @@ function EditUserModal({ user, onClose, onSave, saving }) {
           <label className="block text-xs text-ink-muted">身份</label>
           <RoleToggle value={form.role} onChange={(role) => setForm((f) => ({ ...f, role }))} />
         </div>
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">性别</label>
+          <GenderToggle value={form.gender} onChange={(gender) => setForm((f) => ({ ...f, gender }))} />
+        </div>
 
         <div className="flex gap-3 pt-2">
           <button
@@ -383,10 +467,10 @@ function EditUserModal({ user, onClose, onSave, saving }) {
           </button>
           <button
             type="submit"
-            disabled={saving}
+            disabled={uploading || saving}
             className="flex-1 bg-teal text-void font-semibold tracking-wide text-sm py-2.5 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
           >
-            {saving ? '保存中…' : '保存修改'}
+            {uploading ? '上传头像中…' : saving ? '保存中…' : '保存修改'}
           </button>
         </div>
       </form>
@@ -913,14 +997,16 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
                               降级为普通用户
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => setEditingUser(u)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-teal hover:border-teal/40 transition"
-                          >
-                            <Icon.edit className="w-3.5 h-3.5" />
-                            编辑
-                          </button>
+                          {(isDeveloper || u.permission_role !== 'developer') && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingUser(u)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-teal hover:border-teal/40 transition"
+                            >
+                              <Icon.edit className="w-3.5 h-3.5" />
+                              编辑
+                            </button>
+                          )}
                           {u.permission_role !== 'developer' && (
                             <button
                               type="button"
@@ -1044,7 +1130,7 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
 
       {/* modals */}
       {editingUser && (
-        <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={saveUser} saving={busy} />
+        <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={saveUser} onError={showToast} saving={busy} />
       )}
       {deletingUser && (
         <ConfirmDeleteModal
