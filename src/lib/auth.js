@@ -57,7 +57,17 @@ export async function uploadAvatar(file) {
     cacheControl: '3600',
     upsert: false,
   })
-  if (error) throw new Error(friendlyError(error, '头像上传失败'))
+  if (error) {
+    // NOTE: storage errors ("Bucket not found", missing INSERT policy,
+    // file too large, etc.) are unrelated to the Postgres exception
+    // codes raised by our own RPC functions in ERROR_MESSAGES above.
+    // Routing them through friendlyError() found no matching key and
+    // always fell back to the same generic "头像上传失败" message no
+    // matter what actually went wrong, making the real cause
+    // undiagnosable from the UI. Surface the actual Storage error
+    // message instead so a failed upload is debuggable.
+    throw new Error(`头像上传失败：${error.message || '未知错误'}`)
+  }
   const { data } = supabase.storage.from('avatars').getPublicUrl(path)
   return data.publicUrl
 }

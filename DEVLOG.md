@@ -1011,3 +1011,40 @@ phase explicitly says otherwise.
 - Gender is not editable from the Admin Dashboard's edit-user dialog
   — only set once, at registration. Add that later only if a future
   phase explicitly asks for it.
+
+## 19. Bug Fix: Registration Avatar Upload
+
+Symptom: selecting an avatar during registration always made
+registration fail with a generic "头像上传失败" message; leaving the
+avatar empty always worked.
+
+Two real problems, both fixed at the root rather than worked around:
+
+1. **Section 8 (Storage bucket) never actually created the `avatars`
+   bucket or its RLS policies** — it only left a comment saying to do
+   that manually via the Dashboard. If that manual step was never
+   done on a given project, `uploadAvatar()` in `src/lib/auth.js`
+   fails every single time at the Supabase Storage layer ("Bucket not
+   found", or a permission error if the bucket exists without an
+   INSERT policy) — regardless of anything on the client. Section 8
+   now attempts to auto-provision the bucket + public
+   read/insert policies on `storage.objects` itself, wrapped in an
+   exception handler so it's a harmless no-op (with a `NOTICE`) on any
+   project where the connecting role doesn't have enough privilege to
+   touch the `storage` schema — see that section for the fallback
+   manual steps, only needed if the NOTICE fires.
+2. **`uploadAvatar()` was routing storage errors through
+   `friendlyError()`**, which only knows the Postgres exception codes
+   raised by this project's own auth RPCs (`invalid_username`,
+   `invite_expired`, etc.). A storage error never matches any of
+   those, so it always fell back to the same generic message no
+   matter the real cause, which is exactly what made this bug hard to
+   diagnose. `uploadAvatar()` now throws the real
+   `error.message` from Supabase Storage (prefixed with `头像上传失败：`
+   for context), so a future upload failure is actually debuggable
+   from the toast instead of always looking identical.
+
+Registration behavior otherwise unchanged: no avatar selected still
+skips upload entirely and works exactly as before; a successful
+upload still gets linked to the new account via `p_avatar_url` on
+`register_account()`, same as originally designed.

@@ -1072,26 +1072,60 @@ begin
 end $$;
 
 -- ----------------------------------------------------------------------------
--- 8. Storage bucket for avatars -- NOT set up by this migration
+-- 8. Storage bucket for avatars
 -- ----------------------------------------------------------------------------
 --
--- This file intentionally does not touch the `storage` schema.
--- `storage.buckets` and `storage.objects` are owned by Supabase's internal
--- `supabase_storage_admin` role, not by the role that runs this migration
--- (e.g. via the SQL Editor), so statements like
--- `insert into storage.buckets (...)` or
--- `create policy ... on storage.objects` fail with
--- "must be owner of table buckets" when run here.
+-- Root cause of the "avatar upload always fails" bug: this file never
+-- actually created the `avatars` bucket or its RLS policies on
+-- `storage.objects` -- it only left a comment saying to do it manually.
+-- If that manual step was never completed against a given project,
+-- every upload from uploadAvatar() in src/lib/auth.js fails at the
+-- Supabase Storage layer with "Bucket not found" (or a permission
+-- error if the bucket exists but has no INSERT policy), regardless of
+-- anything on the client. That storage error was then being routed
+-- through friendlyError()'s auth-RPC error-code table in auth.js,
+-- which has no entry for storage errors, so it silently fell back to
+-- the same generic "头像上传失败" message no matter the real cause --
+-- see the fix in uploadAvatar() for that half of the bug.
 --
--- To enable avatar uploads (src/lib/auth.js's uploadAvatar(), used by the
--- Registration page), create the bucket and its policies through one of:
---   - Supabase Dashboard: Storage -> New bucket -> name it "avatars",
---     mark it Public, then add policies allowing public SELECT and
---     public INSERT on storage.objects where bucket_id = 'avatars'.
---   - Supabase Management API / CLI (`supabase storage`), which runs
---     with the privileges needed to modify the storage schema.
--- This is a one-time, outside-of-schema.sql setup step per project, not
--- something re-run alongside the rest of this file.
+-- This block is a best-effort attempt to auto-provision the bucket and
+-- policies so this is no longer a required manual step. It's wrapped
+-- in its own exception handler and does not touch anything outside the
+-- `storage` schema, so it can never break the rest of this migration:
+-- `storage.buckets`/`storage.objects` are owned by Supabase's internal
+-- `supabase_storage_admin` role on some projects, and depending on the
+-- privileges of whatever role actually runs this file (SQL Editor,
+-- `supabase db push`, a pooled connection, etc.), this may or may not
+-- be permitted -- if it isn't, the block prints a NOTICE naming the
+-- underlying error and this becomes a manual step (see below); if it
+-- is permitted, avatar upload works immediately with no manual step
+-- at all. Re-running this file is always safe (on conflict / if not
+-- exists guards throughout).
+do $$
+begin
+  insert into storage.buckets (id, name, public)
+  values ('avatars', 'avatars', true)
+  on conflict (id) do update set public = true;
+
+  drop policy if exists "avatars_public_read" on storage.objects;
+  create policy "avatars_public_read" on storage.objects
+    for select using (bucket_id = 'avatars');
+
+  drop policy if exists "avatars_public_upload" on storage.objects;
+  create policy "avatars_public_upload" on storage.objects
+    for insert with check (bucket_id = 'avatars');
+exception
+  when others then
+    raise notice 'Could not auto-provision the "avatars" storage bucket/policies (%). Finish setup manually (see instructions below), then re-run this file to confirm.', sqlerrm;
+end $$;
+--
+-- Manual fallback, only needed if the NOTICE above appears (i.e. the
+-- role running this file lacks the required privilege on this
+-- project): Supabase Dashboard -> Storage -> New bucket -> name it
+-- "avatars", mark it Public, then add policies allowing public SELECT
+-- and public INSERT on storage.objects where bucket_id = 'avatars'.
+-- Or use the Supabase Management API / CLI (`supabase storage`),
+-- which runs with the privileges needed to modify the storage schema.
 
 -- ----------------------------------------------------------------------------
 -- 9. Seed data: the real Developer account (admin / 111)
