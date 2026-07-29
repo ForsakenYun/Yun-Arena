@@ -392,7 +392,6 @@ as $$
 declare
   v_invite     public.invite_codes;
   v_account    public.accounts;
-  v_token      uuid;
 begin
   if p_username !~ '^[A-Za-z0-9]{1,20}$' then
     raise exception 'invalid_username' using errcode = '22000';
@@ -435,16 +434,16 @@ begin
   update public.invite_codes set used_count = used_count + 1 where id = v_invite.id;
   insert into public.sync_events (scope, event) values ('invites', 'update');
 
-  insert into public.sessions (account_id) values (v_account.id) returning token into v_token;
-
-  insert into public.presence (account_id, last_seen_at)
-  values (v_account.id, now())
-  on conflict (account_id) do update set last_seen_at = excluded.last_seen_at;
-
-  return jsonb_build_object(
-    'token', v_token,
-    'account', to_jsonb(v_account)
-  );
+  -- Registration intentionally stops here: it creates the account and
+  -- credentials only. It must NOT insert into public.sessions or
+  -- public.presence -- doing so would make the account look "already
+  -- logged in" (see _has_active_session() in login_account below) and
+  -- "online" before the person had ever actually logged in, blocking
+  -- their very next login attempt until that phantom session expired.
+  -- The first session/presence row for a new account is created by
+  -- login_account(), exactly like every other account, the first time
+  -- they actually log in.
+  return jsonb_build_object('account', to_jsonb(v_account));
 end;
 $$;
 

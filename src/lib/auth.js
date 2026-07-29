@@ -84,7 +84,10 @@ export async function register({ inviteCode, username, password, displayName, to
     p_avatar_url: avatarUrl ?? null,
   })
   if (error) throw new Error(friendlyError(error, '注册失败'))
-  storeToken(data.token)
+  // Registration only creates the account -- it does not log the person
+  // in (see register_account() in supabase/schema.sql). There is no
+  // token to store here; the first session is created by login(),
+  // exactly like every other login.
   return data.account
 }
 

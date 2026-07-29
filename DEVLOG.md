@@ -1048,3 +1048,34 @@ Registration behavior otherwise unchanged: no avatar selected still
 skips upload entirely and works exactly as before; a successful
 upload still gets linked to the new account via `p_avatar_url` on
 `register_account()`, same as originally designed.
+
+## 20. Bug Fix: Registration Created an Active Login Session
+
+Symptom: register a new account -> land back on the Login tab as
+intended -> immediately trying to log in with that same account fails
+with `account_already_logged_in` ("该账号已登录。请先退出当前登录后再尝试。"),
+until the session timeout (Section 15) expired on its own.
+
+Root cause: `register_account()` was doing more than registering. At
+the end of the function it also ran
+`insert into public.sessions (account_id) values (v_account.id)` and
+upserted a `public.presence` row, i.e. it logged the new account in
+and marked it online as a side effect of registering, even though the
+UI never treated registration as a login (`AuthPage.jsx` always calls
+`switchMode('login')` after a successful register, never
+`onLoggedIn`). That orphaned session then made `login_account()`'s
+`_has_active_session()` check (Section 15 -- Single Active Session Per
+Account) see the brand-new account as already logged in on the very
+next login attempt, since nothing had ever called `logout_session()`
+to close it.
+
+Fix, at the root: `register_account()` no longer touches
+`public.sessions` or `public.presence` at all -- it only inserts into
+`public.accounts` and `public.credentials` and returns
+`{ account }` (no `token`). `src/lib/auth.js`'s `register()` no longer
+calls `storeToken()` after registering, since there is no token to
+store. `login_account()` is unchanged and remains the only place a
+session/presence row is ever created for an account -- registration
+and login are now fully separate, matching the ask: a new account can
+log in immediately, and is not considered "online" until it actually
+does.
