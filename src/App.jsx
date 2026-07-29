@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import AuthPage from './components/AuthPage.jsx'
 import AdminDashboard from './components/AdminDashboard.jsx'
 import TournamentLobby from './components/TournamentLobby.jsx'
+import DraftArena from './components/DraftArena.jsx'
 import DisconnectedModal from './components/DisconnectedModal.jsx'
 import { restoreSession, logout as logoutRequest, getStoredToken } from './lib/auth.js'
 import { startSessionMonitor } from './lib/sessionMonitor.js'
@@ -109,10 +110,17 @@ export default function App() {
 
   const isStaff = account && (account.permission_role === 'admin' || account.permission_role === 'developer')
   const isDashboard = route === '#admin' && isStaff
+  // Phase 5 -- Draft System Top Bar. Reached only via the Tournament
+  // Lobby's "开始比赛" button for now (Section 16's placeholder is gone;
+  // see DEVLOG.md Roadmap). Not yet gated to staff-only, same as the rest
+  // of the (still very early) Draft System scope.
+  const isDraft = route === '#draft' && !!account
 
   let view
   if (isDashboard) {
     view = <AdminDashboard account={account} onLogout={handleLogout} onOpenLobby={() => (window.location.hash = 'lobby')} />
+  } else if (isDraft) {
+    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} />
   } else if (account) {
     // Default logged-in destination for everyone (Section: navigation).
     // Admin/Developer accounts can reach this from the dashboard's

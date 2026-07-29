@@ -351,10 +351,12 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
     }
   }
 
-  // Placeholder only -- the Draft System is a future phase (Section 11,
-  // Roadmap). This button intentionally does not start anything yet.
+  // Phase 5 -- Draft System (Section 11, Roadmap) has now started. This is
+  // still a temporary wire-up for development: it just jumps straight into
+  // the Draft Arena with no captain/team assignment or draft logic behind
+  // it yet -- see DraftArena.jsx and its Phase 5 scope note.
   function handleStartTournament() {
-    showToast('选秀系统将在下一阶段上线，敬请期待')
+    window.location.hash = 'draft'
   }
 
   return (

@@ -134,10 +134,14 @@ Registration, or the Admin Dashboard.
   every round contains each team number exactly once. This only
   configures the order — the Draft System itself, which will read and
   follow it, is a future phase. See Section 16, Draft Order Settings.
-- **Start Tournament (placeholder)** — Admin/Developer-only "开始比赛"
-  button in the Tournament Lobby. Currently a placeholder: clicking it
-  shows a toast and does not start anything. The Draft System, which
-  this button will eventually trigger, is a future phase (Section 11).
+- **Draft Arena (Phase 5, in progress)** — the "开始比赛" button in the
+  Tournament Lobby now navigates straight to a new Draft Arena page
+  instead of showing a placeholder toast. Only the page's top bar is
+  built so far (Tournament Name + Current Draft Status, currently
+  always showing "队长顺位阶段"), plus a temporary "返回锦标赛大厅"
+  dev button. No captain assignment, team assignment, draft order
+  execution, player selection, undo, or end-draft logic exists yet.
+  See Section 23.
 
 ## 3. Current Limitations
 
@@ -373,7 +377,7 @@ In intended development order:
 2. Admin Dashboard — **done**
 3. Backend Foundation — **done** (see Section 15)
 4. Tournament Lobby — **done** (see Section 16)
-5. Draft System
+5. Draft System — **in progress, one part at a time** (see Section 23)
 6. Spectator Page
 
 **Phase 3 – Backend Foundation** is not about building backend
@@ -1140,3 +1144,53 @@ Still derived client-side from the same realtime-subscribed `users`
 list via `useMemo`, so editing a user's 身份 (tournament role) --
 whether via `EditUserModal` or any future path -- recomputes these
 counts automatically with no extra wiring, exactly like before.
+
+## 23. Draft System (Phase 5, in progress)
+
+Per Section 6/7's development rules, the Draft System is being built
+one small part at a time, each approved before the next starts. This
+section will grow with each part; it currently covers only the first
+part, the Draft Arena Top Bar.
+
+### Draft Arena page and navigation
+
+`src/components/DraftArena.jsx` is a brand-new page, routed via the
+same hash-based scheme `App.jsx` already uses for `#admin`/`#lobby`
+(`#draft`). The Tournament Lobby's "开始比赛" button (Section 16,
+formerly a placeholder) now sets `window.location.hash = 'draft'`
+instead of showing a toast — this wiring is itself still temporary
+and not the real Draft System trigger logic; a later Phase 5 part will
+decide what actually starts a draft (permissions, preconditions,
+etc.).
+
+### Draft Arena Top Bar (this part)
+
+The only content built so far. A header bar at the top of the page
+shows two pieces of information side by side (stacked on mobile):
+
+- **Tournament Name** — read via `fetchTournamentSettings()`
+  (Section 16, Tournament Settings), the same singleton-row data the
+  Tournament Settings dialog loads. Read-only here; the Draft Arena
+  never writes to `tournament_settings`.
+- **Current Draft Status** — for this part, hardcoded to always show
+  "队长顺位阶段". This is a static placeholder: no captain, team, or
+  turn logic exists yet. The layout is intentionally already sized and
+  styled for the eventual dynamic text (e.g. "当前轮到 一号队 队长
+  LongDD 选择队员"), so a future part only needs to swap in the real
+  value — this area does not need to be redesigned when the draft
+  order execution part lands.
+
+Below the top bar is an empty placeholder section reserved for future
+Draft System parts (captain assignment, team assignment, player
+selection, etc.) — this keeps the page's shell (full-viewport desktop
+app frame, same `lg:h-screen` pattern as Section 17) already in place
+so later parts extend this page rather than redesigning it.
+
+### Temporary return button
+
+A small, deliberately low-key "返回锦标赛大厅（开发用）" button sits
+below the main content, styled as an out-of-the-way dev convenience
+(dashed border, muted color) rather than a permanent nav element. It
+just sets the hash back to `lobby`. This will be removed once the
+Draft System has real navigation/exit flows; do not treat it as a
+permanent feature or extend it.
