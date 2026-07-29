@@ -747,13 +747,13 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
   }, [users, search])
 
   const userCounts = useMemo(() => {
-    let admins = 0
-    let developers = 0
+    let captains = 0
+    let players = 0
     for (const u of users) {
-      if (u.permission_role === 'admin') admins += 1
-      else if (u.permission_role === 'developer') developers += 1
+      if (u.tournament_role === 'captain') captains += 1
+      else if (u.tournament_role === 'player') players += 1
     }
-    return { total: users.length, admins, developers }
+    return { total: users.length, captains, players }
   }, [users])
 
   const inviteCounts = useMemo(() => {
@@ -930,8 +930,8 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
             <div className="flex items-center gap-3 flex-wrap">
               <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary shrink-0">已注册用户</h2>
               <StatChip label="总用户" value={userCounts.total} />
-              <StatChip label="管理员" value={userCounts.admins} />
-              <StatChip label="开发者" value={userCounts.developers} />
+              <StatChip label="队长" value={userCounts.captains} />
+              <StatChip label="队员" value={userCounts.players} />
             </div>
             <div className="w-full lg:w-64 shrink-0">
               <Field

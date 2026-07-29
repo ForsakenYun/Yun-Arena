@@ -975,11 +975,13 @@ degrading gracefully to normal stacked/scrolling behavior on mobile.
   the table, so the same information fits in far less vertical
   space.
 - `AdminDashboard`: each tab's header row now also shows compact
-  `StatChip` summaries (total/admin/developer counts for 已注册用户;
+  `StatChip` summaries (total/captain/player counts for 已注册用户;
   total/active counts for 邀请码管理) next to the search box or
   "生成邀请码" button, so the freed-up horizontal space surfaces
   useful counts instead of staying empty. These are derived client-side
-  from `users`/`invites` via `useMemo` — no new RPCs.
+  from `users`/`invites` via `useMemo` — no new RPCs. The 已注册用户
+  chips intentionally summarize `tournament_role` (队长/队员), not
+  `permission_role` — see Section 22.
 
 ## 18. Gender Field (Phase 4 UI Enhancement)
 
@@ -1120,3 +1122,21 @@ both layers, not just the UI):
   deleting a Developer account for *everyone*, including other
   Developers -- editing a Developer account is allowed for Developers,
   only Admins are blocked.
+
+## 22. Admin Dashboard: 已注册用户 Stats Now Show Tournament Role, Not Permission Role
+
+The three `StatChip`s above the 已注册用户 table were originally
+总用户/管理员/开发者 (`userCounts.total/admins/developers`, counting
+`permission_role`). Changed to 总用户/队长/队员
+(`userCounts.total/captains/players`, counting `tournament_role`) --
+this is a tournament management dashboard, so the at-a-glance summary
+should reflect tournament roles (队长/队员), not who has admin access.
+`permission_role` (开发者/管理员/普通用户) is untouched everywhere else
+-- `PermissionBadge` still shows it per-row in the same table, and it
+still fully controls what an account can do. This section is display
+scope only.
+
+Still derived client-side from the same realtime-subscribed `users`
+list via `useMemo`, so editing a user's 身份 (tournament role) --
+whether via `EditUserModal` or any future path -- recomputes these
+counts automatically with no extra wiring, exactly like before.
