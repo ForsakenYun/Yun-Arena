@@ -136,12 +136,16 @@ Registration, or the Admin Dashboard.
   follow it, is a future phase. See Section 16, Draft Order Settings.
 - **Draft Arena (Phase 5, in progress)** — the "开始比赛" button in the
   Tournament Lobby now navigates straight to a new Draft Arena page
-  instead of showing a placeholder toast. Only the page's top bar is
-  built so far (Tournament Name + Current Draft Status, currently
-  always showing "队长顺位阶段"), plus a temporary "返回锦标赛大厅"
-  dev button. No captain assignment, team assignment, draft order
-  execution, player selection, undo, or end-draft logic exists yet.
-  See Section 23.
+  instead of showing a placeholder toast. Only the page's Top Bar is
+  built so far: a full dashboard-style section combining a temporary
+  "返回锦标赛大厅" dev button, a disabled placeholder undo button,
+  Tournament Name, a static "队长顺位阶段" stage pill, placeholder
+  round-progress and current-turn text, a horizontally-scrolling Draft
+  Order strip (real saved/default order, Chinese round labels), a
+  placeholder "进入最终对阵" button, and an inert progress-bar track.
+  No captain assignment, team assignment, draft order execution,
+  player selection, undo, or end-draft logic exists yet. See Section
+  23.
 
 ## 3. Current Limitations
 
@@ -1150,7 +1154,8 @@ counts automatically with no extra wiring, exactly like before.
 Per Section 6/7's development rules, the Draft System is being built
 one small part at a time, each approved before the next starts. This
 section will grow with each part; it currently covers only the first
-part, the Draft Arena Top Bar.
+part, the Draft Arena Top Bar (redesigned once already — see "Top Bar
+redesign" below).
 
 ### Draft Arena page and navigation
 
@@ -1165,32 +1170,51 @@ etc.).
 
 ### Draft Arena Top Bar (this part)
 
-The only content built so far. A header bar at the top of the page
-shows two pieces of information side by side (stacked on mobile):
+The only content built so far, but it is a full dashboard-style
+section, not just a page title — everything important about the draft
+is visible at a glance in one bar:
 
-- **Tournament Name** — read via `fetchTournamentSettings()`
-  (Section 16, Tournament Settings), the same singleton-row data the
-  Tournament Settings dialog loads. Read-only here; the Draft Arena
-  never writes to `tournament_settings`.
-- **Current Draft Status** — for this part, hardcoded to always show
-  "队长顺位阶段". This is a static placeholder: no captain, team, or
-  turn logic exists yet. The layout is intentionally already sized and
-  styled for the eventual dynamic text (e.g. "当前轮到 一号队 队长
-  LongDD 选择队员"), so a future part only needs to swap in the real
-  value — this area does not need to be redesigned when the draft
-  order execution part lands.
+- **Left area (temporary dev controls)** — "返回锦标赛大厅" (same
+  hash-reset-to-`lobby` button as before, just relocated/restyled) and
+  a disabled "撤销上一次选择" placeholder button (no undo logic exists
+  yet, so it's rendered disabled rather than clickable-but-fake).
+- **Center area** — stacked top to bottom: Tournament Name (small,
+  read via `fetchTournamentSettings()`, Section 16), a stage pill
+  hardcoded to "队长顺位阶段", a placeholder round-progress line
+  ("第1轮，共N轮" — N is the real `draftRoundCount(playersPerTeam)`
+  from settings, only the "第1轮" part is a static placeholder), and a
+  large placeholder current-turn line ("当前轮到 一号队 队长
+  LongDD") sized/styled for the eventual dynamic text so it won't need
+  a redesign later.
+- **Draft Order strip** — part of the Top Bar itself (not a separate
+  section below it), one horizontal, horizontally-scrollable row of
+  all rounds using Chinese labels (第一轮/第二轮/…, via the local
+  `roundLabel()` helper, not "R1/R2"). Populated from the admin's
+  actually-saved `draftOrder` (Section 16) when present, falling back
+  to `generateSnakeDraft()` otherwise — this reuses existing settings
+  data purely for realistic display, no new draft-order logic.
+- **Right area** — a single placeholder "进入最终对阵" button. Clicking
+  it only shows a toast ("该功能将在后续阶段开放，敬请期待"); no
+  backend logic is wired up.
+- **Bottom area** — an inert, empty progress-bar track reserved for a
+  future real draft-progress visualization.
 
-Below the top bar is an empty placeholder section reserved for future
+Below the Top Bar is an empty placeholder section reserved for future
 Draft System parts (captain assignment, team assignment, player
 selection, etc.) — this keeps the page's shell (full-viewport desktop
 app frame, same `lg:h-screen` pattern as Section 17) already in place
 so later parts extend this page rather than redesigning it.
 
-### Temporary return button
+### Top Bar redesign (layout reference)
 
-A small, deliberately low-key "返回锦标赛大厅（开发用）" button sits
-below the main content, styled as an out-of-the-way dev convenience
-(dashed border, muted color) rather than a permanent nav element. It
-just sets the hash back to `lobby`. This will be removed once the
-Draft System has real navigation/exit flows; do not treat it as a
-permanent feature or extend it.
+The first version of the Top Bar (Tournament Name + status side by
+side, temporary return button at the page bottom) was replaced with
+the fuller dashboard layout described above, modeled on a reference
+screenshot for layout only — colors/artwork were not copied; it still
+uses the project's dark theme + neon teal glow (Section 12/17)
+throughout. The 3-column (left controls / center status / right
+action) row stacks to a single column on narrow screens, and the
+draft-order strip scrolls horizontally rather than wrapping, so this
+still holds up at both the 1920×953 desktop target (Section 13) and
+on mobile.
+
