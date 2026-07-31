@@ -134,18 +134,18 @@ Registration, or the Admin Dashboard.
   every round contains each team number exactly once. This only
   configures the order — the Draft System itself, which will read and
   follow it, is a future phase. See Section 16, Draft Order Settings.
-- **Draft Arena (Phase 5, in progress)** — the "开始比赛" button in the
-  Tournament Lobby now navigates straight to a new Draft Arena page
-  instead of showing a placeholder toast. Only the page's Top Bar is
-  built so far: a full dashboard-style section combining a temporary
-  "返回锦标赛大厅" dev button, a disabled placeholder undo button,
-  Tournament Name, a static "队长顺位阶段" stage pill, placeholder
-  round-progress and current-turn text, a horizontally-scrolling Draft
-  Order strip (real saved/default order, Chinese round labels), a
-  placeholder "进入最终对阵" button, and an inert progress-bar track.
-  No captain assignment, team assignment, draft order execution,
-  player selection, undo, or end-draft logic exists yet. See Section
-  23.
+- **Draft Arena (Phase 5 — UI Completed)** — the "开始比赛" button in
+  the Tournament Lobby navigates straight to the Draft Arena page. The
+  full drafting UI is now in place and working end-to-end in local
+  state: captain-candidate assignment (click candidate → click empty
+  team card, with a flying "card slide" assignment animation), a
+  locked custom snake-order teammate draft across 4 rounds, a live
+  8-team grid, a full pick-history undo stack, and a pick-by-pick
+  draft sequence strip. Its back button returns to the Tournament
+  Lobby. Captain/player pools are still empty placeholders (no real
+  accounts/roster wired in), and nothing is persisted or synced across
+  clients yet — real-time data synchronization is the next planned
+  phase. See Section 23.
 
 ## 3. Current Limitations
 
@@ -381,7 +381,7 @@ In intended development order:
 2. Admin Dashboard — **done**
 3. Backend Foundation — **done** (see Section 15)
 4. Tournament Lobby — **done** (see Section 16)
-5. Draft System — **in progress, one part at a time** (see Section 23)
+5. Draft System — **UI completed, real-time sync pending** (see Section 23)
 6. Spectator Page
 
 **Phase 3 – Backend Foundation** is not about building backend
@@ -1149,72 +1149,89 @@ list via `useMemo`, so editing a user's 身份 (tournament role) --
 whether via `EditUserModal` or any future path -- recomputes these
 counts automatically with no extra wiring, exactly like before.
 
-## 23. Draft System (Phase 5, in progress)
+## 23. Draft System UI Completed (Phase 5)
 
-Per Section 6/7's development rules, the Draft System is being built
-one small part at a time, each approved before the next starts. This
-section will grow with each part; it currently covers only the first
-part, the Draft Arena Top Bar (redesigned once already — see "Top Bar
-redesign" below).
+Phase 5 – Draft System UI Completed. This phase brought in the
+finished DraftArena UI — built and animated externally, as its own
+self-contained module — and integrated it into the main project. Per
+Section 6/7's development rules, this replaces the earlier
+in-progress "Top Bar only" version (previously documented in this
+same section); this is now a full, working Draft Arena screen, not a
+placeholder shell. Real-time sync / backend integration is a separate
+future phase and is **not** part of this entry (see "What's still
+outside this phase" below).
 
-### Draft Arena page and navigation
+### What DraftArena.jsx now contains
 
-`src/components/DraftArena.jsx` is a brand-new page, routed via the
-same hash-based scheme `App.jsx` already uses for `#admin`/`#lobby`
-(`#draft`). The Tournament Lobby's "开始比赛" button (Section 16,
-formerly a placeholder) now sets `window.location.hash = 'draft'`
-instead of showing a toast — this wiring is itself still temporary
-and not the real Draft System trigger logic; a later Phase 5 part will
-decide what actually starts a draft (permissions, preconditions,
-etc.).
+`src/components/DraftArena.jsx` was replaced wholesale with the
+completed implementation. Its drafting logic, UI, animations, and
+team-assignment behavior were preserved exactly as delivered — this
+integration only wired one navigation prop through (see "Integration
+changes" below). At a high level, the file now implements:
 
-### Draft Arena Top Bar (this part)
+- **Captain-assignment phase** — click a captain candidate, then click
+  an empty team card to assign them; a "card slide" flight animation
+  (Web Animations API, a ghost clone flown from source card to
+  destination slot) plays on every assignment.
+- **Snake-order teammate draft** — once all 8 captains are assigned
+  and the 4 round orders validate, "锁定并开始队员选秀" locks the
+  round order and starts a custom snake draft (`computeDraftMeta`
+  derives the pick sequence, active team, and round label from
+  `tournament.roundOrders`). Clicking a pool player commits the pick
+  to whichever team is on the clock, with the same flight animation.
+- **Undo** — a full history stack (`draftHistory`) snapshots team/pool
+  state before every pick; "撤销上一次选择" pops the last snapshot,
+  works across both the captain and teammate phases, and shows a
+  count badge.
+- **Live team grid** — all 8 `TeamCard`s (captain + 4 roster slots
+  each) re-render from `tournament.teams` in real time as picks land,
+  including an animated "选人中" indicator on the team currently on
+  the clock.
+- **Draft sequence strip** — a full pick-by-pick strip (`R{n}` + team
+  index chips) showing past/current/upcoming picks once the teammate
+  phase starts.
+- Its own self-contained visual system (`GlobalStyle`, the Orbitron
+  display font, `PanelFrame`/`PrimaryButton`/`PlayerStatCard`/etc.,
+  and the mint-toned player stat cards) — this is intentionally
+  separate from the rest of the app's Tailwind teal-glow dark theme
+  (Section 12/17); it was not restyled to match, per this phase's
+  "do not modify UI" instruction. It still fits inside the app's
+  overall dark shell visually since it renders its own full-bleed dark
+  radial background.
 
-The only content built so far, but it is a full dashboard-style
-section, not just a page title — everything important about the draft
-is visible at a glance in one bar:
+### Integration changes (this is genuinely everything that changed)
 
-- **Left area (temporary dev controls)** — "返回锦标赛大厅" (same
-  hash-reset-to-`lobby` button as before, just relocated/restyled) and
-  a disabled "撤销上一次选择" placeholder button (no undo logic exists
-  yet, so it's rendered disabled rather than clickable-but-fake).
-- **Center area** — stacked top to bottom: Tournament Name (small,
-  read via `fetchTournamentSettings()`, Section 16), a stage pill
-  hardcoded to "队长顺位阶段", a placeholder round-progress line
-  ("第1轮，共N轮" — N is the real `draftRoundCount(playersPerTeam)`
-  from settings, only the "第1轮" part is a static placeholder), and a
-  large placeholder current-turn line ("当前轮到 一号队 队长
-  LongDD") sized/styled for the eventual dynamic text so it won't need
-  a redesign later.
-- **Draft Order strip** — part of the Top Bar itself (not a separate
-  section below it), one horizontal, horizontally-scrollable row of
-  all rounds using Chinese labels (第一轮/第二轮/…, via the local
-  `roundLabel()` helper, not "R1/R2"). Populated from the admin's
-  actually-saved `draftOrder` (Section 16) when present, falling back
-  to `generateSnakeDraft()` otherwise — this reuses existing settings
-  data purely for realistic display, no new draft-order logic.
-- **Right area** — a single placeholder "进入最终对阵" button. Clicking
-  it only shows a toast ("该功能将在后续阶段开放，敬请期待"); no
-  backend logic is wired up.
-- **Bottom area** — an inert, empty progress-bar track reserved for a
-  future real draft-progress visualization.
+1. **Navigation wiring** — the default export (`DraftArenaPage`) now
+   accepts an `onExitToLobby` prop and passes it through as the inner
+   `DraftArena`'s `onBack` (previously a no-op `() => {}`, since the
+   file was built and tested as a standalone page). `App.jsx` already
+   passed a prop named `onExitToLobby` to `<DraftArena />` from the
+   earlier Top-Bar-only version, so no other file needed to change —
+   the existing `#draft` hash route (Section 16/22's routing pattern)
+   and the Tournament Lobby's "开始比赛" → `hash = 'draft'` wiring
+   both continue to work unmodified.
+2. Nothing else. The captain-assignment logic, snake-draft logic,
+   undo/history stack, flight animations, and every presentational
+   component are byte-for-byte what was delivered.
 
-Below the Top Bar is an empty placeholder section reserved for future
-Draft System parts (captain assignment, team assignment, player
-selection, etc.) — this keeps the page's shell (full-viewport desktop
-app frame, same `lg:h-screen` pattern as Section 17) already in place
-so later parts extend this page rather than redesigning it.
+Clicking the Draft Arena's own back button (labelled "← 返回选手管理"
+in the delivered UI — left as-is per "do not modify UI") now
+navigates back to the Tournament Lobby, same as the temporary dev
+button in the earlier version.
 
-### Top Bar redesign (layout reference)
+### What's still outside this phase
 
-The first version of the Top Bar (Tournament Name + status side by
-side, temporary return button at the page bottom) was replaced with
-the fuller dashboard layout described above, modeled on a reference
-screenshot for layout only — colors/artwork were not copied; it still
-uses the project's dark theme + neon teal glow (Section 12/17)
-throughout. The 3-column (left controls / center status / right
-action) row stacks to a single column on narrow screens, and the
-draft-order strip scrolls horizontally rather than wrapping, so this
-still holds up at both the 1920×953 desktop target (Section 13) and
-on mobile.
+- **Real accounts / roster data.** `seedTournament()` still seeds an
+  empty `captainCandidates: []` and `pool: []` (8 team panels exist as
+  real structure, just with nothing assigned) — this was intentional
+  in the delivered file and is explicitly left for the next phase.
+- **Real-time data synchronization / backend integration** — picks,
+  undo, and captain assignment currently only exist in local React
+  state (`useState` in `DraftArenaPage`); nothing is persisted to
+  Supabase or shared between clients yet. This is the next planned
+  phase and was not started here.
+- The 4 stat values on every player card (胜率/冠军/擅长位置/天梯分)
+  remain deterministic placeholders derived from the player's id, not
+  real data — called out as such in the delivered file's own comments.
+
 
