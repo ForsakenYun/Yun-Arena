@@ -1441,6 +1441,83 @@ did) on mount and again whenever that dialog saves — needed so both
 latest saved settings, without adding `tournament_settings` to the
 Realtime publication (still deliberately not on it, per Section 16).
 
+## 26. Bug Fixes: 清空参赛名单 Failure & Draft Card Reveal Timing
+
+Two fixes, unrelated to each other, both scoped to exactly the bug
+reported.
+
+### 清空参赛名单 always failing
+
+Symptom: clicking 清空参赛名单 always showed the generic
+"清空参赛名单失败" toast.
+
+Investigation: `clear_tournament(p_token)` itself was verified
+correct by actually running the full, current `supabase/schema.sql`
+against a real local Postgres instance end-to-end (every `CREATE
+FUNCTION`, the full `GRANT`, all RLS policies) and then exercising the
+function directly — logging in as the seeded admin, joining
+participants, calling `clear_tournament` with that session, and
+confirming the participant count dropped to 0 with no error. The
+function, its grant, and every other statement in the file are
+correct as written; this ruled out a logic bug in `clear_tournament`
+or a mistake introduced by the Phase 5 additions (`is_temp`,
+`create_temp_participants`, `remove_temp_participants`) sharing the
+same file.
+
+Root cause: PostgREST (Supabase's REST/RPC layer) caches the database
+schema, and doesn't always notice DDL applied by pasting a large
+multi-statement file into the SQL Editor the way it does for changes
+applied through the Supabase CLI's migration flow (which triggers a
+reload automatically). This is a well-known class of bug where an RPC
+function is provably correct at the database level but still fails
+through the app with a generic error, because the layer between them
+is looking at a stale schema snapshot.
+
+Fix, at the root rather than a workaround: `supabase/schema.sql` now
+ends with `notify pgrst, 'reload schema';`, which is the documented
+way to force PostgREST to pick up whatever this file just changed.
+This isn't specific to `clear_tournament` — it protects every current
+and future function/table/column this file touches from the same
+class of bug after any future re-run, not just this one symptom.
+**Action needed:** re-run the updated `schema.sql` (idempotent, safe
+against the existing database). If any RPC still misbehaves
+immediately afterward, use Supabase Dashboard → Project Settings →
+Data API → "Reload schema" as a manual fallback (or restart the
+project) — the `NOTIFY` may not reach a PostgREST instance that isn't
+listening for any reason specific to a given project's setup.
+
+### Draft card appearing before the flight animation lands
+
+Symptom (Draft Arena, captain/teammate assignment): the assigned
+card briefly flashed inside the Team panel slot right after clicking,
+disappeared while the flying "card slide" animation was still in
+flight, then reappeared once it landed — instead of staying invisible
+in the panel for the entire flight and appearing exactly once, on
+landing.
+
+Root cause: the panel slot's wrapper `<div>` (`data-slot-key`) is a
+persistent DOM node across the assignment — React doesn't remount it,
+it just swaps its content (placeholder → real card) and its `opacity`
+(1 → 0) in the same commit as the assignment. That div had `transition:
+"opacity .15s ease"` on it. A same-commit style change on a node that
+already existed is exactly the situation a CSS transition animates:
+the browser interpolated `opacity` from 1 down to 0 over 150ms *of the
+new (real card) content*, i.e. a visible fade-out of the just-assigned
+card — the "briefly appears" the user saw — followed by the reverse
+150ms fade-in when the flight lands and the slot is revealed again.
+
+Fix: removed `transition: "opacity .15s ease"` from both the captain
+slot and the roster slot styles in `TeamCard` (`DraftArena.jsx`) —
+opacity now snaps instantly between 1 and 0, so the real card is never
+partially visible while hidden. The existing "landing" visual (the
+`dfSettle` scale-pop keyframe, added via the `df-settle` class exactly
+when the flight's `settle()` fires) still plays unchanged, so the
+reveal still reads as an intentional animated arrival — it just no
+longer double-exposes the card via an unrelated opacity fade first.
+Nothing about the flight itself (the ghost clone, the Web Animations
+API tween, `df-hit`, timing/duration) was touched, per "keep the
+current animation style, only fix the reveal timing."
+
 
 
 

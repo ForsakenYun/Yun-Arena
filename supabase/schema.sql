@@ -1269,6 +1269,27 @@ insert into public.tournament_settings (id)
 values (true)
 on conflict (id) do nothing;
 
+-- ----------------------------------------------------------------------------
+-- 10. Force PostgREST to pick up this schema immediately
+-- ----------------------------------------------------------------------------
+--
+-- Root-cause fix for a class of bug where a function/column works
+-- perfectly when called directly in SQL (as every function in this file
+-- has been) but still fails through the app with a generic error -- e.g.
+-- "清空参赛名单失败" for clear_tournament despite the function itself
+-- being correct. PostgREST (Supabase's REST/RPC layer) caches the
+-- database schema and, on some project setups/timings, does not always
+-- notice DDL run through the SQL Editor (as opposed to the Supabase CLI's
+-- migration flow, which triggers a reload automatically). This NOTIFY is
+-- the documented way to force an immediate reload after running this file
+-- -- harmless and cheap to send every time, including on a schema that
+-- didn't actually change. If a function/column still behaves oddly
+-- through the app immediately after running this file, use Supabase
+-- Dashboard -> Project Settings -> Data API -> "Reload schema" as a
+-- manual fallback (or restart the project), in case this NOTIFY didn't
+-- reach a running PostgREST instance for any reason.
+notify pgrst, 'reload schema';
+
 -- ============================================================================
 -- End of schema. After running this, the "admin" / "111" Developer account
 -- exists and can log in immediately.

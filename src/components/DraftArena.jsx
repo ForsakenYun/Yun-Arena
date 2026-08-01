@@ -202,7 +202,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
         </div>
       ) : (
         <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg bg-black/40 border border-white/5"
-          data-slot-key={`cap:${teamIdx}`} style={{ opacity: captainHidden ? 0 : 1, transition: "opacity .15s ease" }}>
+          data-slot-key={`cap:${teamIdx}`} style={{ opacity: captainHidden ? 0 : 1 }}>
           {team.captain ? (
             <>
               <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={34} glow />
@@ -226,7 +226,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
           return (
             <div key={i} data-slot-key={slotKey}
               className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] ${slot ? "bg-black/30" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
-              style={{ ...(slot ? { borderColor: TEAL_DIM } : {}), opacity: slotHidden ? 0 : 1, transition: "opacity .15s ease" }}>
+              style={{ ...(slot ? { borderColor: TEAL_DIM } : {}), opacity: slotHidden ? 0 : 1 }}>
               <span className="w-6 h-5 flex items-center justify-center rounded text-[9px] font-bold flex-shrink-0"
                 style={{ background: slot ? `${TEAL}22` : "transparent", color: slot ? TEAL : "#3a4a4a", border: `1px solid ${slot ? TEAL+"55" : "#1c2b2e"}` }}>
                 {POSITIONS[i % 5]?.id ?? "?"}
