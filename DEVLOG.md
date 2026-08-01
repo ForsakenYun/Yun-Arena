@@ -1758,6 +1758,72 @@ very first render, through every phase of the draft, regardless of
 whether a Captain has been assigned, how many picks are in the undo
 history, or which phase-specific text is showing.
 
+## 32. DraftArena Layout Refactor: Full Browser Layout Standard (Phase 5)
+
+Pure layout refactor. The Draft Arena page now follows the same Full
+Browser Layout Standard (Section 12) already used by the Admin
+Dashboard and Tournament Lobby. Draft logic, draft order, animations,
+synchronization, the database, team-assignment logic, and every other
+piece of existing functionality are untouched — this only changes how
+the page's own containers are arranged and sized.
+
+**What was wrong before.** `DraftArena`'s root element was
+`max-w-[1700px] mx-auto px-4 py-6` — a fixed-max-width, centered,
+plain-document-flow column, unlike every other main page. As more
+teams/candidates/pool players rendered, the whole browser page grew
+taller and the *browser itself* became the scrolling area, which is
+exactly what Section 12's standard forbids for main pages.
+
+**What changed.** Both `DraftArenaPage` (the outer shell,
+`DraftArena.jsx`'s default export) and `DraftArena` (the inner
+component) now follow the identical pattern already established for
+`TournamentLobby`/`AdminDashboard` in Section 17:
+
+- The outer shell is `min-h-screen w-full ... flex flex-col
+  lg:h-screen lg:overflow-hidden`, same as the other two pages.
+- The inner content wrapper dropped `max-w-[1700px] mx-auto` entirely
+  in favor of `w-full` with only edge padding (`px-4 sm:px-5
+  lg:px-6`) — the page now genuinely fills the browser width on any
+  monitor, including ultrawide, instead of stopping at a fixed pixel
+  ceiling.
+- The header `PanelFrame` (already a fixed `HEADER_H = 160`px per
+  Section 30) is `shrink-0`, exactly like the header/stat rows on the
+  other two pages.
+- The team grid and the candidate/draft pool — previously two
+  full-width sections stacked vertically, each contributing to page
+  height — are now **side-by-side columns** (`lg:flex-row`) sharing
+  one `flex-1 lg:min-h-0` row: the team grid takes the remaining
+  width on the left, the pool panel is a fixed `lg:w-[380px]
+  xl:w-[430px]` on the right. This is the "make better use of
+  horizontal space instead of relying on vertical page growth" part
+  of the ask, and mirrors why Section 17 put the Lobby's stat cards
+  and join/leave card in one row instead of stacking them.
+- Each column scrolls **internally** — the team grid's card wrapper
+  and the pool panel's card list are both `flex-1 lg:min-h-0
+  overflow-y-auto` — instead of the browser window scrolling. This
+  replaces the old pool-only `max-h-[80vh] overflow-y-auto` (viewport-
+  relative, and only applied to the teammate-phase pool) with the same
+  "fill remaining flex space, scroll within it" pattern used
+  everywhere else, applied consistently to both the team grid and
+  both pool states (captain-candidate pool and teammate draft pool).
+- Below the `lg` breakpoint, none of the height-constraining classes
+  apply (same convention as Section 17), so mobile falls back to a
+  normal stacked column with ordinary full-page scroll.
+- No sidebar was added — navigation (the "← 返回选手管理" back button)
+  stays exactly where it was, inside the existing fixed-height header,
+  per the standard's "navigation stays in the top header" rule.
+
+**What did not change.** `TeamCard`, `PlayerStatCard`,
+`DraftSequenceStrip`, `PanelFrame`, `Avatar`/`SquareAvatar`, the card-
+slide flight animation, the undo/history stack, `computeDraftMeta`,
+`seedTournament`, and every prop/handler these components take are
+byte-for-byte the same as before this phase — only the outer
+container `div`s these pieces render inside were rearranged. The
+Draft Arena's own self-contained visual system (Orbitron font, mint
+player cards, the dark radial background) is likewise unchanged, per
+the standing "do not restyle to match the rest of the app" note in
+Section 23.
+
 
 
 

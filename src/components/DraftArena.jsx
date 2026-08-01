@@ -624,11 +624,11 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
     setDraftHistory((h) => h.slice(0, -1));
   };
 
-  if (teams.length === 0) return <div className="flex items-center justify-center h-[60vh] text-white/40">加载中…</div>;
+  if (teams.length === 0) return <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>;
 
   return (
-    <div className="max-w-[1700px] mx-auto px-4 py-6">
-      <PanelFrame className="p-4 mb-4" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
+    <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-4 lg:overflow-hidden">
+      <PanelFrame className="p-4 shrink-0" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="flex flex-col gap-2 flex-shrink-0">
             <PrimaryButton variant="ghost" onClick={onBack}>← 返回选手管理</PrimaryButton>
@@ -677,61 +677,82 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
         </div>
       </PanelFrame>
 
-      {draftPhase === "teammate" && (
-        <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
-      )}
-
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>全部{teamCount}支战队</h2>
-        {draftPhase === "captain" && selectedCaptain && (
-          <span className="text-[11px] italic" style={{ color: "#22c55e" }}>—— 点击一张空战队卡分配给"{selectedCaptain.name}"</span>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-3 mb-4">
-        {teams.map((team, i) => (
-          <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
-            assignable={draftPhase === "captain" && !!selectedCaptain}
-            onAssignCaptain={handleTeamSlotClick}
-            hiddenKeys={hiddenKeys} />
-        ))}
-      </div>
-
-      {draftPhase === "captain" && (
-        <PanelFrame className="p-4 mb-4">
-          <h2 className="font-display text-sm font-bold tracking-widest mb-3" style={{ color: "#22c55e" }}>队长候选池（{captainCandidates.length}人未分配）</h2>
-          <div className="flex flex-wrap gap-x-4 gap-y-4">
-            {captainCandidates.map((c) => (
-              <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={selectedCaptain?.id === c.id} badge="队长" />
-            ))}
-            {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center w-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
-          </div>
-          {allCaptainsAssigned && (
-            <button onClick={startTeammateDraft} disabled={!roundOrderValid.every(Boolean)}
-              className="w-full mt-4 py-3 rounded-xl font-extrabold tracking-widest text-sm uppercase border transition-all"
-              style={{ background: roundOrderValid.every(Boolean) ? `linear-gradient(to bottom,${TEAL},#00c2a8)` : "rgba(0,0,0,0.3)", color: roundOrderValid.every(Boolean) ? "#000" : "rgba(255,255,255,0.2)", borderColor: roundOrderValid.every(Boolean) ? TEAL : "rgba(255,255,255,0.08)", boxShadow: roundOrderValid.every(Boolean) ? "0 0 22px rgba(0,245,212,0.65)" : "none", cursor: roundOrderValid.every(Boolean) ? "pointer" : "not-allowed" }}>
-              {roundOrderValid.every(Boolean) ? "🚀 锁定并开始队员选秀 →" : "⚠ 请先修正轮次顺序"}
-            </button>
+      {/* Team grid (left) + candidate/draft pool (right) share the rest of
+          the browser height on desktop (lg:flex-row); each side scrolls
+          internally (overflow-y-auto on its own inner content area) instead
+          of the whole page growing taller, per the Full Browser Layout
+          Standard. Below lg, this falls back to a plain stacked column with
+          normal page scroll, same as the rest of the project's main pages. */}
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-4 lg:overflow-hidden">
+        <div className="flex flex-col gap-3 flex-1 lg:min-h-0 lg:overflow-hidden">
+          {draftPhase === "teammate" && (
+            <div className="shrink-0">
+              <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
+            </div>
           )}
-        </PanelFrame>
-      )}
 
-      {draftPhase === "teammate" && (
-        <PanelFrame className="p-4 mb-4">
-          <h2 className="font-display text-sm font-bold tracking-widest mb-3" style={{ color: TEAL }}>待选选手（{pool?.length ?? 0}）</h2>
-          {pool && pool.length > 0 ? (
-            <div className="flex flex-wrap gap-x-4 gap-y-4 max-h-[80vh] overflow-y-auto pr-1">
-              {pool.map((p) => (
-                <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
+          <div className="shrink-0 flex items-center gap-2">
+            <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>全部{teamCount}支战队</h2>
+            {draftPhase === "captain" && selectedCaptain && (
+              <span className="text-[11px] italic" style={{ color: "#22c55e" }}>—— 点击一张空战队卡分配给"{selectedCaptain.name}"</span>
+            )}
+          </div>
+
+          <div className="flex-1 lg:min-h-0 overflow-y-auto pr-1">
+            <div className="flex flex-wrap gap-3 pb-1">
+              {teams.map((team, i) => (
+                <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
+                  assignable={draftPhase === "captain" && !!selectedCaptain}
+                  onAssignCaptain={handleTeamSlotClick}
+                  hiddenKeys={hiddenKeys} />
               ))}
             </div>
-          ) : (
-            <div className="flex flex-col items-center py-10 text-white/30">
-              <div className="text-4xl mb-2">🏆</div>
-              <div className="font-display text-sm tracking-widest">选秀完成</div>
-            </div>
+          </div>
+        </div>
+
+        <div className="w-full lg:w-[380px] xl:w-[430px] flex-shrink-0 flex flex-col lg:min-h-0 lg:overflow-hidden">
+          {draftPhase === "captain" && (
+            <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
+              <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: "#22c55e" }}>队长候选池（{captainCandidates.length}人未分配）</h2>
+              <div className="flex-1 lg:min-h-0 overflow-y-auto pr-1">
+                <div className="flex flex-wrap gap-x-4 gap-y-4">
+                  {captainCandidates.map((c) => (
+                    <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={selectedCaptain?.id === c.id} badge="队长" />
+                  ))}
+                  {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center w-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
+                </div>
+              </div>
+              {allCaptainsAssigned && (
+                <button onClick={startTeammateDraft} disabled={!roundOrderValid.every(Boolean)}
+                  className="w-full mt-4 py-3 rounded-xl font-extrabold tracking-widest text-sm uppercase border transition-all shrink-0"
+                  style={{ background: roundOrderValid.every(Boolean) ? `linear-gradient(to bottom,${TEAL},#00c2a8)` : "rgba(0,0,0,0.3)", color: roundOrderValid.every(Boolean) ? "#000" : "rgba(255,255,255,0.2)", borderColor: roundOrderValid.every(Boolean) ? TEAL : "rgba(255,255,255,0.08)", boxShadow: roundOrderValid.every(Boolean) ? "0 0 22px rgba(0,245,212,0.65)" : "none", cursor: roundOrderValid.every(Boolean) ? "pointer" : "not-allowed" }}>
+                  {roundOrderValid.every(Boolean) ? "🚀 锁定并开始队员选秀 →" : "⚠ 请先修正轮次顺序"}
+                </button>
+              )}
+            </PanelFrame>
           )}
-        </PanelFrame>
-      )}
+
+          {draftPhase === "teammate" && (
+            <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
+              <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: TEAL }}>待选选手（{pool?.length ?? 0}）</h2>
+              {pool && pool.length > 0 ? (
+                <div className="flex-1 lg:min-h-0 overflow-y-auto pr-1">
+                  <div className="flex flex-wrap gap-x-4 gap-y-4">
+                    {pool.map((p) => (
+                      <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center py-10 text-white/30">
+                  <div className="text-4xl mb-2">🏆</div>
+                  <div className="font-display text-sm tracking-widest">选秀完成</div>
+                </div>
+              )}
+            </PanelFrame>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -842,7 +863,7 @@ export default function DraftArenaPage({ onExitToLobby }) {
   }, [])
 
   return (
-    <div className="min-h-screen w-full text-white font-sans" style={{ background: "radial-gradient(ellipse at top, #0b1716 0%, #050807 55%, #020303 100%)" }}>
+    <div className="min-h-screen w-full text-white font-sans flex flex-col lg:h-screen lg:overflow-hidden" style={{ background: "radial-gradient(ellipse at top, #0b1716 0%, #050807 55%, #020303 100%)" }}>
       <GlobalStyle />
       <DraftArena
         tournament={tournament}
