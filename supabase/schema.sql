@@ -93,6 +93,15 @@ comment on table public.accounts is
 alter table public.accounts
   add column if not exists gender text check (gender in ('male', 'female'));
 
+-- Temporary Testing Buttons (Phase 5 -- Tournament Participant
+-- Synchronization): marks accounts created by create_temp_participants()
+-- so remove_temp_participants() can find and delete exactly those, and
+-- only those, in one shot. false for every real account (registration
+-- never sets this); never surfaced in any UI beyond the two dev buttons
+-- that write/read it.
+alter table public.accounts
+  add column if not exists is_temp boolean not null default false;
+
 create table if not exists public.credentials (
   account_id     uuid primary key references public.accounts(id) on delete cascade,
   password_hash  text not null
@@ -869,6 +878,93 @@ begin
 end;
 $$;
 
+-- Temporary Testing Buttons (Phase 5 -- Tournament Participant
+-- Synchronization). Admin/Developer-only. Creates p_captain_count real
+-- accounts with tournament_role='captain' and p_player_count with
+-- tournament_role='player' -- gender alternated male/female within each
+-- group -- and immediately joins every one of them to the tournament
+-- (a real tournament_participants row each, exactly like clicking
+-- "参加比赛"), so they show up through the exact same fetchLobby() query
+-- and Realtime subscription as any other participant. Each gets a random
+-- unique username (never shown anywhere) and the same fixed dev password
+-- ('temp123', bcrypt-hashed like every other account) so they're usable
+-- for manual login-based testing too, not just for populating the Draft
+-- Arena's pools. Marked is_temp = true so remove_temp_participants() can
+-- clean up exactly these accounts later. Bypasses the invite-code gate on
+-- purpose -- this is a developer/testing convenience, not a public
+-- registration path.
+create or replace function public.create_temp_participants(
+  p_token         uuid,
+  p_captain_count integer,
+  p_player_count  integer
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_i      int;
+  v_id     uuid;
+  v_gender text;
+begin
+  perform public._require_role(p_token, array['admin', 'developer']);
+
+  if coalesce(p_captain_count, 0) < 0 or coalesce(p_player_count, 0) < 0 then
+    raise exception 'invalid_temp_participant_count' using errcode = '22000';
+  end if;
+
+  for v_i in 1..coalesce(p_captain_count, 0) loop
+    v_gender := case when v_i % 2 = 0 then 'male' else 'female' end;
+
+    insert into public.accounts (username, display_name, tournament_role, gender, permission_role, is_temp)
+    values ('temp_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12), '临时队长' || v_i, 'captain', v_gender, 'user', true)
+    returning id into v_id;
+
+    insert into public.credentials (account_id, password_hash)
+    values (v_id, crypt('temp123', gen_salt('bf')));
+
+    insert into public.tournament_participants (account_id)
+    values (v_id)
+    on conflict (account_id) do nothing;
+  end loop;
+
+  for v_i in 1..coalesce(p_player_count, 0) loop
+    v_gender := case when v_i % 2 = 0 then 'male' else 'female' end;
+
+    insert into public.accounts (username, display_name, tournament_role, gender, permission_role, is_temp)
+    values ('temp_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 12), '临时队员' || v_i, 'player', v_gender, 'user', true)
+    returning id into v_id;
+
+    insert into public.credentials (account_id, password_hash)
+    values (v_id, crypt('temp123', gen_salt('bf')));
+
+    insert into public.tournament_participants (account_id)
+    values (v_id)
+    on conflict (account_id) do nothing;
+  end loop;
+end;
+$$;
+
+-- Temporary Testing Buttons: the matching cleanup. Admin/Developer-only.
+-- Deletes every account ever created by create_temp_participants() in one
+-- statement -- credentials, tournament_participants, and presence rows
+-- for those accounts all disappear with it via their existing `on delete
+-- cascade` foreign keys, so nothing extra needs to be cleaned up by hand.
+-- Real accounts (is_temp = false, the default for every account created
+-- through register_account) are never touched.
+create or replace function public.remove_temp_participants(p_token uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+begin
+  perform public._require_role(p_token, array['admin', 'developer']);
+  delete from public.accounts where is_temp = true;
+end;
+$$;
+
 -- Admin/Developer-only: Tournament Settings (replaces the cancelled
 -- standalone Tournament Configuration phase -- this is the entire feature,
 -- folded into the Tournament Lobby). Always writes the same singleton row
@@ -1053,6 +1149,8 @@ grant execute on function
   public.remove_participant(uuid, uuid),
   public.roll_tournament_numbers(uuid),
   public.clear_tournament(uuid),
+  public.create_temp_participants(uuid, integer, integer),
+  public.remove_temp_participants(uuid),
   public.save_tournament_settings(uuid, text, integer, integer, jsonb),
   public.list_invite_codes(uuid),
   public.create_invite_code(uuid, integer, timestamptz),

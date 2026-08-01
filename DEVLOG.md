@@ -134,24 +134,40 @@ Registration, or the Admin Dashboard.
   every round contains each team number exactly once. This only
   configures the order — the Draft System itself, which will read and
   follow it, is a future phase. See Section 16, Draft Order Settings.
-- **Draft Arena (Phase 5 — UI Completed, Tournament Settings synced)**
-  — the "开始比赛" button in the Tournament Lobby navigates straight to
-  the Draft Arena page. The full drafting UI works end-to-end in local
-  state: captain-candidate assignment (click candidate → click empty
-  team card, with a flying "card slide" assignment animation), a
-  locked custom snake-order teammate draft, a live team grid, a full
-  pick-history undo stack, and a pick-by-pick draft sequence strip. Its
-  back button returns to the Tournament Lobby. Tournament Name, Number
-  of Teams, Players per Team, and Draft Order are no longer hardcoded
-  — they're read from the Lobby's Tournament Settings (Section 16) on
+- **Draft Arena (Phase 5 — UI Completed, Settings + Participants
+  synced)** — the "开始比赛" button in the Tournament Lobby validates
+  the joined roster against Tournament Settings (see below), then
+  navigates to the Draft Arena page. The full drafting UI works
+  end-to-end in local state: captain-candidate assignment (click
+  candidate → click empty team card, with a flying "card slide"
+  assignment animation), a locked custom snake-order teammate draft, a
+  live team grid, a full pick-history undo stack, and a pick-by-pick
+  draft sequence strip. Its back button returns to the Tournament
+  Lobby. Tournament Name, Number of Teams, Players per Team, and Draft
+  Order are read from the Lobby's Tournament Settings (Section 16) on
   every visit, so the number of teams/rounds/roster slots and the
-  Tournament Name shown in the Top Bar all automatically match
-  whatever is currently configured (see Section 24). Captain/player
-  pools are still empty placeholders (no real accounts/roster wired
-  in), and nothing about the draft itself is persisted or synced
-  across clients yet, nor are settings changes picked up live while
+  Tournament Name shown in the Top Bar automatically match whatever is
+  currently configured (Section 24); the Captain Pool and Player Pool
+  are read from the Lobby's real joined participants, split by
+  Tournament Role, the same way (Section 25) — no more placeholder
+  pools. Nothing about the draft itself is persisted or synced across
+  clients yet, nor are settings/roster changes picked up live while
   the page is already open — real-time data synchronization is the
-  next planned phase. See Sections 23-24.
+  next planned phase. See Sections 23-25.
+- **开始比赛 validation** — before entering the Draft Arena, the joined
+  roster must exactly match what Tournament Settings require: total
+  participants, captain count (must equal Number of Teams exactly),
+  and player count (Number of Teams × (Players per Team − 1)) are all
+  checked. Any mismatch blocks navigation and shows a breakdown of
+  required vs. current counts with what to fix, instead of starting.
+  See Section 25.
+- **Temporary Testing Buttons (Tournament Lobby)** — Admin/Developer-
+  only "创建临时玩家" / "移除临时玩家" buttons for exercising the Draft
+  System before registration is fully rolled out. Create generates
+  real accounts (real login credentials too) sized to the current
+  Tournament Settings and auto-joins them to the tournament; Remove
+  (behind a confirmation dialog) deletes exactly the accounts Create
+  made, never a real registered account. See Section 25.
 
 ## 3. Current Limitations
 
@@ -387,7 +403,7 @@ In intended development order:
 2. Admin Dashboard — **done**
 3. Backend Foundation — **done** (see Section 15)
 4. Tournament Lobby — **done** (see Section 16)
-5. Draft System — **UI completed; Tournament Settings synced, live/real-time draft sync pending** (see Sections 23-24)
+5. Draft System — **UI completed; Tournament Settings + Participants synced, live/real-time draft sync pending** (see Sections 23-25)
 6. Spectator Page
 
 **Phase 3 – Backend Foundation** is not about building backend
@@ -1318,6 +1334,113 @@ column (small muted text + a thin vertical divider, ahead of the
 one part of the Top Bar's layout touched in this phase, and it adds no
 extra row/height, matching the existing muted-text visual language
 used elsewhere in the bar (e.g. the `text-white/40` sub-labels).
+
+## 25. Tournament Participant Synchronization (Phase 5)
+
+Scope: wire the Draft Arena's Captain Pool / Player Pool to real
+joined Tournament participants, add two temporary dev/testing buttons
+to the Tournament Lobby, and validate 开始比赛 against the current
+Tournament Settings. Draft logic, captain draft, player draft,
+animations, team assignment, and draft flow are all unchanged. Live
+draft-state synchronization between multiple users (picks, undo,
+animations) is a separate, later phase and was **not** started here.
+
+### Captain Pool / Player Pool now come from real joined participants
+
+`DraftArenaPage` (`DraftArena.jsx`) now calls `fetchLobby()` — the
+exact same `tournament_participants` + `accounts` query the Tournament
+Lobby itself renders from (Section 16) — alongside
+`fetchTournamentSettings()`, on every mount. The result is split by
+Tournament Role (`captain`/`player`) into `captainCandidates` and
+`pool`, each mapped to `{ id: accountId, name: displayName, avatarUrl
+}` via a small `toDraftPlayer()` helper. Only accounts with an actual
+`tournament_participants` row ever appear — by construction of
+`fetchLobby()` itself, nobody who hasn't joined the tournament can end
+up in either pool.
+
+This is the same "fetch real shared data on open" pattern already
+used for Tournament Settings (Section 24), deliberately not a literal
+prop hand-off through `App.jsx`/`TournamentLobby.jsx` — the practical
+result (accurate, correctly-sized real participant pools instead of
+the previous always-empty placeholder arrays) is identical, and it
+avoids adding any new coupling between the two pages' navigation.
+Like Tournament Settings, this is fetch-on-open, not live: someone who
+joins or leaves the tournament after the Draft Arena is already open
+won't be reflected until it's re-opened. Real-time draft-state
+synchronization (this and the actual pick/undo/animation state) is
+the next planned phase.
+
+### Temporary Testing Buttons (Tournament Lobby)
+
+Two Admin/Developer-only buttons, styled and positioned alongside the
+existing 随机摇号 / 清空参赛名单 controls:
+
+- **创建临时玩家** — calls the new `create_temp_participants(p_token,
+  p_captain_count, p_player_count)` RPC with counts computed live from
+  the current Tournament Settings (`requiredCaptains` = Number of
+  Teams, `requiredPlayers` = Number of Teams × (Players per Team − 1)
+  — the same formula the 开始比赛 validation below uses). The function
+  creates that many real `accounts` rows (real `credentials` too, with
+  a fixed dev password `temp123`, so they're usable for manual login
+  testing as well) — gender alternated male/female within each
+  captain/player group, `tournament_role` set accordingly — and
+  immediately joins every one of them to the tournament in the same
+  call. Bypasses the invite-code gate on purpose: this is a
+  developer/testing convenience, not a real registration path.
+- **移除临时玩家** — behind a confirmation dialog (same `ConfirmDialog`
+  pattern as 清空参赛名单), calls `remove_temp_participants(p_token)`,
+  which deletes every account this feature ever created and nothing
+  else.
+
+**Marking mechanism:** `accounts.is_temp` (boolean, default `false`,
+added the same idempotent way `roll_number`/`draft_order` were). Every
+account `create_temp_participants` creates has `is_temp = true`; every
+account created through `register_account` keeps the default `false`.
+`remove_temp_participants` is a single `delete from accounts where
+is_temp = true` — `credentials`, `tournament_participants`, and
+`presence` rows for those accounts are all removed automatically via
+their existing `on delete cascade` foreign keys, so no other table
+needs to be touched by hand. Both RPCs are gated by the same
+`_require_role(..., array['admin', 'developer'])` used throughout the
+Tournament Lobby's other admin actions. No new Realtime wiring was
+needed: created/removed accounts and their `tournament_participants`
+rows flow through the exact same subscriptions `fetchLobby`/
+`subscribeLobby` already use, so both buttons' effects sync live to
+every open browser like any other join/leave.
+
+### 开始比赛 validation
+
+Before navigating to the Draft Arena, `handleStartTournament` in
+`TournamentLobby.jsx` now checks the currently-joined roster against
+the currently-loaded Tournament Settings, computed the same way for
+both this and 创建临时玩家 above:
+
+- `requiredCaptains` = Number of Teams
+- `requiredPlayers` = Number of Teams × (Players per Team − 1)
+- `requiredTotal` = their sum
+
+All three must match exactly — `currentTotal === requiredTotal &&
+currentCaptains === requiredCaptains && currentPlayers ===
+requiredPlayers` — checking total separately from the captain/player
+split (rather than assuming total implies the split) also catches the
+edge case of a joined participant with no Tournament Role at all
+(possible today only for the seeded `admin` account, which has
+`tournament_role = null` and could technically click 参加比赛 — see
+Section 5/18). Any mismatch opens `StartValidationDialog` instead of
+navigating: a small blocking modal (its own component, not
+`ConfirmDialog`, since there's nothing to confirm — just one dismiss
+button) showing all three required-vs-current pairs plus a plain-
+language "需要修正" list (e.g. "还需要 3 名队员" / "队长人数超出 1
+人，请移除多余的队长"). Only when all three match exactly does
+开始比赛 proceed to `hash = 'draft'`, same as before.
+
+`TournamentLobby.jsx` now loads Tournament Settings itself
+(`fetchTournamentSettings()`, previously only `TournamentSettingsDialog`
+did) on mount and again whenever that dialog saves — needed so both
+创建临时玩家's counts and the 开始比赛 validation always reflect the
+latest saved settings, without adding `tournament_settings` to the
+Realtime publication (still deliberately not on it, per Section 16).
+
 
 
 

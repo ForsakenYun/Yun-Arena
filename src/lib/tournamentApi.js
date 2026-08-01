@@ -21,6 +21,7 @@ const ERROR_MESSAGES = {
   invalid_draft_order_round_count: '选秀顺序轮数与每队人数不匹配',
   invalid_draft_order_team_count: '每轮的号码数量必须等于队伍数量',
   invalid_draft_order_duplicate_or_missing: '每轮中每支队伍必须且只能出现一次',
+  invalid_temp_participant_count: '临时测试用户数量无效',
 }
 
 function friendlyError(error, fallback) {
@@ -125,6 +126,30 @@ export async function rollTournamentNumbers() {
 export async function clearTournament() {
   const { error } = await supabase.rpc('clear_tournament', { p_token: requireToken() })
   if (error) throw new Error(friendlyError(error, '清空参赛名单失败'))
+}
+
+/* ---------- Temporary Testing Buttons (Phase 5) ---------- */
+// Admin/Developer only. Creates real accounts (with real credentials) --
+// captainCount with tournament_role='captain', playerCount with
+// tournament_role='player', gender mixed -- and auto-joins every one of
+// them to the tournament in one call. They flow through the exact same
+// fetchLobby()/Realtime path as any other participant; is_temp is only
+// ever inspected server-side by removeTempParticipants().
+export async function createTempParticipants(captainCount, playerCount) {
+  const { error } = await supabase.rpc('create_temp_participants', {
+    p_token: requireToken(),
+    p_captain_count: captainCount,
+    p_player_count: playerCount,
+  })
+  if (error) throw new Error(friendlyError(error, '创建临时测试用户失败'))
+}
+
+// Admin/Developer only -- deletes every account ever created by
+// createTempParticipants() (and, via cascade, their credentials/
+// tournament_participants/presence rows). Never touches a real account.
+export async function removeTempParticipants() {
+  const { error } = await supabase.rpc('remove_temp_participants', { p_token: requireToken() })
+  if (error) throw new Error(friendlyError(error, '移除临时测试用户失败'))
 }
 
 /* ---------- Tournament Settings (singleton row) ---------- */

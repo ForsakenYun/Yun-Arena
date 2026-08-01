@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchLobby, subscribeLobby, joinTournament, leaveTournament, removeParticipant, rollTournamentNumbers, clearTournament, isOnline } from '../lib/tournamentApi.js'
+import {
+  fetchLobby,
+  subscribeLobby,
+  joinTournament,
+  leaveTournament,
+  removeParticipant,
+  rollTournamentNumbers,
+  clearTournament,
+  isOnline,
+  fetchTournamentSettings,
+  createTempParticipants,
+  removeTempParticipants,
+} from '../lib/tournamentApi.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import TournamentSettingsDialog from './TournamentSettingsDialog.jsx'
 
@@ -63,6 +75,20 @@ const Icon = {
       <circle cx="9" cy="8" r="3" />
       <path d="M3.3 19c1-3.1 3.1-4.7 5.7-4.7s4.7 1.6 5.7 4.7" strokeLinecap="round" />
       <path d="M15.5 10h6" strokeLinecap="round" />
+    </svg>
+  ),
+  userPlus: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3.3 19c1-3.1 3.1-4.7 5.7-4.7s4.7 1.6 5.7 4.7" strokeLinecap="round" />
+      <path d="M18.5 7v6M15.5 10h6" strokeLinecap="round" />
+    </svg>
+  ),
+  alert: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M12 4.2l9 15.6H3l9-15.6Z" strokeLinejoin="round" />
+      <path d="M12 10v3.6" strokeLinecap="round" />
+      <circle cx="12" cy="16.6" r="0.9" fill="currentColor" stroke="none" />
     </svg>
   ),
   dice: (p) => (
@@ -183,6 +209,85 @@ function StatCard({ icon, label, value }) {
   )
 }
 
+// Shown when 开始比赛 is clicked but the joined-participant counts don't
+// exactly match what the current Tournament Settings require (Phase 5 --
+// Tournament Participant Synchronization). Purely informational/blocking
+// -- there's nothing to "confirm" here, just one dismiss button -- so this
+// is its own small component rather than reusing ConfirmDialog, which is
+// shaped around a confirm/cancel action pair.
+function StartValidationRow({ label, current, required }) {
+  const ok = current === required
+  return (
+    <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-panel-alt border border-panel-line">
+      <span className="text-xs text-ink-muted">{label}</span>
+      <span className="text-sm font-semibold tabular-nums">
+        <span className={ok ? 'text-teal' : 'text-danger'}>{current}</span>
+        <span className="text-ink-faint"> / {required}</span>
+      </span>
+    </div>
+  )
+}
+
+function StartValidationDialog({ result, onClose }) {
+  const { requiredTotal, requiredCaptains, requiredPlayers, currentTotal, currentCaptains, currentPlayers } = result
+
+  const corrections = []
+  if (currentCaptains < requiredCaptains) corrections.push(`还需要 ${requiredCaptains - currentCaptains} 名队长`)
+  if (currentCaptains > requiredCaptains) corrections.push(`队长人数超出 ${currentCaptains - requiredCaptains} 人，请移除多余的队长`)
+  if (currentPlayers < requiredPlayers) corrections.push(`还需要 ${requiredPlayers - currentPlayers} 名队员`)
+  if (currentPlayers > requiredPlayers) corrections.push(`队员人数超出 ${currentPlayers - requiredPlayers} 人，请移除多余的队员`)
+  if (corrections.length === 0 && currentTotal !== requiredTotal) {
+    corrections.push('参赛总人数与队长、队员人数之和不一致，请检查是否有身份异常的参赛者')
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
+      <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-panel border border-danger/25 shadow-[0_0_20px_rgba(255,84,112,0.15)] rounded-2xl px-6 py-6">
+        <div className="flex items-start gap-3 mb-5">
+          <span className="w-9 h-9 rounded-full border flex items-center justify-center shrink-0 bg-danger/10 border-danger/30 text-danger">
+            <Icon.alert className="w-4.5 h-4.5" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-ink-primary mb-1">锦标赛尚未满足开始条件</h3>
+            <p className="text-xs text-ink-muted leading-relaxed">
+              参赛人数与身份分配需要与当前锦标赛设置完全一致，才能开始比赛。
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 mb-4">
+          <StartValidationRow label="参赛总人数" current={currentTotal} required={requiredTotal} />
+          <StartValidationRow label="队长人数" current={currentCaptains} required={requiredCaptains} />
+          <StartValidationRow label="队员人数" current={currentPlayers} required={requiredPlayers} />
+        </div>
+
+        {corrections.length > 0 && (
+          <div className="mb-5 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2.5">
+            <p className="text-[11px] font-medium text-danger mb-1.5">需要修正：</p>
+            <ul className="space-y-1">
+              {corrections.map((c, i) => (
+                <li key={i} className="text-xs text-ink-muted flex items-start gap-1.5">
+                  <span className="text-danger mt-0.5">•</span>
+                  <span>{c}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted hover:text-ink-primary hover:border-ink-muted transition"
+        >
+          知道了
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
   const isStaff = account.permission_role === 'admin' || account.permission_role === 'developer'
 
@@ -200,6 +305,11 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
   const [confirmingClear, setConfirmingClear] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [settings, setSettings] = useState(null)
+  const [creatingTemp, setCreatingTemp] = useState(false)
+  const [confirmingRemoveTemp, setConfirmingRemoveTemp] = useState(false)
+  const [removingTemp, setRemovingTemp] = useState(false)
+  const [startValidation, setStartValidation] = useState(null)
   const toastTimer = useRef(null)
 
   function showToast(msg) {
@@ -214,9 +324,21 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
       .catch((err) => showToast(err.message))
   }
 
+  // Tournament Settings (锦标赛设置) drive both the Create Temporary
+  // Players counts and the 开始比赛 validation below -- fetched on mount
+  // and again whenever the settings dialog saves, same "fetch on open /
+  // on change" approach already used for the Draft Arena (Section 24).
+  // Not on the Realtime publication (Section 16), so this is not live.
+  function loadSettings() {
+    fetchTournamentSettings()
+      .then(setSettings)
+      .catch((err) => showToast(err.message))
+  }
+
   // Initial load + realtime sync (Section: real-time synchronization).
   useEffect(() => {
     loadLobby()
+    loadSettings()
     const unsubscribe = subscribeLobby(() => loadLobby())
     return unsubscribe
   }, [])
@@ -263,6 +385,33 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
       onlinePlayers,
     }
   }, [participants, now])
+
+  // Phase 5 -- Tournament Participant Synchronization. Required counts are
+  // always derived live from the current Tournament Settings, never
+  // hardcoded: requiredCaptains == Number of Teams (the Draft System needs
+  // an exact 1:1 captain-to-team match, Section 24), requiredPlayers ==
+  // Number of Teams × (Players per Team − 1) (the captain fills the
+  // remaining roster seat), requiredTotal == their sum. Used by both
+  // "Create Temporary Players" (below) and the 开始比赛 validation.
+  const requirement = useMemo(() => {
+    const teamCount = settings?.teamCount ?? 0
+    const playersPerTeam = settings?.playersPerTeam ?? 0
+    const requiredCaptains = Math.max(0, teamCount)
+    const requiredPlayers = Math.max(0, teamCount * Math.max(0, playersPerTeam - 1))
+    return { teamCount, playersPerTeam, requiredCaptains, requiredPlayers, requiredTotal: requiredCaptains + requiredPlayers }
+  }, [settings])
+
+  // Current joined counts by Tournament Role (队长/队员), regardless of
+  // online status -- participation, not presence (Section 16).
+  const roleCounts = useMemo(() => {
+    let captains = 0
+    let players = 0
+    for (const p of participants) {
+      if (p.tournamentRole === 'captain') captains += 1
+      else if (p.tournamentRole === 'player') players += 1
+    }
+    return { captains, players, total: participants.length }
+  }, [participants])
 
   async function handleJoin() {
     setBusy(true)
@@ -351,11 +500,66 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
     }
   }
 
-  // Phase 5 -- Draft System (Section 11, Roadmap) has now started. This is
-  // still a temporary wire-up for development: it just jumps straight into
-  // the Draft Arena with no captain/team assignment or draft logic behind
-  // it yet -- see DraftArena.jsx and its Phase 5 scope note.
+  // Phase 5 -- Temporary Testing Buttons. Dev/testing-only: generates real
+  // accounts (captain/player split + total sized to the current Tournament
+  // Settings, per requirement above) and auto-joins them to the
+  // tournament, so 开始比赛 can be exercised before registration is fully
+  // rolled out. Requires settings to be loaded so the counts are correct.
+  async function handleCreateTempPlayers() {
+    if (!settings) {
+      showToast('锦标赛设置加载中，请稍候再试')
+      return
+    }
+    setCreatingTemp(true)
+    try {
+      await createTempParticipants(requirement.requiredCaptains, requirement.requiredPlayers)
+      showToast(`已创建 ${requirement.requiredCaptains} 名临时队长与 ${requirement.requiredPlayers} 名临时队员`)
+      loadLobby()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setCreatingTemp(false)
+    }
+  }
+
+  function handleRemoveTempPlayers() {
+    setConfirmingRemoveTemp(true)
+  }
+
+  async function confirmRemoveTempPlayers() {
+    setRemovingTemp(true)
+    try {
+      await removeTempParticipants()
+      showToast('已移除所有临时测试用户')
+      setConfirmingRemoveTemp(false)
+      loadLobby()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setRemovingTemp(false)
+    }
+  }
+
+  // Phase 5 -- Draft System (Section 11, Roadmap) has now started.
+  // 开始比赛 now validates the joined roster against the current
+  // Tournament Settings (Section: Tournament Participant Synchronization)
+  // before ever navigating to the Draft Arena: the total joined count,
+  // captain count, and player count must each exactly match what the
+  // settings require (captains == team count exactly -- the Draft System
+  // needs a 1:1 captain-to-team match). Any mismatch blocks navigation and
+  // shows StartValidationDialog with the full breakdown instead.
   function handleStartTournament() {
+    if (!settings) {
+      showToast('锦标赛设置加载中，请稍候再试')
+      return
+    }
+    const { requiredCaptains, requiredPlayers, requiredTotal } = requirement
+    const { captains: currentCaptains, players: currentPlayers, total: currentTotal } = roleCounts
+    const valid = currentTotal === requiredTotal && currentCaptains === requiredCaptains && currentPlayers === requiredPlayers
+    if (!valid) {
+      setStartValidation({ requiredTotal, requiredCaptains, requiredPlayers, currentTotal, currentCaptains, currentPlayers })
+      return
+    }
     window.location.hash = 'draft'
   }
 
@@ -473,6 +677,25 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
             >
               <Icon.sweep className="w-4 h-4" />
               清空参赛名单
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateTempPlayers}
+              disabled={creatingTemp || !settings}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition disabled:opacity-60 disabled:pointer-events-none"
+              title="开发测试用：根据当前锦标赛设置自动生成并加入临时队长与队员"
+            >
+              <Icon.userPlus className="w-4 h-4" />
+              {creatingTemp ? '创建中…' : '创建临时玩家'}
+            </button>
+            <button
+              type="button"
+              onClick={handleRemoveTempPlayers}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-danger/40 text-danger text-sm font-medium tracking-wide hover:bg-danger/10 transition"
+              title="开发测试用：移除所有由“创建临时玩家”生成的测试用户"
+            >
+              <Icon.userMinus className="w-4 h-4" />
+              移除临时玩家
             </button>
             <button
               type="button"
@@ -620,10 +843,29 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
         />
       )}
 
+      {confirmingRemoveTemp && (
+        <ConfirmDialog
+          title="移除临时玩家"
+          message="确定要移除所有由“创建临时玩家”生成的测试用户吗？这不会影响任何真实注册的账号。"
+          confirmLabel="确认移除"
+          tone="danger"
+          busy={removingTemp}
+          onCancel={() => setConfirmingRemoveTemp(false)}
+          onConfirm={confirmRemoveTempPlayers}
+        />
+      )}
+
+      {startValidation && (
+        <StartValidationDialog result={startValidation} onClose={() => setStartValidation(null)} />
+      )}
+
       {showSettings && (
         <TournamentSettingsDialog
           onClose={() => setShowSettings(false)}
-          onSaved={() => showToast('锦标赛设置已保存')}
+          onSaved={() => {
+            showToast('锦标赛设置已保存')
+            loadSettings()
+          }}
         />
       )}
     </div>

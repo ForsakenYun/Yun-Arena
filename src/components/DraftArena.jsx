@@ -1,5 +1,5 @@
 import React, { useState, useLayoutEffect, useEffect, useRef } from "react";
-import { fetchTournamentSettings, draftRoundCount, generateSnakeDraft } from "../lib/tournamentApi.js";
+import { fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby } from "../lib/tournamentApi.js";
 
 /* ════════════════════════════════════════════════════════════════════════
    CONSTANTS & THEME (unchanged from Dashboard.jsx)
@@ -708,21 +708,19 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 
 /* ════════════════════════════════════════════════════════════════════════
    INITIAL STATE — teamCount, playersPerTeam, and roundOrders all come from
-   the Tournament Lobby's Tournament Settings (锦标赛设置) now, fetched by
-   DraftArenaPage below. No team count / roster size / round count is
-   assumed here: the number of TeamCards (teamCount) and the number of
-   roster slots per team (playersPerTeam - 1, since the captain fills the
-   remaining seat) both scale to whatever is currently configured.
+   the Tournament Lobby's Tournament Settings (锦标赛设置); captainCandidates
+   and pool come from the Tournament Lobby's actual joined participants
+   (tournament_participants, split by Tournament Role) -- both fetched by
+   DraftArenaPage below. No team count / roster size / round count / player
+   list is assumed here: the number of TeamCards, the number of roster
+   slots per team, and every name in the Captain Pool / Player Pool all
+   scale to whatever is currently configured and currently joined.
 
-   The original standalone page populated tournament.captainCandidates /
-   tournament.pool from real registered accounts before handing off to this
-   screen. This still starts with an empty Captain Pool and empty Player
-   Pool — the Team panels themselves are real structure (not test data),
-   just with no captain/roster assigned yet. Wiring the two pools up to
-   real accounts/roster data is separate, later work (see the "real-time
-   data synchronization" phase note in DEVLOG.md).
+   This still only reflects participants as of when the Draft Arena page
+   was opened (fetch-on-open, same as Tournament Settings -- Section 24);
+   live updates while the page is already open are a later phase.
    ════════════════════════════════════════════════════════════════════════ */
-function seedTournament(teamCount, playersPerTeam, roundOrders) {
+function seedTournament(teamCount, playersPerTeam, roundOrders, captainCandidates, pool) {
   const rosterSlotCount = Math.max(0, (Number(playersPerTeam) || 0) - 1);
   return {
     ...initialTournament(roundOrders),
@@ -730,8 +728,8 @@ function seedTournament(teamCount, playersPerTeam, roundOrders) {
       captain: null,
       slots: Array.from({ length: rosterSlotCount }, () => null),
     })),
-    captainCandidates: [],
-    pool: [],
+    captainCandidates: Array.isArray(captainCandidates) ? captainCandidates : [],
+    pool: Array.isArray(pool) ? pool : [],
   };
 }
 
@@ -757,21 +755,39 @@ function buildRoundOrders(settings) {
   return source.map((round) => round.join(','))
 }
 
+// Tournament Participant Synchronization (Phase 5): the Captain Pool and
+// Player Pool are built from the Tournament Lobby's real joined roster
+// (fetchLobby() -- the exact same tournament_participants + accounts data
+// the Lobby itself renders), split by Tournament Role. Only participants
+// who actually joined the tournament ever appear here; nobody else does,
+// by construction of fetchLobby() itself. avatarId is intentionally
+// omitted -- this project only has avatarUrl-or-default, no id-based
+// avatar selection (see Avatar/SquareAvatar below).
+function toDraftPlayer(participant) {
+  return { id: participant.accountId, name: participant.displayName, avatarUrl: participant.avatarUrl }
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    DEFAULT EXPORT — a self-contained page: same outer background + font /
    scrollbar setup as the full Dashboard app shell, just without the
    Login/Register, Navigation, Admin Dashboard, or Lobby screens around it.
 
    Tournament Name / Number of Teams / Players per Team / Draft Order are
-   all read here from the Tournament Lobby's Tournament Settings
-   (fetchTournamentSettings(), Section 16) on every mount -- i.e. every
-   time the Draft Arena is entered, it reflects whatever was most recently
-   saved in the Lobby. `tournament` starts with an empty `teams: []` (which
-   the inner DraftArena renders as "加载中…") until settings resolve, then
-   is seeded to the real teamCount/playersPerTeam/roundOrders. Live,
-   real-time synchronization while the Draft Arena is already open is a
-   later phase -- this only guarantees "latest settings as of opening the
-   page".
+   read from the Tournament Lobby's Tournament Settings
+   (fetchTournamentSettings(), Section 16), and the Captain Pool / Player
+   Pool are read from the Tournament Lobby's real joined participants
+   (fetchLobby(), Section 16) -- both fetched here on every mount, i.e.
+   every time the Draft Arena is entered, it reflects whatever was most
+   recently saved/joined in the Lobby. `tournament` starts with an empty
+   `teams: []` (which the inner DraftArena renders as "加载中…") until both
+   resolve, then is seeded to the real teamCount/playersPerTeam/
+   roundOrders/captainCandidates/pool. Live, real-time synchronization
+   while the Draft Arena is already open is a later phase -- this only
+   guarantees "latest settings and roster as of opening the page". The
+   Tournament Lobby's 开始比赛 button already validates the roster against
+   Tournament Settings before ever navigating here (see TournamentLobby.jsx),
+   so in the normal flow the pools this seeds with are never empty or
+   mismatched in size -- but this page doesn't re-validate that itself.
    ════════════════════════════════════════════════════════════════════════ */
 export default function DraftArenaPage({ onExitToLobby }) {
   const [tournamentName, setTournamentName] = useState('')
@@ -779,16 +795,18 @@ export default function DraftArenaPage({ onExitToLobby }) {
 
   useEffect(() => {
     let cancelled = false
-    fetchTournamentSettings()
-      .then((settings) => {
+    Promise.all([fetchTournamentSettings(), fetchLobby()])
+      .then(([settings, participants]) => {
         if (cancelled) return
         setTournamentName(settings.tournamentName || '')
-        setTournament(seedTournament(settings.teamCount, settings.playersPerTeam, buildRoundOrders(settings)))
+        const captainCandidates = participants.filter((p) => p.tournamentRole === 'captain').map(toDraftPlayer)
+        const pool = participants.filter((p) => p.tournamentRole === 'player').map(toDraftPlayer)
+        setTournament(seedTournament(settings.teamCount, settings.playersPerTeam, buildRoundOrders(settings), captainCandidates, pool))
       })
       .catch(() => {
         if (cancelled) return
         setTournamentName(SETTINGS_LOAD_FALLBACK.tournamentName)
-        setTournament(seedTournament(SETTINGS_LOAD_FALLBACK.teamCount, SETTINGS_LOAD_FALLBACK.playersPerTeam, buildRoundOrders(SETTINGS_LOAD_FALLBACK)))
+        setTournament(seedTournament(SETTINGS_LOAD_FALLBACK.teamCount, SETTINGS_LOAD_FALLBACK.playersPerTeam, buildRoundOrders(SETTINGS_LOAD_FALLBACK), [], []))
       })
     return () => { cancelled = true }
   }, [])
