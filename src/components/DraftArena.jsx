@@ -25,6 +25,13 @@ const TEAM_CARD_W = 190;
 // assigned) so the Team panel never grows or shifts depending on content --
 // the row always reserves exactly this much space, from first paint.
 const CAPTAIN_SLOT_H = 46;
+// Fixed height for the top bar/header PanelFrame (button row + progress-bar
+// row + the panel's own p-4 padding). Sized generously for the tallest
+// realistic content across every phase (the teammate-phase round-label
+// line, a 2-line subtitle wrap, etc.) so the header never needs to grow or
+// shrink for any state the draft actually produces -- applied explicitly
+// so its size is fixed from first paint, not derived from content.
+const HEADER_H = 160;
 
 const genUid = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -612,7 +619,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 
   return (
     <div className="max-w-[1700px] mx-auto px-4 py-6">
-      <PanelFrame className="p-4 mb-4">
+      <PanelFrame className="p-4 mb-4" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
           <div className="flex flex-col gap-2 flex-shrink-0">
             <PrimaryButton variant="ghost" onClick={onBack}>← 返回选手管理</PrimaryButton>
@@ -620,7 +627,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
               className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wide border transition-all"
               style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgba(0,0,0,0.2)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgba(255,255,255,0.06)", color: draftHistory.length > 0 ? "#fbbf24" : "rgba(255,255,255,0.15)", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer", boxShadow: draftHistory.length > 0 ? "0 0 10px rgba(251,191,36,0.2)" : "none" }}>
               ↩ 撤销上一次选择
-              {draftHistory.length > 0 && <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full font-black" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
+              {draftHistory.length > 0 && <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
             </button>
           </div>
           <div className="text-center flex-1">

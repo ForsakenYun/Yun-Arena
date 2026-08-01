@@ -1677,6 +1677,55 @@ below it can never move, and there is zero vertical movement of the
 Team card at any point — because the row's size no longer depends on
 what's inside it at all.
 
+## 30. Follow-Up Fix: Top Bar/Header Now Uses a Fixed Height
+
+Reported after Section 29: the Team panel was now stable, but the top
+bar/header itself still changed height right around the first Captain
+assignment.
+
+Investigation — comparing the header's left column (the two stacked
+buttons) before vs. after the first assignment, per the request:
+before any pick, "↩ 撤销上一次选择" is disabled and shows no count
+badge; after the first pick, `draftHistory.length > 0`, so the button
+becomes enabled *and* an inline count badge (`{draftHistory.length}`)
+appears next to its label. That badge had no explicit `leading`, so
+its line-height came from the browser's default ("normal", font-metric
+-dependent) rather than a value guaranteed to be shorter than the
+button's own `text-xs` line-height (16px) — meaning it was plausible,
+depending on font metrics, for the badge's appearance to be the thing
+that (barely) grows the button, and therefore the header. This matches
+what was suspected.
+
+More broadly, though, the header's overall height was never fixed in
+the first place — it was fully auto/content-derived (the button
+column, the center text column with phase-dependent line counts, and
+the progress-bar row all just summed to whatever their content
+required), so *any* future content difference between states (not
+just this specific badge) could in principle move it again.
+
+Fix, matching the same approach as Sections 27-29 (reserve fixed
+space rather than tune content to match): added `HEADER_H = 160` and
+applied it as an explicit `height` (with `boxSizing: "border-box"` and
+`overflow: "hidden"`) directly on the header's own `PanelFrame`
+instance via its `style` prop — `PanelFrame` is a shared component
+used by two other panels elsewhere on this page, so this was applied
+as a per-instance style override, not a change to the component
+itself, and those other panels are unaffected. `HEADER_H` was sized
+generously for the tallest realistic content across *every* draft
+phase (including the teammate-phase round-label line that doesn't
+exist during the captain phase, and allowing room for a wrapped
+2-line subtitle), so the header cannot need to grow for any state the
+draft actually produces. Also added `leading-none` to the undo-count
+badge specifically — a zero-visual-change fix (only affects line-
+height, not font-size/padding/appearance) that removes the original
+font-metric ambiguity outright, on top of the container-level fix.
+
+Together these mean the header is pinned to the same 160px from the
+very first render, through every phase of the draft, regardless of
+whether a Captain has been assigned, how many picks are in the undo
+history, or which phase-specific text is showing.
+
+
 
 
 
