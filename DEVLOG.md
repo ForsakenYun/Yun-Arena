@@ -1642,6 +1642,42 @@ the Team panel's own layout/sizing (`TEAM_CARD_W`, padding, gaps) were
 not touched — this was purely a matter of the badge/name being too
 tall for the row they sit in.
 
+## 29. Follow-Up Fix: Captain Row Now Uses a Fixed Reserved Height
+
+Section 28's fix (shrinking `CaptainBadge` / tightening the name's
+line-height so the assigned row's content came out just under 34px)
+worked, but it was a size-tuning approach: it made the two states
+match by carefully balancing content dimensions against each other,
+which is fragile — any future change to the badge, name, or avatar
+size could silently reintroduce the mismatch. Replaced it with a
+structural fix instead, per the request to stop tuning sizes and
+instead make the row *reserve* fixed space regardless of content.
+
+Change: added `CAPTAIN_SLOT_H = 46` (the row's own natural height —
+34px avatar/icon + 6px top/bottom padding from `p-1.5`) and applied it
+as an explicit `height` (with `boxSizing: "border-box"`, so the
+padding is included rather than added on top, and `overflow:
+"hidden"` as a guard against any future content ever being taller
+than the reserved space) directly on the captain slot's wrapper `div`
+— the same single persistent element from Section 27, still shared by
+all three states (empty, "→ 分配队长" assignable-prompt, assigned).
+Because this `height` is now explicit rather than derived from
+content, all three states are pinned to the exact same 46px box from
+the very first render, before any captain is ever assigned — not just
+"currently the same size" as a side effect of matching content
+dimensions. The assigned state's appearance is completely unchanged
+(46px is exactly what it already measured before this change, so
+nothing about it moved, resized, or was re-tuned) — only the *empty*
+and *prompt* states are now explicitly forced to reserve that same
+space rather than sizing to their own (already-smaller) content.
+
+This directly guarantees every part of what was asked: the Team panel
+can never change height when a Captain is assigned, the roster slots
+below it can never move, and there is zero vertical movement of the
+Team card at any point — because the row's size no longer depends on
+what's inside it at all.
+
+
 
 
 

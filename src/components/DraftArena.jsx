@@ -19,6 +19,12 @@ const POSITIONS = [
 ];
 
 const TEAM_CARD_W = 190;
+// Fixed height for the captain slot row (34px avatar/icon + 6px top/bottom
+// padding = the row's natural height when a captain is assigned). Applied
+// explicitly to the row in every state (empty / assignable-prompt /
+// assigned) so the Team panel never grows or shifts depending on content --
+// the row always reserves exactly this much space, from first paint.
+const CAPTAIN_SLOT_H = 46;
 
 const genUid = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -197,6 +203,9 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
       <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg w-full"
         data-slot-key={`cap:${teamIdx}`}
         style={{
+          height: CAPTAIN_SLOT_H,
+          boxSizing: "border-box",
+          overflow: "hidden",
           opacity: captainHidden ? 0 : 1,
           background: canAssign ? "rgba(34,197,94,0.08)" : "rgba(0,0,0,0.4)",
           borderWidth: 1,
