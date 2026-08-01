@@ -1602,6 +1602,47 @@ pixel unchanged — only *how* those states are reached (update vs.
 remount) changed. Nothing about the flight animation, `dfSettle`,
 `hiddenKeys`, or any other part of the draft flow was touched.
 
+## 28. Follow-Up Fix: Captain Row Height (the actual cause of the Team Panel reflow)
+
+Section 27's DOM-remount fix for the captain slot was a real
+correctness fix (remounting a differently-shaped subtree on every
+assignment was genuinely wrong, and worth eliminating on its own) —
+but it turned out not to be the *whole* cause of the Team panel
+visibly growing/shifting when a Captain was assigned. Re-tested
+side-by-side (empty captain row vs. assigned captain row) and found
+the real culprit: **the assigned row was simply taller than the empty
+row**, due to sizing on `CaptainBadge`, not DOM structure.
+
+Root cause: the empty/prompt captain row's height is driven entirely
+by its fixed 34×34px icon box (the "?" placeholder or the "+" assign
+icon) — text next to it is a single short line, well under 34px, so
+it never affects the row's height. The *assigned* row's right side,
+by contrast, stacks two things vertically next to the (also 34px)
+`Avatar`: the captain's name, then (2px margin below it) the
+`CaptainBadge` pill. `CaptainBadge` was using `text-xs` (12px) with
+`py-1` (4px top/bottom) — combined with the name line above it, this
+stacked column came out taller than 34px, so the flex row (`items-
+center`, no fixed height) grew to fit it instead of the 34px avatar —
+which is exactly what pushed the roster slots below it downward and
+grew the panel.
+
+Fix, confined to just `CaptainBadge` and the adjacent name line's
+line-height (no other spacing/structure touched): shrunk the badge to
+`text-[9px] px-1.5 py-0.5 leading-none` (was `text-xs px-2.5 py-1`,
+no explicit `leading`), and added `leading-tight` to the captain name
+line so its line-height is predictable rather than the browser
+default. With these, the stacked "name + badge" column now comes out
+to roughly 14px (name) + 2px (margin) + 15px (badge, including its
+1px border) ≈ 31px — comfortably under the 34px `Avatar`, so the
+`Avatar` is once again the tallest element in the row in every state
+(empty, "→ 分配队长" prompt, and assigned), making the row — and so
+the whole Team panel — exactly the same height regardless of whether
+a Captain has been assigned. Draft logic, the flight animation, and
+the Team panel's own layout/sizing (`TEAM_CARD_W`, padding, gaps) were
+not touched — this was purely a matter of the badge/name being too
+tall for the row they sit in.
+
+
 
 
 

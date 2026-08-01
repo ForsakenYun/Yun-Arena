@@ -108,7 +108,7 @@ function SubRoleBadge({ positions }) {
 }
 function CaptainBadge() {
   return (
-    <span className="inline-block text-xs font-bold px-2.5 py-1 rounded"
+    <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded leading-none"
       style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.4)" }}>
       队长
     </span>
@@ -213,7 +213,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
           <>
             <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={34} glow />
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-bold text-white truncate">{team.captain.name}</div>
+              <div className="text-[11px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
               <div className="mt-0.5"><CaptainBadge /></div>
             </div>
           </>
