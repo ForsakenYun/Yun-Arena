@@ -1,4 +1,5 @@
-import React, { useState, useLayoutEffect, useRef } from "react";
+import React, { useState, useLayoutEffect, useEffect, useRef } from "react";
+import { fetchTournamentSettings, draftRoundCount, generateSnakeDraft } from "../lib/tournamentApi.js";
 
 /* ════════════════════════════════════════════════════════════════════════
    CONSTANTS & THEME (unchanged from Dashboard.jsx)
@@ -32,7 +33,7 @@ const DEFAULT_AVATAR = {
   ),
 };
 
-function initialTournament() {
+function initialTournament(roundOrders) {
   return {
     teams: [],
     pickIndex: 0,
@@ -40,7 +41,10 @@ function initialTournament() {
     lastPick: null,
     draftPhase: "captain",
     captainCandidates: [],
-    roundOrders: ["12345678", "87654321", "12345678", "87654321"],
+    // Comes from Tournament Settings (锦标赛设置) in the Tournament Lobby --
+    // teamCount teams per round, draftRoundCount(playersPerTeam) rounds.
+    // See seedTournament() / DraftArenaPage below for where this is built.
+    roundOrders: Array.isArray(roundOrders) ? roundOrders : [],
     roundOrdersLocked: false,
     round1: { matches: null },
     wb: { pool: null, matches: null, champion: null },
@@ -63,16 +67,16 @@ function escapeHtml(s) {
 /* ════════════════════════════════════════════════════════════════════════
    DRAFT / TOURNAMENT HELPERS
    ════════════════════════════════════════════════════════════════════════ */
-function parseRoundOrder(str) {
+function parseRoundOrder(str, teamCount) {
   const cleaned = (str || "").replace(/\s/g, "");
   const tokens = cleaned.includes(",") ? cleaned.split(",").map((s) => parseInt(s, 10) - 1) : cleaned.split("").map((ch) => parseInt(ch, 10) - 1);
-  return tokens.filter((n) => !isNaN(n) && n >= 0 && n <= 7);
+  return tokens.filter((n) => !isNaN(n) && n >= 0 && n < teamCount);
 }
 
-function computeDraftMeta(t) {
-  const roundOrderValid = t.roundOrders.map((str) => { const p = parseRoundOrder(str); return p.length === 8 && new Set(p).size === 8; });
-  const customSnakeOrder = t.roundOrders.flatMap((str, ri) => parseRoundOrder(str).map((teamIdx) => ({ round: ri + 1, teamIdx })));
-  const allCaptainsAssigned = t.teams.length === 8 && t.teams.every((tm) => tm.captain !== null);
+function computeDraftMeta(t, teamCount) {
+  const roundOrderValid = t.roundOrders.map((str) => { const p = parseRoundOrder(str, teamCount); return p.length === teamCount && new Set(p).size === teamCount; });
+  const customSnakeOrder = t.roundOrders.flatMap((str, ri) => parseRoundOrder(str, teamCount).map((teamIdx) => ({ round: ri + 1, teamIdx })));
+  const allCaptainsAssigned = t.teams.length === teamCount && t.teams.every((tm) => tm.captain !== null);
   const draftFinished = t.draftPhase === "teammate" && t.pickIndex >= customSnakeOrder.length;
   const currentPick = t.draftPhase === "teammate" && !draftFinished ? customSnakeOrder[t.pickIndex] : null;
   const activeTeamIdx = currentPick ? currentPick.teamIdx : -1;
@@ -421,7 +425,7 @@ function DraftSequenceStrip({ customSnakeOrder, pickIndex, roundOrders, draftFin
    they're dropped here — everything this component renders comes from
    `tournament` alone, exactly as before.
    ════════════════════════════════════════════════════════════════════════ */
-function DraftArena({ tournament, setTournament, onBack, onProceed }) {
+function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentName }) {
   const [selectedCaptain, setSelectedCaptain] = useState(null);
   const [draftHistory, setDraftHistory] = useState([]);
 
@@ -512,7 +516,11 @@ function DraftArena({ tournament, setTournament, onBack, onProceed }) {
   }, [hiddenKeys]);
 
   const { teams, pickIndex, pool, lastPick, draftPhase, captainCandidates, roundOrders } = tournament;
-  const meta = computeDraftMeta(tournament);
+  // teamCount comes from the Tournament Lobby's Tournament Settings (see
+  // seedTournament()/DraftArenaPage below, where `teams` is built to that
+  // exact length) -- never assumed fixed here.
+  const teamCount = teams.length;
+  const meta = computeDraftMeta(tournament, teamCount);
   const { roundOrderValid, customSnakeOrder, allCaptainsAssigned, draftFinished, currentPick, activeTeamIdx, roundLabel } = meta;
   const allDrafted = draftFinished;
 
@@ -586,7 +594,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed }) {
     setDraftHistory((h) => h.slice(0, -1));
   };
 
-  if (teams.length !== 8) return <div className="flex items-center justify-center h-[60vh] text-white/40">加载中…</div>;
+  if (teams.length === 0) return <div className="flex items-center justify-center h-[60vh] text-white/40">加载中…</div>;
 
   return (
     <div className="max-w-[1700px] mx-auto px-4 py-6">
@@ -603,6 +611,12 @@ function DraftArena({ tournament, setTournament, onBack, onProceed }) {
           </div>
           <div className="text-center flex-1">
             <div className="flex items-center justify-center gap-2 mb-1">
+              {tournamentName && (
+                <>
+                  <span className="text-[10px] font-bold tracking-wide text-white/45 truncate max-w-[180px]">{tournamentName}</span>
+                  <span className="w-px h-3 flex-shrink-0" style={{ background: "rgba(255,255,255,0.15)" }} />
+                </>
+              )}
               <span className="text-[10px] font-black px-3 py-0.5 rounded-full tracking-widest"
                 style={{ background: draftPhase === "captain" ? "rgba(34,197,94,0.12)" : "rgba(0,245,212,0.12)", color: draftPhase === "captain" ? "#22c55e" : TEAL, border: `1px solid ${draftPhase === "captain" ? "rgba(34,197,94,0.4)" : TEAL+"55"}` }}>
                 {draftPhase === "captain" ? "第一阶段 —— 队长分配" : "第二阶段 —— 队员选秀"}
@@ -638,7 +652,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed }) {
       )}
 
       <div className="mb-3 flex items-center gap-2">
-        <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>全部8支战队</h2>
+        <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>全部{teamCount}支战队</h2>
         {draftPhase === "captain" && selectedCaptain && (
           <span className="text-[11px] italic" style={{ color: "#22c55e" }}>—— 点击一张空战队卡分配给"{selectedCaptain.name}"</span>
         )}
@@ -693,29 +707,91 @@ function DraftArena({ tournament, setTournament, onBack, onProceed }) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   INITIAL STATE — the original app populated tournament.captainCandidates /
+   INITIAL STATE — teamCount, playersPerTeam, and roundOrders all come from
+   the Tournament Lobby's Tournament Settings (锦标赛设置) now, fetched by
+   DraftArenaPage below. No team count / roster size / round count is
+   assumed here: the number of TeamCards (teamCount) and the number of
+   roster slots per team (playersPerTeam - 1, since the captain fills the
+   remaining seat) both scale to whatever is currently configured.
+
+   The original standalone page populated tournament.captainCandidates /
    tournament.pool from real registered accounts before handing off to this
-   screen. This standalone page starts with an empty Captain Pool and empty
-   Player Pool — the 8 Team panels themselves are real structure (not test
-   data), just with no captain/roster assigned yet. Wire seedTournament()
-   up to your real accounts/roster data source to populate the two pools.
+   screen. This still starts with an empty Captain Pool and empty Player
+   Pool — the Team panels themselves are real structure (not test data),
+   just with no captain/roster assigned yet. Wiring the two pools up to
+   real accounts/roster data is separate, later work (see the "real-time
+   data synchronization" phase note in DEVLOG.md).
    ════════════════════════════════════════════════════════════════════════ */
-function seedTournament() {
+function seedTournament(teamCount, playersPerTeam, roundOrders) {
+  const rosterSlotCount = Math.max(0, (Number(playersPerTeam) || 0) - 1);
   return {
-    ...initialTournament(),
-    teams: Array.from({ length: 8 }, () => ({ captain: null, slots: [null, null, null, null] })),
+    ...initialTournament(roundOrders),
+    teams: Array.from({ length: Math.max(0, Number(teamCount) || 0) }, () => ({
+      captain: null,
+      slots: Array.from({ length: rosterSlotCount }, () => null),
+    })),
     captainCandidates: [],
     pool: [],
   };
+}
+
+// Fallback used only if Tournament Settings can't be loaded at all (e.g.
+// the request fails) -- lets the page still render something usable
+// instead of being stuck on "加载中…" forever. Not a design assumption
+// about any particular tournament; matches fetchTournamentSettings()'s own
+// fallback defaults (Section 16) so behavior is consistent either way.
+const SETTINGS_LOAD_FALLBACK = { tournamentName: '', teamCount: 8, playersPerTeam: 5, draftOrder: null }
+
+// Builds the draft's round-order strings (DraftArena's internal
+// "12345678"-per-round format) from Tournament Settings: prefers the
+// admin's actually-saved draftOrder (Section 16, Draft Order Settings)
+// when it matches the current playersPerTeam's round count, otherwise
+// falls back to the same default Snake Draft generator the settings
+// dialog itself falls back to -- so this is never a hardcoded assumption,
+// only ever a reflection of what's configured (or its documented default).
+function buildRoundOrders(settings) {
+  const rounds = draftRoundCount(settings.playersPerTeam)
+  const source = Array.isArray(settings.draftOrder) && settings.draftOrder.length === rounds
+    ? settings.draftOrder
+    : generateSnakeDraft(settings.teamCount, settings.playersPerTeam)
+  return source.map((round) => round.join(','))
 }
 
 /* ════════════════════════════════════════════════════════════════════════
    DEFAULT EXPORT — a self-contained page: same outer background + font /
    scrollbar setup as the full Dashboard app shell, just without the
    Login/Register, Navigation, Admin Dashboard, or Lobby screens around it.
+
+   Tournament Name / Number of Teams / Players per Team / Draft Order are
+   all read here from the Tournament Lobby's Tournament Settings
+   (fetchTournamentSettings(), Section 16) on every mount -- i.e. every
+   time the Draft Arena is entered, it reflects whatever was most recently
+   saved in the Lobby. `tournament` starts with an empty `teams: []` (which
+   the inner DraftArena renders as "加载中…") until settings resolve, then
+   is seeded to the real teamCount/playersPerTeam/roundOrders. Live,
+   real-time synchronization while the Draft Arena is already open is a
+   later phase -- this only guarantees "latest settings as of opening the
+   page".
    ════════════════════════════════════════════════════════════════════════ */
 export default function DraftArenaPage({ onExitToLobby }) {
-  const [tournament, setTournament] = useState(seedTournament);
+  const [tournamentName, setTournamentName] = useState('')
+  const [tournament, setTournament] = useState(() => initialTournament([]))
+
+  useEffect(() => {
+    let cancelled = false
+    fetchTournamentSettings()
+      .then((settings) => {
+        if (cancelled) return
+        setTournamentName(settings.tournamentName || '')
+        setTournament(seedTournament(settings.teamCount, settings.playersPerTeam, buildRoundOrders(settings)))
+      })
+      .catch(() => {
+        if (cancelled) return
+        setTournamentName(SETTINGS_LOAD_FALLBACK.tournamentName)
+        setTournament(seedTournament(SETTINGS_LOAD_FALLBACK.teamCount, SETTINGS_LOAD_FALLBACK.playersPerTeam, buildRoundOrders(SETTINGS_LOAD_FALLBACK)))
+      })
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <div className="min-h-screen w-full text-white font-sans" style={{ background: "radial-gradient(ellipse at top, #0b1716 0%, #050807 55%, #020303 100%)" }}>
@@ -725,6 +801,7 @@ export default function DraftArenaPage({ onExitToLobby }) {
         setTournament={setTournament}
         onBack={onExitToLobby || (() => {})}
         onProceed={() => {}}
+        tournamentName={tournamentName}
       />
     </div>
   );

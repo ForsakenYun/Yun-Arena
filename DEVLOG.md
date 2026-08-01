@@ -134,18 +134,24 @@ Registration, or the Admin Dashboard.
   every round contains each team number exactly once. This only
   configures the order — the Draft System itself, which will read and
   follow it, is a future phase. See Section 16, Draft Order Settings.
-- **Draft Arena (Phase 5 — UI Completed)** — the "开始比赛" button in
-  the Tournament Lobby navigates straight to the Draft Arena page. The
-  full drafting UI is now in place and working end-to-end in local
+- **Draft Arena (Phase 5 — UI Completed, Tournament Settings synced)**
+  — the "开始比赛" button in the Tournament Lobby navigates straight to
+  the Draft Arena page. The full drafting UI works end-to-end in local
   state: captain-candidate assignment (click candidate → click empty
   team card, with a flying "card slide" assignment animation), a
-  locked custom snake-order teammate draft across 4 rounds, a live
-  8-team grid, a full pick-history undo stack, and a pick-by-pick
-  draft sequence strip. Its back button returns to the Tournament
-  Lobby. Captain/player pools are still empty placeholders (no real
-  accounts/roster wired in), and nothing is persisted or synced across
-  clients yet — real-time data synchronization is the next planned
-  phase. See Section 23.
+  locked custom snake-order teammate draft, a live team grid, a full
+  pick-history undo stack, and a pick-by-pick draft sequence strip. Its
+  back button returns to the Tournament Lobby. Tournament Name, Number
+  of Teams, Players per Team, and Draft Order are no longer hardcoded
+  — they're read from the Lobby's Tournament Settings (Section 16) on
+  every visit, so the number of teams/rounds/roster slots and the
+  Tournament Name shown in the Top Bar all automatically match
+  whatever is currently configured (see Section 24). Captain/player
+  pools are still empty placeholders (no real accounts/roster wired
+  in), and nothing about the draft itself is persisted or synced
+  across clients yet, nor are settings changes picked up live while
+  the page is already open — real-time data synchronization is the
+  next planned phase. See Sections 23-24.
 
 ## 3. Current Limitations
 
@@ -381,7 +387,7 @@ In intended development order:
 2. Admin Dashboard — **done**
 3. Backend Foundation — **done** (see Section 15)
 4. Tournament Lobby — **done** (see Section 16)
-5. Draft System — **UI completed, real-time sync pending** (see Section 23)
+5. Draft System — **UI completed; Tournament Settings synced, live/real-time draft sync pending** (see Sections 23-24)
 6. Spectator Page
 
 **Phase 3 – Backend Foundation** is not about building backend
@@ -1233,5 +1239,85 @@ button in the earlier version.
 - The 4 stat values on every player card (胜率/冠军/擅长位置/天梯分)
   remain deterministic placeholders derived from the player's id, not
   real data — called out as such in the delivered file's own comments.
+
+## 24. Draft Arena: Tournament Settings Synchronization (Phase 5)
+
+The first synchronization work between the Tournament Lobby and the
+Draft Arena. Scope: only Tournament Settings (锦标赛设置) — Tournament
+Name, Number of Teams, Players per Team, Draft Order. Draft logic,
+captain draft, player draft, animations, team assignment, draft flow,
+and UI layout are unchanged (aside from adding the Tournament Name to
+the existing Top Bar, which did not change its height/layout). Real
+draft data / live real-time state sync is a separate, later phase and
+was not started here.
+
+### What was hardcoded before, and what replaced it
+
+`DraftArena.jsx` was originally built and delivered as a standalone
+page (Section 23) and assumed a fixed 8-team, 4-round, 5-player-per-
+team tournament throughout. Every one of those assumptions was
+replaced with values derived from `fetchTournamentSettings()`
+(Section 16):
+
+- `roundOrders: ["12345678", "87654321", "12345678", "87654321"]` in
+  `initialTournament()` → now passed in, built by the new
+  `buildRoundOrders(settings)` helper in `DraftArenaPage`.
+- `parseRoundOrder()`'s hardcoded `n <= 7` bound and
+  `computeDraftMeta()`'s two hardcoded `=== 8` checks (round-order
+  validity, all-captains-assigned) → both now take a `teamCount`
+  parameter instead.
+- `seedTournament()`'s `Array.from({ length: 8 }, ...)` teams and
+  `slots: [null, null, null, null]` (4 roster slots) → now
+  `seedTournament(teamCount, playersPerTeam, roundOrders)`, building
+  `teamCount` teams with `playersPerTeam - 1` roster slots each (the
+  captain fills the remaining seat — same relationship the Draft Order
+  Settings dialog already uses via `draftRoundCount()`).
+- The "加载中…" guard (`teams.length !== 8`) and the "全部8支战队"
+  heading → `teams.length === 0` (loading until settings resolve) and
+  `全部{teamCount}支战队`, both driven by `teams.length` at render
+  time rather than an assumed constant.
+
+`POSITIONS` (the 5 fixed Carry/Mid/Offlane/Soft Support/Hard Support
+role labels cycled onto roster slot badges) was intentionally left
+alone — it's game-role naming, not a Tournament Setting, and isn't
+part of what the Lobby's settings dialog configures.
+
+### Data flow
+
+`DraftArenaPage` (the default export) calls `fetchTournamentSettings()`
+in a `useEffect` on every mount — i.e. every time "开始比赛" is
+clicked and the Draft Arena page opens, it loads whatever was most
+recently saved in the Lobby's Tournament Settings dialog (Section 16).
+Draft Order specifically: it reuses the admin's actually-saved
+`draftOrder` when its round count matches `draftRoundCount
+(playersPerTeam)`, otherwise falls back to `generateSnakeDraft()` —
+the exact same "saved-or-default" logic already used by
+`TournamentSettingsDialog.jsx` — then converts it from that shared
+`[[1,2,...],[8,7,...]]` array-of-numbers shape into DraftArena's
+internal comma-separated round-order strings.
+
+Until settings resolve, `tournament.teams` starts empty and the
+existing "加载中…" state (now driven by `teams.length === 0` instead
+of `!== 8`) covers the brief loading window; if the fetch fails
+outright, a small local fallback (`teamCount: 8, playersPerTeam: 5`,
+matching `fetchTournamentSettings()`'s own defaults) is used so the
+page still renders instead of getting stuck.
+
+This is explicitly **fetch-on-open**, not live: if the Lobby's
+settings are changed while someone already has the Draft Arena open,
+they won't see the change until they leave and re-enter the page.
+Making it live/real-time (and syncing the actual draft state itself,
+not just settings) is the next planned phase and was intentionally
+not started here.
+
+### Tournament Name in the Top Bar
+
+Added inline on the existing phase-badge row in the Top Bar's center
+column (small muted text + a thin vertical divider, ahead of the
+"第一阶段 —— 队长分配" / "第二阶段 —— 队员选秀" pill) — this was the
+one part of the Top Bar's layout touched in this phase, and it adds no
+extra row/height, matching the existing muted-text visual language
+used elsewhere in the bar (e.g. the `text-white/40` sub-labels).
+
 
 
