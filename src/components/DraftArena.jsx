@@ -130,19 +130,10 @@ function CaptainBadge() {
 
 function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glow = false }) {
   const fallbackColor = DEFAULT_AVATAR.color;
-  // Border-radius is proportional to size (not a fixed px value) so it
-  // scales correctly for every avatar size this component is used at.
-  // The ratio below is exactly the Captain avatar's existing 10px-at-34px
-  // proportion (10/34), so size=34 still renders at precisely 10px --
-  // pixel-for-pixel unchanged -- while smaller sizes (e.g. the 20px
-  // roster/player-slot avatar, where a flat 10px radius is exactly 50% of
-  // the box and was rendering as a full circle instead of a rounded
-  // square) now get a correctly-scaled-down radius instead.
-  const radius = Math.round(size * (10 / 34));
   if (avatarUrl) {
     return (
       <div style={{
-        width: size, height: size, borderRadius: `${radius}px`, flexShrink: 0,
+        width: size, height: size, borderRadius: "10px", flexShrink: 0,
         border: glow ? `1.5px solid ${TEAL}` : `1px solid ${TEAL_DIM}`,
         boxShadow: glow ? `0 0 12px ${TEAL}66` : "none",
         overflow: "hidden", background: "#000",
@@ -153,7 +144,7 @@ function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glo
   }
   return (
     <div style={{
-      width: size, height: size, borderRadius: `${radius}px`, flexShrink: 0,
+      width: size, height: size, borderRadius: "10px", flexShrink: 0,
       background: `${fallbackColor}15`,
       border: glow ? `1.5px solid ${fallbackColor}` : `1px solid ${fallbackColor}44`,
       boxShadow: glow ? `0 0 12px ${fallbackColor}66` : "none",

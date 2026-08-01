@@ -1677,39 +1677,6 @@ below it can never move, and there is zero vertical movement of the
 Team card at any point — because the row's size no longer depends on
 what's inside it at all.
 
-## 31. Follow-Up Fix: Player Avatar Rendering as a Circle in the Team Panel
-
-Reported: roster/player avatars inside the Team panel showed as
-circles, while Captain avatars correctly showed as squares with
-rounded corners, even though both use the exact same `Avatar`
-component (`DraftArena.jsx`) — the Captain slot renders it at
-`size={34}`, the roster/player slot at `size={20}`.
-
-Root cause: `Avatar` used a **fixed** `borderRadius: "10px"`,
-independent of `size`. On the Captain's 34px box, a 10px radius is
-~29% of the box — a modest, clearly-square-with-rounded-corners look.
-On the roster/player slot's smaller 20px box, that same flat 10px
-radius is exactly **50%** of the box — which CSS renders as a full
-circle, not "rounded corners." Same component, same styling code;
-only the `size` prop differed, and the radius wasn't scaling with it.
-
-Fix, scoped to just the `Avatar` component's two `borderRadius`
-values: replaced the fixed `"10px"` with `Math.round(size * (10/34))`
-— the exact ratio the Captain avatar already uses at its current size,
-so `size={34}` still computes to precisely `10px` (pixel-for-pixel
-identical to before — the Captain avatar's "already correct" style
-was left completely untouched, per the request), while `size={20}`
-now computes to `6px` (30% of the box — a proper rounded square, not
-a circle). 6px on a ~20-36px avatar also happens to match the
-Tournament Lobby's own avatar convention (`rounded-md` = 6px) almost
-exactly, so this brings the Team panel's player avatars in line with
-the rest of the project's avatar styling, not just internally
-consistent with the Captain avatar. Avatar size, border, glow,
-background, and every other part of `Avatar` — plus the Team panel's
-layout/spacing and everything about the draft/animation logic — were
-left untouched.
-
-
 ## 30. Follow-Up Fix: Top Bar/Header Now Uses a Fixed Height
 
 Reported after Section 29: the Team panel was now stable, but the top
