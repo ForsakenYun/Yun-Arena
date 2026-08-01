@@ -866,6 +866,16 @@ $$;
 -- tournament_participants row disappears; accounts, permissions, and
 -- presence are all untouched). roll_number isn't "reset" separately, it's
 -- simply gone along with the row it lived on.
+--
+-- `where true` below is required, not decorative: this project's Supabase
+-- instance rejects a bare `DELETE` with no `WHERE` clause outright
+-- (error 21000, "DELETE requires a WHERE clause") regardless of whether
+-- it's issued directly or from inside a SECURITY DEFINER function -- this
+-- is enforced at the executor level, so it applies here exactly like it
+-- would to any other DELETE. `where true` intentionally still matches
+-- every row, preserving the original "delete every current participant"
+-- behavior exactly; it's the explicit form of what the missing WHERE was
+-- implicitly trying to do, not a narrower condition.
 create or replace function public.clear_tournament(p_token uuid)
 returns void
 language plpgsql
@@ -874,7 +884,7 @@ set search_path = public, extensions, pg_temp
 as $$
 begin
   perform public._require_role(p_token, array['admin', 'developer']);
-  delete from public.tournament_participants;
+  delete from public.tournament_participants where true;
 end;
 $$;
 

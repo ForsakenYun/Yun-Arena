@@ -194,31 +194,36 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
         </div>
         {isActive && <span className="absolute top-1/2 right-0 -translate-y-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full animate-pulse flex-shrink-0" style={{ background: TEAL, color: "#000" }}>选人中</span>}
       </div>
-      {canAssign ? (
-        <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg w-full"
-          style={{ background: "rgba(34,197,94,0.08)", borderColor: "#22c55e", borderStyle: "dashed", borderWidth: 1, boxShadow: "0 0 12px rgba(34,197,94,0.35)" }}>
-          <div className="w-[34px] h-[34px] rounded-lg border border-dashed flex items-center justify-center text-sm flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
-          <span className="text-[11px] font-bold italic" style={{ color: "#22c55e" }}>→ 分配队长</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg bg-black/40 border border-white/5"
-          data-slot-key={`cap:${teamIdx}`} style={{ opacity: captainHidden ? 0 : 1 }}>
-          {team.captain ? (
-            <>
-              <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={34} glow />
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-bold text-white truncate">{team.captain.name}</div>
-                <div className="mt-0.5"><CaptainBadge /></div>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center gap-2 w-full">
-              <div className="w-[34px] h-[34px] rounded-lg border border-dashed border-white/15 flex items-center justify-center text-white/20 text-xs flex-shrink-0">?</div>
-              <span className="text-[11px] italic text-white/25">等待队长</span>
+      <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg w-full"
+        data-slot-key={`cap:${teamIdx}`}
+        style={{
+          opacity: captainHidden ? 0 : 1,
+          background: canAssign ? "rgba(34,197,94,0.08)" : "rgba(0,0,0,0.4)",
+          borderWidth: 1,
+          borderStyle: canAssign ? "dashed" : "solid",
+          borderColor: canAssign ? "#22c55e" : "rgba(255,255,255,0.05)",
+          boxShadow: canAssign ? "0 0 12px rgba(34,197,94,0.35)" : "none",
+        }}>
+        {canAssign ? (
+          <>
+            <div className="w-[34px] h-[34px] rounded-lg border border-dashed flex items-center justify-center text-sm flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
+            <span className="text-[11px] font-bold italic" style={{ color: "#22c55e" }}>→ 分配队长</span>
+          </>
+        ) : team.captain ? (
+          <>
+            <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={34} glow />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-bold text-white truncate">{team.captain.name}</div>
+              <div className="mt-0.5"><CaptainBadge /></div>
             </div>
-          )}
-        </div>
-      )}
+          </>
+        ) : (
+          <div className="flex items-center gap-2 w-full">
+            <div className="w-[34px] h-[34px] rounded-lg border border-dashed border-white/15 flex items-center justify-center text-white/20 text-xs flex-shrink-0">?</div>
+            <span className="text-[11px] italic text-white/25">等待队长</span>
+          </div>
+        )}
+      </div>
       <div className="space-y-1">
         {team.slots.map((slot, i) => {
           const slotKey = `slot:${teamIdx}:${i}`;

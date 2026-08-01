@@ -1518,6 +1518,91 @@ Nothing about the flight itself (the ghost clone, the Web Animations
 API tween, `df-hit`, timing/duration) was touched, per "keep the
 current animation style, only fix the reveal timing."
 
+## 27. Follow-Up Fixes: clear_tournament WHERE Clause & Captain Slot Layout Stability
+
+Two more fixes, reported after Section 26's initial pass, both scoped
+to exactly what was reported.
+
+### clear_tournament: the actual root cause
+
+Section 26 fixed a suspected PostgREST schema-cache staleness issue
+for 清空参赛名单 (added `notify pgrst, 'reload schema';`) after
+verifying `clear_tournament`'s logic was correct by running it against
+a real local Postgres. That verification was accurate but incomplete:
+the local test Postgres instance didn't have the specific safety
+mechanism this Supabase project's live instance enforces, so the test
+couldn't have caught it. The real error, from the network response,
+was Postgres error `21000`: **"DELETE requires a WHERE clause."**
+
+Root cause: this Supabase project's database enforces "no bare
+DELETE/UPDATE" as a safety rule at the query-executor level — it
+applies regardless of whether the DELETE is issued directly or from
+inside a `SECURITY DEFINER` function, so `clear_tournament`'s
+`delete from public.tournament_participants;` (no `WHERE`, intentionally
+deleting every row) was rejected outright every time, regardless of
+who called it or with what permissions — which is exactly why it
+"always" failed.
+
+Fix, in the RPC itself (not the frontend, per the request): the
+statement is now `delete from public.tournament_participants where
+true;`. `where true` is the standard, explicit form of "match every
+row" — it satisfies the safety rule's requirement for a `WHERE` clause
+to be *present* while preserving the exact original behavior of
+deleting every current participant; it is not a narrower condition.
+Checked every other `delete from` in the file for the same
+bare-DELETE pattern — `clear_tournament` was the only one; every other
+DELETE (`logout_session`, `delete_user`, `leave_tournament`,
+`remove_participant`, `remove_temp_participants`, the pg_cron session
+cleanup) already has a real `WHERE` clause.
+
+Re-tested the same way as Section 26: ran the full, current
+`schema.sql` against a real local Postgres end-to-end, then called
+`clear_tournament` directly (logged in as the seeded admin, joined two
+test participants, called the function with that session) and
+confirmed the participant count dropped from 2 to 0 with no error.
+**Action needed:** re-run the updated `schema.sql` (idempotent, safe;
+already ends with the `NOTIFY` from Section 26 too).
+
+### Team panel reflowing during Captain assignment, but not Player assignment
+
+Symptom: assigning a Captain caused the Team panel to visibly
+shift/resize slightly during the flight animation; assigning a
+Player/teammate didn't.
+
+Root cause: in `TeamCard` (`DraftArena.jsx`), the roster (Player)
+slots always render the *same* persistent wrapper `<div
+data-slot-key=...>` regardless of state — only its inner content and
+opacity change. The captain slot didn't follow that pattern: it was a
+ternary between two structurally different top-level elements — a
+"→ 分配队长" dashed prompt box (shown while `canAssign` was true) versus
+a separate box for the assigned/empty state (only *this* one carried
+`data-slot-key` and the hide/reveal opacity logic). `canAssign`
+(`assignable && !team.captain`) flips to `false` for **every** team
+card at once the instant any captain is assigned — `assignable` comes
+from a single page-level `!!selectedCaptain` flag, and assigning a
+captain both fills `team.captain` and clears `selectedCaptain` in the
+same click handler. So on every single captain assignment, the prompt
+box was unmounted and a different element mounted in its place across
+every still-unassigned team card simultaneously — a real DOM
+structural change (not just a style/content update on a stable node),
+which is what was visibly reflowing the panel. Player slots never had
+an equivalent "prompt vs. assigned" element swap, which is why only
+Captain assignment showed the issue.
+
+Fix: merged the captain slot into one persistent wrapper `<div
+data-slot-key={cap:teamIdx}>`, matching the roster slot's existing
+pattern exactly — `canAssign` now only toggles that single element's
+inline `style` (background/border/box-shadow) and which children
+render inside it (prompt / assigned captain / "等待队长" placeholder),
+the same way the roster slot already toggles its own content without
+ever swapping which element exists. Every visual detail (colors,
+dashed vs. solid border, the "+" / "→ 分配队长" prompt, the assigned
+captain's avatar/name/badge, the "等待队长" placeholder) is pixel-for-
+pixel unchanged — only *how* those states are reached (update vs.
+remount) changed. Nothing about the flight animation, `dfSettle`,
+`hiddenKeys`, or any other part of the draft flow was touched.
+
+
 
 
 
