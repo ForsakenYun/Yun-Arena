@@ -691,8 +691,8 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
           </div>
         )}
 
-        <div className="lg:basis-2/5 lg:shrink lg:min-h-0 overflow-y-auto p-8">
-          <div className="flex flex-wrap gap-x-6 gap-y-8 pb-1">
+        <div className={`lg:basis-2/5 lg:shrink lg:min-h-0 overflow-y-auto ${draftPhase === "teammate" ? "p-8" : "pr-1"}`}>
+          <div className={`flex flex-wrap pb-1 ${draftPhase === "teammate" ? "gap-x-6 gap-y-8" : "gap-3"}`}>
             {teams.map((team, i) => (
               <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
                 assignable={draftPhase === "captain" && !!selectedCaptain}

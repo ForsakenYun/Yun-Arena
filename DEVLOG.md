@@ -1885,6 +1885,31 @@ flex-column layout (the pool panel below it, being `flex-1`, shrinks
 to make room), so the page still doesn't grow taller and still doesn't
 scroll at the browser level.
 
+**Correction: the `p-8`/wider-gap fix above was too broad.** It was
+applied to the team-panel container unconditionally, i.e. in both the
+captain phase and the Player Draft (teammate) phase. That was a
+regression: the captain phase never had a clipping problem in the
+first place — `isActive` is never true during the captain phase (there
+is no "current picker" yet), so the only glow that can appear there is
+the smaller 18px `canAssign` glow on empty slots, which the original
+Section 32 spacing (`pr-1`, `gap-3`) already had room for. Giving the
+captain-phase grid an extra 32px of padding it didn't need shrank the
+`队长候选池` panel below it, which made that panel start scrolling
+internally even though its contents fit comfortably before — visible,
+unwanted internal scrolling where there had been none.
+
+The fix is now scoped to only the phase that actually has the
+clipping problem: the team-panel container's padding and grid gap are
+conditional on `draftPhase`. Captain phase keeps the exact Section 32
+spacing (`pr-1` / `gap-3` — no forced extra room, so the 队长候选池
+panel gets its original share of height back and doesn't scroll unless
+it genuinely needs to). The Player Draft (teammate) phase keeps the
+`p-8` / `gap-x-6 gap-y-8` treatment, since that's the only phase where
+`isActive`'s larger 26px glow actually occurs and needs the clearance.
+Nothing else from this section's original writeup changed — the glow
+itself, `TeamCard`, and the captain-pool panel's own markup are all
+still untouched.
+
 
 
 
