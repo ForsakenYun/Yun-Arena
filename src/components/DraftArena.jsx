@@ -204,7 +204,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
   const captainHidden = !!hiddenKeys && hiddenKeys.has(`cap:${teamIdx}`);
   return (
     <PanelFrame
-      className={`p-3 flex-shrink-0 transition-all duration-300 ${isActive ? "scale-[1.03]" : ""} ${canAssign ? "cursor-pointer hover:brightness-125" : ""}`}
+      className={`p-3 flex-shrink-0 scroll-m-8 transition-all duration-300 ${isActive ? "scale-[1.03]" : ""} ${canAssign ? "cursor-pointer hover:brightness-125" : ""}`}
       style={{ width: TEAM_CARD_W }}
       data-team-panel={teamIdx}
       onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}>
@@ -357,7 +357,7 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
       className={`relative flex-shrink-0 text-left rounded-2xl transition-all duration-200 ${disabled ? "" : "hover:scale-[1.03]"}`}
       style={{
         width: PLAYER_CARD_W, padding: PLAYER_CARD_PAD,
-        background: PLAYER_CARD_BG, border: `${selected ? 3 : 2}px solid ${selected ? "#22c55e" : PLAYER_CARD_BORDER}`,
+        background: PLAYER_CARD_BG, border: `2px solid ${selected ? "#22c55e" : PLAYER_CARD_BORDER}`,
         boxShadow: selected ? "0 0 0 3px rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35), 0 4px 14px rgba(0,0,0,0.25)" : "0 4px 14px rgba(0,0,0,0.25)",
         transform: selected ? "scale(1.035)" : "scale(1)",
         transitionTimingFunction: "cubic-bezier(.2,.8,.2,1)",
@@ -554,6 +554,26 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const { roundOrderValid, customSnakeOrder, allCaptainsAssigned, draftFinished, currentPick, activeTeamIdx, roundLabel } = meta;
   const allDrafted = draftFinished;
 
+  // Keep the current picker's team card in view. Once the team panel is
+  // tall enough to need its own internal scrolling (see the container
+  // below), nothing else would otherwise bring a newly-active team back
+  // into view when the turn passes to it -- it could sit scrolled off-
+  // screen indefinitely, and any pick that lands on it would fly its card
+  // to a destination the user can't see. TeamCard carries scroll-m-8 (see
+  // below) so scrollIntoView leaves the same 32px of clearance around the
+  // card that its container's own padding already guarantees at rest --
+  // block:"nearest" alone only guarantees the card's bare box is visible
+  // and can flush it right against the container's edge, which wouldn't
+  // leave room for the glow's box-shadow reach beyond that box. This only
+  // scrolls within the card's own overflow-y-auto ancestor (see below);
+  // it never touches the browser's own scroll position, since nothing
+  // above that container is actually scrollable on desktop.
+  useEffect(() => {
+    if (activeTeamIdx < 0) return;
+    const el = document.querySelector(`[data-team-panel="${activeTeamIdx}"]`);
+    if (el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [activeTeamIdx]);
+
   const saveSnapshot = () => ({ teams: JSON.parse(JSON.stringify(teams)), pool: pool ? [...pool] : null, captainCandidates: [...captainCandidates], selectedCaptain, pickIndex, draftPhase, lastPick });
 
   const handleCaptainClick = (captain) => setSelectedCaptain((prev) => prev?.id === captain.id ? null : captain);
@@ -684,20 +704,36 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
           Browser Layout Standard. Below lg, this falls back to a plain
           stacked column with normal page scroll, same as the rest of the
           project's main pages. */}
-      <div className="flex-1 lg:min-h-0 flex flex-col gap-4 lg:overflow-hidden">
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
         {draftPhase === "teammate" && (
           <div className="shrink-0">
             <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
           </div>
         )}
 
-        <div className="lg:basis-2/5 lg:shrink lg:min-h-0 overflow-y-auto pr-1">
-          {draftPhase === "captain" && selectedCaptain && (
-            <div className="mb-3">
-              <span className="text-[11px] italic" style={{ color: "#22c55e" }}>—— 点击一张空战队卡分配给"{selectedCaptain.name}"</span>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-3 pb-1">
+        {/* Sized to its own content (no forced flex-basis): with only
+            flex-shrink + min-h-0 + max-height set, this box is exactly as
+            tall as the team-card row(s) actually are. It only shrinks (and
+            only then does overflow-y-auto start a scrollbar) once real
+            content — enough rows of teams — doesn't fit in the space below
+            the header/sequence strip; a single row never triggers a
+            scrollbar or leaves unused space below it. The lg:max-h-[55%]
+            cap just keeps a pathological number of rows from squeezing the
+            candidate/draft pool panel below it down to nothing.
+
+            p-8 is one fixed value for both phases (not phase-conditional
+            like an earlier pass of this fix) so Captain and Player Draft
+            look the same. It's sized for the bigger of the two glows this
+            section can ever paint -- the Player Draft phase's current-
+            picker glow (2px ring + 26px blur ≈ 28px reach) -- which also
+            comfortably covers the Captain phase's smaller canAssign glow
+            (2px ring + 18px blur ≈ 20px reach), so one value is safe for
+            both with no clipping either way. items-start stops the default
+            flex cross-axis stretch from ever growing a sibling to match
+            another card's box (see PlayerStatCard below for why that
+            matters). */}
+        <div className="lg:max-h-[55%] lg:shrink lg:min-h-0 overflow-y-auto p-8">
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-6 pb-1">
             {teams.map((team, i) => (
               <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
                 assignable={draftPhase === "captain" && !!selectedCaptain}
@@ -711,8 +747,8 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
           {draftPhase === "captain" && (
             <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
               <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: "#22c55e" }}>队长候选池（{captainCandidates.length}人未分配）</h2>
-              <div className="flex-1 lg:min-h-0 overflow-y-auto pr-1">
-                <div className="flex flex-wrap gap-x-4 gap-y-4">
+              <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
+                <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
                   {captainCandidates.map((c) => (
                     <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={selectedCaptain?.id === c.id} badge="队长" />
                   ))}
@@ -733,8 +769,8 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
             <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
               <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: TEAL }}>待选选手（{pool?.length ?? 0}）</h2>
               {pool && pool.length > 0 ? (
-                <div className="flex-1 lg:min-h-0 overflow-y-auto pr-1">
-                  <div className="flex flex-wrap gap-x-4 gap-y-4">
+                <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
+                  <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
                     {pool.map((p) => (
                       <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
                     ))}

@@ -1836,6 +1836,249 @@ player cards, the dark radial background) is likewise unchanged, per
 the standing "do not restyle to match the rest of the app" note in
 Section 23.
 
+## 33. DraftArena: Removed Captain-Assignment Hint, Fixed Glow Clipping (Phase 5)
+
+Two small follow-up UI fixes on top of Section 32, both purely
+cosmetic — no draft logic, animation, or functionality touched.
+
+**Removed the captain-assignment hint text.** During the captain
+phase, once a captain candidate was selected, the team-panel section
+showed a line above the grid: `—— 点击一张空战队卡分配给"<name>"`.
+Per feedback this was removed outright (not just hidden) — the empty
+team slots already render an obvious `+ → 分配队长` affordance with a
+green dashed border, so the extra instruction was redundant. Nothing
+else about the captain-selection flow (`handleCaptainClick`,
+`handleTeamSlotClick`, the `canAssign`/`assignable` props feeding
+`TeamCard`'s own green glow) changed.
+
+**Fixed the team-panel highlight glow being clipped.** `TeamCard`
+draws its active/assignable highlight as a `box-shadow` on an
+absolutely-positioned `inset-0` overlay (e.g. `0 0 0 2px ${TEAL}, 0 0
+26px ${TEAL}99` when active), and the active card additionally scales
+up slightly (`scale-[1.03]`). Box-shadow blur paints outside the
+element's own box — roughly 30px beyond the card edge once the ring,
+blur radius, and scale are combined — and CSS clips that kind of
+overflow-paint at the *padding edge* of the nearest ancestor whose
+`overflow` isn't `visible`.
+
+The team-panel section's scroll container (`lg:min-h-0
+overflow-y-auto`, added in Section 32 so the grid scrolls internally
+instead of growing the page) had no padding of its own — it was flush
+against the card row on every side. That's what clipped the glow: the
+active card's shadow had nowhere to bleed into before hitting the
+scroll container's own edge, on whichever side(s) a highlighted card
+happened to sit near.
+
+The fix only touches that one wrapper: it now carries `p-8` (32px on
+every side), which is comfortably more than the glow's ~30px reach, so
+the box-shadow always has room inside the container's padding box
+before the clip boundary. The row-to-row gap inside the flex-wrap grid
+was also widened (`gap-x-6 gap-y-8`, up from `gap-3`) so that if teams
+ever wrap to a second row, one row's glow doesn't run into the next
+row's cards. Nothing about `TeamCard`'s own glow styling, the 2px ring
+color/width, the 26px blur radius, or the active-card scale was
+reduced or altered — the fix is entirely "give the container more
+room," as requested, not "make the glow smaller." The container's
+`lg:basis-2/5 lg:shrink lg:min-h-0` sizing behavior from Section 32 is
+otherwise unchanged; the extra padding is simply absorbed by the
+flex-column layout (the pool panel below it, being `flex-1`, shrinks
+to make room), so the page still doesn't grow taller and still doesn't
+scroll at the browser level.
+
+**Correction: the `p-8`/wider-gap fix above was too broad.** It was
+applied to the team-panel container unconditionally, i.e. in both the
+captain phase and the Player Draft (teammate) phase. That was a
+regression: the captain phase never had a clipping problem in the
+first place — `isActive` is never true during the captain phase (there
+is no "current picker" yet), so the only glow that can appear there is
+the smaller 18px `canAssign` glow on empty slots, which the original
+Section 32 spacing (`pr-1`, `gap-3`) already had room for. Giving the
+captain-phase grid an extra 32px of padding it didn't need shrank the
+`队长候选池` panel below it, which made that panel start scrolling
+internally even though its contents fit comfortably before — visible,
+unwanted internal scrolling where there had been none.
+
+The fix is now scoped to only the phase that actually has the
+clipping problem: the team-panel container's padding and grid gap are
+conditional on `draftPhase`. Captain phase keeps the exact Section 32
+spacing (`pr-1` / `gap-3` — no forced extra room, so the 队长候选池
+panel gets its original share of height back and doesn't scroll unless
+it genuinely needs to). The Player Draft (teammate) phase keeps the
+`p-8` / `gap-x-6 gap-y-8` treatment, since that's the only phase where
+`isActive`'s larger 26px glow actually occurs and needs the clearance.
+Nothing else from this section's original writeup changed — the glow
+itself, `TeamCard`, and the captain-pool panel's own markup are all
+still untouched.
+
+## 34. DraftArena: Real Fix — the Forced `flex-basis` Was the Bug (Phase 5)
+
+Sections 32 and 33 both treated the team-panel section's height as
+something to patch around (extra padding, then phase-conditional
+padding). That was patching a symptom. This section replaces those
+patches with a fix to the actual layout bug.
+
+**The bug.** Since Section 32, the team-panel scroll container carried
+`lg:basis-2/5`. A flex-basis is not a cap or a hint — it's the box's
+main-axis size before flex-grow/shrink adjustments, and with
+`flex-grow` left at its default `0`, the box always renders at exactly
+that basis (40% of the flex column's height) regardless of how much
+content is actually inside it, as long as there's enough room overall.
+That single class explains everything reported:
+
+- **Captain phase, empty space below the team panels:** one row of
+  team cards is far shorter than 40% of the available height, but the
+  box was forced to 40% anyway, leaving dead space below the row.
+- **Player Draft phase, a scrollbar on a single row that obviously
+  fit:** the fixed 40% box, once Section 33 added `p-8` padding on top
+  of it, could end up shorter than (card row + padding) in the
+  specific layouts where the header + `DraftSequenceStrip` already
+  consumed a lot of the vertical budget — so the box's *forced* size,
+  not the actual content, is what didn't fit, and `overflow-y-auto`
+  dutifully scrolled a box that never needed to be that cramped in the
+  first place. The scrollbar was correct given the (wrong) box size —
+  it just proved the box size was wrong.
+- **The glow still clipping despite the padding fix:** same root
+  cause — the forced-size box could still end up smaller than
+  (content + the padding meant to protect the glow), so the padding
+  itself could get squeezed away.
+
+**The fix.** `lg:basis-2/5` is removed. The container now has no
+explicit flex-basis at all, so its basis defaults to `auto` — i.e. its
+own content's natural height (the card row, plus the padding around
+it). With `lg:shrink` and `lg:min-h-0` still set:
+- If that natural height fits in the space left after the header (and,
+  in the Player Draft phase, the sequence strip), the box renders at
+  exactly that height — no forced stretch, no dead space, and nothing
+  for `overflow-y-auto` to scroll, so no scrollbar appears. This holds
+  in **both** phases now, so the earlier phase-conditional padding
+  from Section 33 was removed — `p-8` and `gap-x-6 gap-y-8` are applied
+  unconditionally, and they no longer cause the Section-33 regression,
+  because the box is no longer force-stretched to a fixed proportion
+  that the padding could then overflow.
+- If the actual content (many rows of teams) genuinely doesn't fit in
+  the remaining space, flex-shrink reduces the box and
+  `overflow-y-auto` scrolls it — exactly the "only scroll when content
+  really doesn't fit" rule asked for.
+- A `lg:max-h-[55%]` cap was added purely as a backstop for that
+  many-rows case, so an unusually large number of teams can't shrink
+  the 候选池/待选选手 panel below it down to nothing. It has no effect
+  in the common case (one row) since the content is already far under
+  55% of the available height — it only ever engages as a ceiling, not
+  a floor, so it doesn't reintroduce the empty-space bug.
+
+**Candidate-pool glow.** The captain-candidate and teammate-pool list
+containers (`队长候选池` / `待选选手`) had the same category of bug at
+a smaller scale: their scrollable inner `<div>` had no padding of its
+own (`pr-1` only), so a selected `PlayerStatCard`'s glow (`0 0 0 3px
+rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35)…`, plus a `scale
+(1.035)`) had nowhere to bleed into before hitting that div's edge.
+Unlike the team-panel section, this container was already correctly
+sized (`flex-1 lg:min-h-0` inside an already-bounded `PanelFrame` —
+no forced basis here, so no wasted-space bug), so the fix is just the
+padding: `pr-1` → `p-6` (24px), comfortably past the glow's ~21px
+reach. Because this box's size was already governed by `flex-1` off a
+bounded parent (not content), adding this padding doesn't grow the
+panel or introduce a new scrollbar in the common case — it only ever
+shrinks the visible list area by 24px per edge, which is well inside
+the room already available. Applied identically to both the
+captain-phase and teammate-phase pool panels for consistency, even
+though the reported clipping was specifically on the captain pool's
+selected-card glow.
+
+**Unchanged.** `TeamCard`, `PlayerStatCard`, their glow colors/blur
+radii/ring widths, the active-card and selected-card scale transforms,
+`DraftSequenceStrip`, the snake-draft/captain-assignment logic, and
+every other piece of Draft Arena functionality are untouched — this
+section is exclusively about how three container `<div>`s size
+themselves.
+
+## 35. DraftArena: Real Root Cause of Sibling-Card Growth + Team-Panel Spacing Rebalance (Phase 5)
+
+Two more fixes, both root-caused rather than patched.
+
+**Sibling Captain-Pool cards growing when one is selected.** This
+looked like a `transform`/scale bug but wasn't. `PlayerStatCard`
+changed its border **width** on selection — `2px` unselected, `3px`
+selected — not just its color. Card grids in this file are plain
+`flex flex-wrap` rows, and the CSS default for the cross-axis in a
+flex row is `align-items: stretch`: every item in the same row is
+stretched to match the tallest item in that row. A 1px-per-edge
+border increase is a real box-model change (unlike `transform`, which
+is paint-only and never affects layout), so the selected card became
+2px taller than its neighbors, and `stretch` then grew *every other
+card in that row* by those same 2px to match — the exact "all the
+remaining cards get slightly bigger" behavior reported, and a
+measurable one, not just an optical illusion.
+
+Verified in isolation before and after (same markup/CSS, headless
+Chromium, `getBoundingClientRect()`):
+- Baseline (both cards `2px` border): sibling height `40px`.
+- Bug reproduced (selected `3px`, sibling `2px`, default `stretch`):
+  sibling height `42px` — grown by exactly the border delta.
+- Fixed (constant `2px` border on both, `items-start` on the row):
+  sibling height back to `40px`, unchanged; the selected card's own
+  visual footprint still grows via its existing `transform:
+  scale(1.035)` — the actual "enlarge" animation is untouched.
+
+The fix: `PlayerStatCard`'s border width no longer changes on
+selection — it's always `2px`; only the border *color*, `box-shadow`
+(the green ring/glow), and `transform` (the scale) differ when
+`selected`, and all three of those are paint-only properties that
+never influence any sibling's box size. `items-start` was also added
+to all three card-grid rows (team panels, captain pool, teammate pool)
+as a structural guard, so a future per-card size difference of any
+kind — a badge, a longer name wrapping, anything — can never again
+stretch neighboring cards via this same mechanism.
+
+**Team-panel spacing.** The team-panel section's padding and the
+`gap-4` between it, the sequence strip, and the pool panel below it
+were stacking on top of each other (e.g. a 16px inter-section gap plus
+a 32px anti-clip padding, in the same direction, adding up to 48px of
+visual space that read as "too much empty space" even though only
+part of it was doing anything). Two changes:
+
+- The shared `gap-4` between the sequence strip / team-panel / pool
+  rows was removed; the sequence strip keeps its own `mb-4` (so that
+  specific, previously-fine gap is unchanged), and nothing separates
+  the team-panel section from the pool panel below except the
+  team-panel's own bottom padding — which was already there to protect
+  the glow, so it's no longer *also* stacked under a redundant gap.
+  That reclaimed space goes to the pool panel below it, per the
+  request, since the pool panel is `flex-1` and simply gets whatever
+  height opens up.
+- The team-panel's own padding is now phase-aware instead of one
+  fixed value, because the two phases can only ever paint different
+  glows here: the Captain phase never sets any card "active" (no
+  picker has started), so the *only* glow `TeamCard` can show there is
+  the smaller `canAssign` ring (`2px` ring + `18px` blur ≈ 20px reach)
+  — `p-6` (24px) covers that with a few px to spare, at close to the
+  project's normal `px-5/py-5` density (Section 17's Lobby reference).
+  The Player Draft phase's current-picker glow is bigger (`2px` ring +
+  `26px` blur ≈ 28px reach), so it keeps `p-8` (32px). This isn't a
+  return to the Section 33 phase-conditional patch that caused a
+  regression — that patch broke things because the section's *size*
+  was still forced to a fixed `flex-basis` back then; Section 34
+  already fixed that (the section sizes to its own content), so
+  varying the padding by phase now is safe and doesn't reintroduce the
+  earlier bug. Card-to-card gaps inside the row were also tightened
+  (`gap-x-6 gap-y-8` → `gap-x-4 gap-y-6`), closer to the project's
+  usual `gap-4`-ish card spacing, while still leaving room between
+  wrapped rows for the glow.
+- The candidate/draft pool's own inner scroll padding was bumped from
+  `p-6` to `p-8` (24px → 32px). The previously-reported clipping there
+  had already been addressed with `p-6`, but the selected card's true
+  reach — `3px` ring + `18px` blur + the `scale(1.035)` reach on a
+  130px-wide card — comes out close enough to 24px that it could still
+  clip by a pixel or two depending on the browser's blur/AA rounding.
+  `p-8` gives a real margin instead of sitting right at the edge of
+  the estimate.
+
+**Unchanged.** The glow's color, blur radius, ring width, and the
+selected/active scale transforms are exactly what they were. The
+`lg:max-h-[55%]`/content-based sizing behavior from Section 34 is
+untouched — this section only adjusts padding values and removes a
+redundant gap; no draft logic, animation, or synchronization code was
+touched.
 
 
 
@@ -1843,3 +2086,104 @@ Section 23.
 
 
 
+
+
+## 36. DraftArena: Full Layout Inspection, Then Four Confirmed Fixes (Phase 5)
+
+Before touching any more spacing values, this pass started with a full,
+empirical inspection of the whole Draft Arena page — every flex
+container, every fixed/max height, every overflow and scroll container,
+every margin, every glow, every transform, and the flying-card
+animation — checked by actually rendering the component (with mock
+data standing in for the real Supabase-backed `fetchTournamentSettings`
+/`fetchLobby`) in a headless browser at multiple viewport sizes, plus a
+16-team/80-player stress test to surface anything that only shows up at
+scale. That inspection surfaced several findings; per direction, only
+four of them were actually fixed here. The rest (mobile header
+clipping, the ambient `PanelFrame` glow's tight margins, `PlayerStat
+Card`'s dead `hover:scale` class, `DraftSequenceStrip`'s `overflow-x-
+auto` being inert since its row wraps instead of scrolling) were
+deliberately left alone — noted for the record, not acted on, since
+they're pre-existing/cosmetic rather than the confirmed user-facing
+issues below.
+
+**Fix 1 — duplicate margin.** `DraftSequenceStrip`'s own `PanelFrame`
+already carries `mb-4`; Section 35 additionally wrapped it in a `<div
+className="shrink-0 mb-4">`, stacking a second 16px margin on top of
+the first. Only the Player Draft phase renders the sequence strip, so
+this only inflated spacing there, which is part of why the two phases
+looked inconsistent. Fixed by dropping the wrapper's `mb-4` and keeping
+the component's own. Measured before/after in a real render: the gap
+between the sequence strip and the first team-card row went from 60px
+to 44px — consistent with removing exactly one redundant 16px margin.
+
+**Fix 2 — spacing consistency between phases.** Section 35 gave the
+team-panel container `p-6` in the Captain phase and `p-8` in the Player
+Draft phase, reasoning each phase can only ever paint a different max
+glow size (Captain's `canAssign` glow tops out around 20px of reach;
+Player Draft's active-picker glow around 28px). That reasoning was
+locally correct but produced a visible, measurable mismatch between
+the two phases, which is now the higher priority. Both now use a
+single `p-8` (32px) — safe for the bigger glow, and with plenty of
+margin for the smaller one too. Measured: Captain phase's team-grid →
+pool-heading gap is now 53px, Player Draft's is 49px — both close to
+each other and both close to the Tournament Lobby's own equivalent gap
+(measured directly off a real render of `TournamentLobby`: 46px,
+action-row → "参赛玩家" table heading), instead of one phase sitting
+noticeably taller than the other.
+
+**Fix 3 — the active team wasn't kept in view.** There was no
+`scrollIntoView`/`scrollTo` anywhere in the file. Confirmed directly:
+once the team-panel section is genuinely in its scrolling state (which
+happens on perfectly ordinary 1440×900/1366×768 laptop widths with
+just 8 teams — 190px cards don't all fit in one row below 1920px), the
+current picker's team could sit scrolled completely out of view with
+nothing bringing it back when its turn began. Fixed with a `useEffect`
+keyed on `activeTeamIdx` that calls `scrollIntoView` on the
+now-active team's `[data-team-panel]` element. Two details matter
+here:
+- `block: "nearest"` on `scrollIntoView` alone only guarantees the
+  card's own layout *box* is visible — it says nothing about the glow,
+  which is a `box-shadow` painted outside that box. Measured this
+  concretely: with `block: "nearest"` (and even with `block:
+  "center"`, tried as an alternative), the card could still land close
+  enough to the container's edge that the active glow's ~28px reach
+  would clip. The fix that actually guarantees the right amount of
+  room is CSS `scroll-margin` — `TeamCard` now carries `scroll-m-8`
+  (32px, matching the container's own anti-clip padding from Fix 2),
+  which `scrollIntoView` respects natively, so the auto-scroll always
+  leaves the same clearance around the card that its container's
+  resting-state padding already guarantees.
+- The effect only calls `scrollIntoView` on the team card's own
+  element, which only scrolls within its nearest actually-scrollable
+  ancestor (the team-panel's `overflow-y-auto` container) — it cannot
+  affect the browser's own scroll position, since nothing above that
+  container is scrollable on desktop per the Full Browser Layout
+  Standard.
+
+Verified with a real scroll-and-pick sequence (not just a fresh page
+load, which wouldn't have exercised this at all): manually scrolled the
+team-panel to its bottom, made a pick that advances `activeTeamIdx` to
+a team back in row 1, and confirmed the container automatically
+scrolled back to show it, landing with the same clearance as the
+natural resting position.
+
+**Fix 4 — the flying-card animation could land off-screen.** This
+turned out to be a direct consequence of Fix 3, not a separate bug: the
+ghost element itself is safely `document.body`-appended (confirmed via
+source — it's outside every scroll container, so it was never at risk
+of being clipped), but `runFlight()` computes its landing coordinate
+from `destEl.getBoundingClientRect()` at the moment the flight starts.
+The destination for any Player Draft pick is always whichever team was
+active when the user clicked a candidate — the same team Fix 3 now
+keeps in view as soon as its turn begins. So keeping the active team
+scrolled into view (Fix 3) means the flight's destination is already
+visible by the time a pick can land on it; no separate change to the
+animation code was needed or made.
+
+**Unchanged.** `PanelFrame`, `PlayerStatCard`, `DraftSequenceStrip`'s
+own internals, the glow colors/blur radii/ring widths, the active/
+selected scale transforms, the flying-card ghost element and its
+timing, and all draft/snake-order logic are exactly what they were —
+this section only added one `useEffect`, one `scroll-m-8` class, and
+adjusted the two spacing values already covered above.
