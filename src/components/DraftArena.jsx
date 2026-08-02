@@ -677,40 +677,37 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
         </div>
       </PanelFrame>
 
-      {/* Team grid (left) + candidate/draft pool (right) share the rest of
-          the browser height on desktop (lg:flex-row); each side scrolls
-          internally (overflow-y-auto on its own inner content area) instead
-          of the whole page growing taller, per the Full Browser Layout
-          Standard. Below lg, this falls back to a plain stacked column with
-          normal page scroll, same as the rest of the project's main pages. */}
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-4 lg:overflow-hidden">
-        <div className="flex flex-col gap-3 flex-1 lg:min-h-0 lg:overflow-hidden">
-          {draftPhase === "teammate" && (
-            <div className="shrink-0">
-              <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
+      {/* Team panels (top) + candidate/draft pool (bottom) stack vertically,
+          sharing the rest of the browser height on desktop. Each section
+          scrolls internally on its own (overflow-y-auto on its own content
+          area) instead of the whole page growing taller, per the Full
+          Browser Layout Standard. Below lg, this falls back to a plain
+          stacked column with normal page scroll, same as the rest of the
+          project's main pages. */}
+      <div className="flex-1 lg:min-h-0 flex flex-col gap-4 lg:overflow-hidden">
+        {draftPhase === "teammate" && (
+          <div className="shrink-0">
+            <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
+          </div>
+        )}
+
+        <div className="lg:basis-2/5 lg:shrink lg:min-h-0 overflow-y-auto pr-1">
+          {draftPhase === "captain" && selectedCaptain && (
+            <div className="mb-3">
+              <span className="text-[11px] italic" style={{ color: "#22c55e" }}>—— 点击一张空战队卡分配给"{selectedCaptain.name}"</span>
             </div>
           )}
-
-          <div className="shrink-0 flex items-center gap-2">
-            <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>全部{teamCount}支战队</h2>
-            {draftPhase === "captain" && selectedCaptain && (
-              <span className="text-[11px] italic" style={{ color: "#22c55e" }}>—— 点击一张空战队卡分配给"{selectedCaptain.name}"</span>
-            )}
-          </div>
-
-          <div className="flex-1 lg:min-h-0 overflow-y-auto pr-1">
-            <div className="flex flex-wrap gap-3 pb-1">
-              {teams.map((team, i) => (
-                <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
-                  assignable={draftPhase === "captain" && !!selectedCaptain}
-                  onAssignCaptain={handleTeamSlotClick}
-                  hiddenKeys={hiddenKeys} />
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-3 pb-1">
+            {teams.map((team, i) => (
+              <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
+                assignable={draftPhase === "captain" && !!selectedCaptain}
+                onAssignCaptain={handleTeamSlotClick}
+                hiddenKeys={hiddenKeys} />
+            ))}
           </div>
         </div>
 
-        <div className="w-full lg:w-[380px] xl:w-[430px] flex-shrink-0 flex flex-col lg:min-h-0 lg:overflow-hidden">
+        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
           {draftPhase === "captain" && (
             <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
               <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: "#22c55e" }}>队长候选池（{captainCandidates.length}人未分配）</h2>

@@ -1791,27 +1791,39 @@ component) now follow the identical pattern already established for
   other two pages.
 - The team grid and the candidate/draft pool — previously two
   full-width sections stacked vertically, each contributing to page
-  height — are now **side-by-side columns** (`lg:flex-row`) sharing
-  one `flex-1 lg:min-h-0` row: the team grid takes the remaining
-  width on the left, the pool panel is a fixed `lg:w-[380px]
-  xl:w-[430px]` on the right. This is the "make better use of
-  horizontal space instead of relying on vertical page growth" part
-  of the ask, and mirrors why Section 17 put the Lobby's stat cards
-  and join/leave card in one row instead of stacking them.
-- Each column scrolls **internally** — the team grid's card wrapper
-  and the pool panel's card list are both `flex-1 lg:min-h-0
-  overflow-y-auto` — instead of the browser window scrolling. This
-  replaces the old pool-only `max-h-[80vh] overflow-y-auto` (viewport-
-  relative, and only applied to the teammate-phase pool) with the same
-  "fill remaining flex space, scroll within it" pattern used
-  everywhere else, applied consistently to both the team grid and
+  height — now sit in a `flex flex-col` stack that shares one
+  `flex-1 lg:min-h-0` region: team panels stay on top, the
+  candidate/draft pool stays below, in the same order as the original
+  design. The team-panel area uses `lg:basis-2/5 lg:shrink lg:min-h-0
+  overflow-y-auto` (so it takes up to ~40% of the available height and
+  scrolls internally if there are enough teams to need it) and the
+  pool panel below it takes the rest via `flex-1 lg:min-h-0`.
+- Each section scrolls **internally** — the team grid's wrapper and
+  the pool panel's card list are both `overflow-y-auto` inside a
+  `lg:min-h-0` flex child — instead of the browser window scrolling.
+  This replaces the old pool-only `max-h-[80vh] overflow-y-auto`
+  (viewport-relative, and only applied to the teammate-phase pool)
+  with the same "fill remaining flex space, scroll within it" pattern
+  used everywhere else, applied consistently to the team grid and to
   both pool states (captain-candidate pool and teammate draft pool).
+- The `全部{teamCount}支战队` heading above the team grid was removed
+  at the user's request — the team panels themselves already make the
+  team count obvious. The "点击一张空战队卡分配给…" hint that used to
+  sit next to that heading during the captain phase is kept, just
+  without the heading it used to follow.
 - Below the `lg` breakpoint, none of the height-constraining classes
   apply (same convention as Section 17), so mobile falls back to a
   normal stacked column with ordinary full-page scroll.
 - No sidebar was added — navigation (the "← 返回选手管理" back button)
   stays exactly where it was, inside the existing fixed-height header,
   per the standard's "navigation stays in the top header" rule.
+
+**Revision note.** An earlier pass of this same refactor placed the
+candidate/draft pool in a side column to the right of the team grid.
+That was reverted per feedback — the pool belongs below the team
+panels, matching the original design's vertical order, not beside it.
+The side-by-side version is no longer in the codebase; the bullets
+above describe the current (stacked) layout only.
 
 **What did not change.** `TeamCard`, `PlayerStatCard`,
 `DraftSequenceStrip`, `PanelFrame`, `Avatar`/`SquareAvatar`, the card-
