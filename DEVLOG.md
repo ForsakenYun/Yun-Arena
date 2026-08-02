@@ -1836,6 +1836,55 @@ player cards, the dark radial background) is likewise unchanged, per
 the standing "do not restyle to match the rest of the app" note in
 Section 23.
 
+## 33. DraftArena: Removed Captain-Assignment Hint, Fixed Glow Clipping (Phase 5)
+
+Two small follow-up UI fixes on top of Section 32, both purely
+cosmetic — no draft logic, animation, or functionality touched.
+
+**Removed the captain-assignment hint text.** During the captain
+phase, once a captain candidate was selected, the team-panel section
+showed a line above the grid: `—— 点击一张空战队卡分配给"<name>"`.
+Per feedback this was removed outright (not just hidden) — the empty
+team slots already render an obvious `+ → 分配队长` affordance with a
+green dashed border, so the extra instruction was redundant. Nothing
+else about the captain-selection flow (`handleCaptainClick`,
+`handleTeamSlotClick`, the `canAssign`/`assignable` props feeding
+`TeamCard`'s own green glow) changed.
+
+**Fixed the team-panel highlight glow being clipped.** `TeamCard`
+draws its active/assignable highlight as a `box-shadow` on an
+absolutely-positioned `inset-0` overlay (e.g. `0 0 0 2px ${TEAL}, 0 0
+26px ${TEAL}99` when active), and the active card additionally scales
+up slightly (`scale-[1.03]`). Box-shadow blur paints outside the
+element's own box — roughly 30px beyond the card edge once the ring,
+blur radius, and scale are combined — and CSS clips that kind of
+overflow-paint at the *padding edge* of the nearest ancestor whose
+`overflow` isn't `visible`.
+
+The team-panel section's scroll container (`lg:min-h-0
+overflow-y-auto`, added in Section 32 so the grid scrolls internally
+instead of growing the page) had no padding of its own — it was flush
+against the card row on every side. That's what clipped the glow: the
+active card's shadow had nowhere to bleed into before hitting the
+scroll container's own edge, on whichever side(s) a highlighted card
+happened to sit near.
+
+The fix only touches that one wrapper: it now carries `p-8` (32px on
+every side), which is comfortably more than the glow's ~30px reach, so
+the box-shadow always has room inside the container's padding box
+before the clip boundary. The row-to-row gap inside the flex-wrap grid
+was also widened (`gap-x-6 gap-y-8`, up from `gap-3`) so that if teams
+ever wrap to a second row, one row's glow doesn't run into the next
+row's cards. Nothing about `TeamCard`'s own glow styling, the 2px ring
+color/width, the 26px blur radius, or the active-card scale was
+reduced or altered — the fix is entirely "give the container more
+room," as requested, not "make the glow smaller." The container's
+`lg:basis-2/5 lg:shrink lg:min-h-0` sizing behavior from Section 32 is
+otherwise unchanged; the extra padding is simply absorbed by the
+flex-column layout (the pool panel below it, being `flex-1`, shrinks
+to make room), so the page still doesn't grow taller and still doesn't
+scroll at the browser level.
+
 
 
 

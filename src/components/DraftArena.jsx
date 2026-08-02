@@ -691,13 +691,8 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
           </div>
         )}
 
-        <div className="lg:basis-2/5 lg:shrink lg:min-h-0 overflow-y-auto pr-1">
-          {draftPhase === "captain" && selectedCaptain && (
-            <div className="mb-3">
-              <span className="text-[11px] italic" style={{ color: "#22c55e" }}>—— 点击一张空战队卡分配给"{selectedCaptain.name}"</span>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-3 pb-1">
+        <div className="lg:basis-2/5 lg:shrink lg:min-h-0 overflow-y-auto p-8">
+          <div className="flex flex-wrap gap-x-6 gap-y-8 pb-1">
             {teams.map((team, i) => (
               <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
                 assignable={draftPhase === "captain" && !!selectedCaptain}
