@@ -2187,3 +2187,74 @@ selected scale transforms, the flying-card ghost element and its
 timing, and all draft/snake-order logic are exactly what they were —
 this section only added one `useEffect`, one `scroll-m-8` class, and
 adjusted the two spacing values already covered above.
+
+## 37. DraftArena: Header Redesign — Approved V3-2 Concept (Phase 5)
+
+Replaced the top bar's UI with a new design, approved after a round of
+throwaway HTML previews explored separately from the real codebase (5
+initial concepts, 5 refinements of the chosen one, then a final polish
+pass). Only the header's internal markup/styling changed — its slot in
+the page (`HEADER_H = 160`, `shrink-0`, `overflow: hidden`), and every
+piece of data/behavior it displays, are exactly what they were.
+
+**Layout.** The header is now three columns filling its full width
+edge-to-edge (hairline `rgba(0,245,212,0.16)` dividers between them,
+no more centered block with dead space on either side):
+- **Nav column** (left): back button and undo button, restyled as a
+  matched pair of compact ghost pills instead of one large button
+  stacked over one small chip.
+- **Masthead** (center, flexible): tournament name on its own line,
+  then the phase pill + current-turn headline on one row, then a
+  single meta line underneath.
+- **Progress + action** (right): one progress ring plus the
+  "进入最终对阵" button.
+
+**Typography/color swap (the actual ask).** The tournament name is
+now teal with a glow (`color: TEAL`, matching text-shadow) instead of
+a small dim white label — it reads as the event's identity now. The
+current-turn headline is the reverse: still `GlowHeading` (white text,
+teal glow — this component already matched "DraftArena's existing
+glow style" without changes) but bumped from `text-xl` to `text-3xl`
+so it's unambiguously the largest, most prominent text in the header,
+per "it should feel like the primary focus."
+
+**Progress: two bars → one ring, same two numbers.** The old header
+always rendered two linear bars at once — captain-assignment % and
+draft-pick % — even though only one of them is ever actually moving at
+a given time (the other sits pinned at 0% or 100% depending on phase).
+The new ring shows whichever one is live: `headerProgressPct` is
+`(8-captainCandidates.length)/8*100` during the Captain phase (green,
+matching that phase's existing color convention) and
+`pickIndex/customSnakeOrder.length*100` during Player Draft (teal) —
+the exact same two formulas the old bars used, just not both painted
+at once. No progress information that was visible before is gone.
+
+**Buttons.** `PrimaryButton` (only ever used in this header) is no
+longer called from here — its large `px-6 py-3` uppercase styling
+didn't fit the new compact language, so the back button and the
+final-bracket button are now hand-styled to match the nav/CTA pills
+the approved design specified. `PrimaryButton` itself is left defined
+but unused, in case anything else in this file starts using it later;
+removing it wasn't necessary for this change. The undo button keeps
+its exact original amber/gold theming (`#fbbf24`, distinct from the
+teal used everywhere else in the new header) and its disabled/count-
+badge logic completely unchanged — that color is a meaningful existing
+signal (undo reads as a different *kind* of action from navigation),
+not something the approved redesign asked to touch.
+
+**Verified, not just built.** Rendered the real component end-to-end
+in the same headless-browser harness used for earlier phases (mock
+`fetchTournamentSettings`/`fetchLobby`, 8 teams): header height stays
+exactly 160px in both phases; selecting a captain updates the
+headline/subtext live; finishing the Captain phase and making Player
+Draft picks correctly flips the ring from green→teal and advances its
+percentage (0% → 3% after one pick of 32); the undo button's count
+badge and enabled state track `draftHistory.length` correctly; and
+clicking undo actually reverts the active-team headline back to the
+previous state (`临时队长2 的选人回合` → `临时队长1 的选人回合`),
+confirming `undoLastPick()` is wired to the same handler as before.
+
+**Unchanged.** Everything below the header — the sequence strip, team
+panels, candidate/draft pools, the auto-scroll-to-active-team effect,
+the flying-card animation, and all snake-draft/captain-assignment
+logic — was not touched.

@@ -644,55 +644,96 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
     setDraftHistory((h) => h.slice(0, -1));
   };
 
+  // Header progress ring: the same two underlying metrics the old dual
+  // linear bars showed (captain-assignment % and draft-pick %), just
+  // presented as one context-appropriate ring instead of two bars shown
+  // at once -- only one of the two is ever actually moving at a time (the
+  // other is pinned at 0% before the captain phase finishes, or 100% for
+  // the rest of the draft once it has), so nothing shown before is lost.
+  const headerProgressPct = draftPhase === "captain"
+    ? ((8 - captainCandidates.length) / 8) * 100
+    : (customSnakeOrder.length ? (pickIndex / customSnakeOrder.length) * 100 : 0);
+  const headerRingColor = draftPhase === "captain" ? "#22c55e" : TEAL;
+  const HEADER_RING_R = 32;
+  const HEADER_RING_CIRC = 2 * Math.PI * HEADER_RING_R;
+  const headerRingOffset = HEADER_RING_CIRC * (1 - headerProgressPct / 100);
+
   if (teams.length === 0) return <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>;
 
   return (
     <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-4 lg:overflow-hidden">
-      <PanelFrame className="p-4 shrink-0" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
-        <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-          <div className="flex flex-col gap-2 flex-shrink-0">
-            <PrimaryButton variant="ghost" onClick={onBack}>← 返回选手管理</PrimaryButton>
+      <PanelFrame className="shrink-0" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
+        <div className="h-full flex items-stretch">
+          {/* Nav column -- same back/undo handlers, disabled state, and
+              history-count badge as before, just restyled as a compact
+              ghost-button pair instead of one large button + one chip. */}
+          <div className="flex-shrink-0 flex flex-col justify-center gap-2.5 px-5" style={{ borderRight: "1px solid rgba(0,245,212,0.16)" }}>
+            <button onClick={onBack}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
+              style={{ background: "rgba(0,245,212,0.05)", borderColor: "rgba(0,245,212,0.28)", color: TEAL_SOFT }}>
+              ← 返回选手管理
+            </button>
             <button onClick={undoLastPick} disabled={draftHistory.length === 0}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wide border transition-all"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
               style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgba(0,0,0,0.2)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgba(255,255,255,0.06)", color: draftHistory.length > 0 ? "#fbbf24" : "rgba(255,255,255,0.15)", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer", boxShadow: draftHistory.length > 0 ? "0 0 10px rgba(251,191,36,0.2)" : "none" }}>
               ↩ 撤销上一次选择
-              {draftHistory.length > 0 && <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
+              {draftHistory.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
             </button>
           </div>
-          <div className="text-center flex-1">
-            <div className="flex items-center justify-center gap-2 mb-1">
-              {tournamentName && (
-                <>
-                  <span className="text-[10px] font-bold tracking-wide text-white/45 truncate max-w-[180px]">{tournamentName}</span>
-                  <span className="w-px h-3 flex-shrink-0" style={{ background: "rgba(255,255,255,0.15)" }} />
-                </>
-              )}
-              <span className="text-[10px] font-black px-3 py-0.5 rounded-full tracking-widest"
+
+          {/* Masthead -- tournament name (teal glow, the event's identity)
+              stacked above the phase pill + current-turn headline (white
+              glow, the primary focus), same data/branches as before. */}
+          <div className="flex-1 min-w-0 flex flex-col justify-center px-8 gap-1.5">
+            {tournamentName && (
+              <div className="font-display font-extrabold text-2xl truncate"
+                style={{ color: TEAL, textShadow: "0 0 14px rgba(0,245,212,0.45), 0 0 34px rgba(0,245,212,0.2)" }}>
+                {tournamentName}
+              </div>
+            )}
+            <div className="flex items-baseline gap-3 flex-wrap min-w-0">
+              <span className="text-[11px] font-black px-3 py-0.5 rounded-full tracking-widest flex-shrink-0"
                 style={{ background: draftPhase === "captain" ? "rgba(34,197,94,0.12)" : "rgba(0,245,212,0.12)", color: draftPhase === "captain" ? "#22c55e" : TEAL, border: `1px solid ${draftPhase === "captain" ? "rgba(34,197,94,0.4)" : TEAL+"55"}` }}>
                 {draftPhase === "captain" ? "第一阶段 —— 队长分配" : "第二阶段 —— 队员选秀"}
               </span>
+              {draftPhase === "captain" ? (
+                <GlowHeading size="text-3xl" className="font-display truncate">{selectedCaptain ? `将 ${selectedCaptain.name.toUpperCase()} 分配到战队` : "选择一名队长"}</GlowHeading>
+              ) : allDrafted ? (
+                <GlowHeading size="text-3xl" className="font-display truncate">全部选手已选完 🏆</GlowHeading>
+              ) : (
+                <GlowHeading size="text-3xl" className="font-display truncate">{teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合</GlowHeading>
+              )}
             </div>
-            {draftPhase === "captain" ? (
-              <><GlowHeading size="text-xl" className="font-display">{selectedCaptain ? `将 ${selectedCaptain.name.toUpperCase()} 分配到战队` : "选择一名队长"}</GlowHeading>
-              <div className="text-[11px] text-white/40 mt-1">{selectedCaptain ? "现在点击下方一张空战队卡片（点击整张卡片即可）→" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`}</div></>
-            ) : allDrafted ? <GlowHeading size="text-xl" className="font-display">全部选手已选完 🏆</GlowHeading> : (
-              <><div className="text-[11px] tracking-[0.3em] font-bold mb-1" style={{ color: "rgba(125,243,225,0.6)" }}>第{roundLabel}轮，共{roundOrders.length}轮</div>
-              <GlowHeading size="text-xl" className="font-display">{teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合</GlowHeading>
-              <div className="text-[11px] text-white/40 mt-1">战队{activeTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</div></>
-            )}
+            <div className="text-[11px] text-white/40 truncate">
+              {draftPhase === "captain"
+                ? (selectedCaptain ? "现在点击下方一张空战队卡片（点击整张卡片即可）→" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
+                : (!allDrafted && <>第{roundLabel}轮，共{roundOrders.length}轮 · 战队{activeTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</>)}
+            </div>
           </div>
-          <div className="flex-shrink-0">
-            <PrimaryButton onClick={onProceed} disabled={!allDrafted}>进入最终对阵 →</PrimaryButton>
-          </div>
-        </div>
-        <div className="mt-4 flex gap-2 items-center text-[9px] text-white/30">
-          <span className="w-16 text-right">队长</span>
-          <div className="w-36 h-1.5 rounded-full bg-black/50 overflow-hidden border" style={{ borderColor: "rgba(34,197,94,0.2)" }}>
-            <div className="h-full transition-all duration-500" style={{ width: `${((8-captainCandidates.length)/8)*100}%`, background: "linear-gradient(to right,#16a34a,#22c55e)", boxShadow: "0 0 8px #22c55e" }} />
-          </div>
-          <span className="w-20 text-center">队员</span>
-          <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden border" style={{ borderColor: TEAL_DIM }}>
-            <div className="h-full transition-all duration-500" style={{ width: draftPhase === "teammate" ? `${(pickIndex/customSnakeOrder.length)*100}%` : "0%", background: `linear-gradient(to right,${TEAL},#0ea5e9)`, boxShadow: "0 0 8px #00f5d4" }} />
+
+          {/* Progress + final-bracket action -- same two handlers/values
+              feeding a single ring (see headerProgressPct above) instead
+              of two separate bars, and the same onProceed/disabled logic
+              on the button, restyled to match the ghost-button language
+              used everywhere else in this header. */}
+          <div className="flex-shrink-0 flex items-center gap-6 px-8" style={{ borderLeft: "1px solid rgba(0,245,212,0.16)" }}>
+            <div className="relative flex-shrink-0" style={{ width: 78, height: 78 }}>
+              <svg width="78" height="78" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="39" cy="39" r={HEADER_RING_R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
+                <circle cx="39" cy="39" r={HEADER_RING_R} fill="none" stroke={headerRingColor} strokeWidth="7"
+                  strokeDasharray={HEADER_RING_CIRC} strokeDashoffset={headerRingOffset} strokeLinecap="round"
+                  style={{ transition: "stroke-dashoffset 500ms" }} />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center font-display font-bold" style={{ color: headerRingColor }}>
+                <span className="text-base leading-none">{Math.round(headerProgressPct)}%</span>
+                <span className="text-[9px] font-semibold text-white/40 tracking-wider mt-0.5">进度</span>
+              </div>
+            </div>
+            <button onClick={onProceed} disabled={!allDrafted}
+              className="font-bold text-sm px-5 py-2.5 rounded-xl border whitespace-nowrap transition-all"
+              style={{ background: "rgba(0,245,212,0.07)", borderColor: allDrafted ? TEAL : "rgba(255,255,255,0.08)", color: allDrafted ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: allDrafted ? "0 0 18px rgba(0,245,212,0.28)" : "none", cursor: allDrafted ? "pointer" : "not-allowed" }}>
+              进入最终对阵 →
+            </button>
           </div>
         </div>
       </PanelFrame>
