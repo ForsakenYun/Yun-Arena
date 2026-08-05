@@ -2259,75 +2259,109 @@ panels, candidate/draft pools, the auto-scroll-to-active-team effect,
 the flying-card animation, and all snake-draft/captain-assignment
 logic — was not touched.
 
-## 38. Final Matchups Stage (Phase 5) — Random Roll / Lock Match / Reset / End Tournament
+## 38. Final Matchups Stage (Phase 5) — Manual Pairing / Random Roll / Reset / End Tournament
 
 The Draft Arena now has a real third stage, reached via the existing
 "进入最终对阵" button (previously wired to a no-op). Five throwaway UI
 concepts were previewed first (Tournament Bracket, Esports Match Card,
-Arena Board, Tournament Control Center, Premium Championship); **Concept
-1 — Tournament Bracket** was chosen and is what got built.
+Arena Board, Tournament Control Center, Premium Championship);
+**Concept 1 — Tournament Bracket** was chosen and is what got built.
+The workflow itself went through a design correction mid-build (see
+below) before landing on its final shape — **a blank canvas the admin
+fills in themselves**, matching the "admin is always in control"
+principle already established everywhere else in this project (the
+admin starts the draft, manages invites, controls the tournament,
+starts each next stage).
 
 **Team naming.** Every team is labeled `{captain.name} 战队` (`LordYun
 战队`, `Alice 战队`...) everywhere on this stage — never a generic
 `1号战队`. See `teamLabel()` in DraftArena.jsx.
+
+**The workflow, exactly as specified.** The moment 进入最终对阵 is
+clicked, the stage is **completely blank** — zero matchups, nothing
+auto-generated. From there the admin has two tools, freely mixable in
+any order:
+- **Manual Pairing.** Pick exactly two "remaining" teams (teams not
+  currently in any matchup) from the 剩余战队 pool and press 🔒
+  锁定此对阵. That pairing is created **already locked** — a manually
+  created matchup only ever exists in the locked state, since the
+  entire point of creating one by hand is "this is now permanently
+  fixed." Any number of these can be created before ever touching
+  Random Roll.
+- **Random Roll.** Randomly pairs up whatever teams are still
+  "remaining" — i.e. not currently in *any* matchup, locked or
+  unlocked — into new matchups. Every locked matchup (manual or a
+  previously-locked roll result) is left completely untouched, both in
+  content and position; pressing Random Roll again only reshuffles
+  teams that are still unlocked.
+- Every matchup, manual or rolled, can be **locked/unlocked** (🔒/🔓 on
+  its VS node) or **removed outright** (✕ 解除, dissolving it and
+  returning both teams to the 剩余战队 pool immediately, without
+  waiting for a re-roll).
+- **Reset** wipes every matchup — manual or rolled, locked or not —
+  back to the exact same blank canvas the stage started on.
 
 **Why this needed a real database table, not just more React state.**
 Everything drafted before this stage (captain assignments, roster
 picks) is still local-only React state, exactly as documented in
 Section 907's comment ("live updates while the page is already open is
 a later phase") — that part of the Draft System is unchanged by this
-work. But Random Roll / Lock Match / Reset / End Tournament are
+work. But Manual Pairing / Random Roll / Reset / End Tournament are
 explicitly required to be "synchronized in real time for every
 connected user," and End Tournament has to actually clear the joined
-roster server-side. Both of those are impossible from client state
-alone, so this stage introduces its own persisted, Realtime-enabled
-table: `public.tournament_matches` (`supabase/schema.sql`, Section 1 +
-Section 6b) — a singleton row (same `id boolean primary key` trick as
+roster server-side. Both are impossible from client state alone, so
+this stage introduces its own persisted, Realtime-enabled table:
+`public.tournament_matches` (`supabase/schema.sql`, Section 1 + Section
+6b) — a singleton row (same `id boolean primary key` trick as
 `tournament_settings`), holding:
 - `teams`: a snapshot of the finished draft's teams, captain identity
   only (`idx`, `captainAccountId`, `captainName`, `captainAvatarUrl`)
   — full rosters are never needed here, only captain-vs-captain
   matchups are ever shown.
-- `matchups`: one JSON object per match slot, `{"a": <team idx>, "b":
-  <team idx or null for a bye>, "locked": bool}`. A slot's identity —
-  and therefore what a lock protects — is its *position* in this
-  array, not the teams currently inside it.
+- `matchups`: a JSON array that **only ever contains matchups that
+  actually exist** — not a fixed set of slots. Each entry is `{"a":
+  <team idx>, "b": <team idx or null for a bye>, "locked": bool}`. A
+  team not yet in any entry simply doesn't appear anywhere in the
+  array; that's exactly what "remaining team" means client- and
+  server-side alike.
 
-**The five actions, all Admin/Developer-gated RPCs (`_require_role`,
+**The six actions, all Admin/Developer-gated RPCs (`_require_role`,
 same pattern as `roll_tournament_numbers`/`clear_tournament`):**
 - `enter_final_matchups(p_teams)` — called once, when 进入最终对阵 is
   clicked. Snapshots the local `tournament.teams` into the singleton
-  and seeds a **default sequential pairing** — (team 0 vs team 1),
-  (team 2 vs team 3), ... — all unlocked. This default pairing is what
-  makes "lock any matchup before rolling" (a literal requirement)
-  possible: nothing needs to be randomized first before there's
-  something on screen to lock.
-- `roll_tournament_matchups()` — randomizes **only the unlocked
-  slots**. It collects every team currently sitting in a *locked* slot
-  into a protected set, shuffles every other team, and redistributes
-  that shuffled pool back across the unlocked slots, in the same slot
-  order they already had. Locked slots are copied through completely
-  untouched — same teams, same position — no matter how many times
-  Random Roll runs afterward.
+  with `matchups` set to `'[]'::jsonb` — nothing generated.
+- `create_manual_matchup(p_team_a, p_team_b)` — Manual Pairing.
+  Validates both indices exist in the `teams` snapshot, are distinct,
+  and neither already appears in any existing matchup entry (locked or
+  not); appends `{"a", "b", "locked": true}`.
+- `remove_tournament_matchup(p_match_index)` — dissolves one matchup by
+  array position (`matchups - p_match_index`, Postgres's jsonb "delete
+  array element" operator); both teams are immediately back in the
+  remaining pool.
+- `roll_tournament_matchups()` — collects every team currently sitting
+  in a *locked* entry into a protected set, keeps those entries
+  unchanged, discards every unlocked entry (its teams flow back into
+  the free pool), shuffles the resulting free pool, and appends fresh
+  unlocked entries pairing them up (a lone leftover team on an odd
+  count gets `"b": null`, rendered as 轮空/bye).
 - `lock_tournament_matchup(p_match_index, p_locked)` — flips one
-  slot's `locked` flag by array position. Doesn't touch which teams
-  are in that slot; can be called at any time, including on the
-  default pairing before a single roll has happened.
-- `reset_tournament_matchups()` — recomputes the same default
-  sequential pairing `enter_final_matchups()` used (both call one
-  shared helper, `_default_matchups()`, so the two can never drift),
-  all unlocked — i.e. exactly the state the page was in the moment
-  进入最终对阵 was first clicked, per the requirement.
+  entry's `locked` flag by array position. Unlocking doesn't dissolve
+  the pairing immediately (that's what `remove_tournament_matchup` is
+  for) — it just makes that entry eligible to be swept up by the next
+  Random Roll.
+- `reset_tournament_matchups()` — sets `matchups` back to `'[]'::jsonb`
+  — the exact state right after 进入最终对阵, per the requirement.
 - `end_tournament()` — deletes the `tournament_matches` row *and*
   clears `tournament_participants` (same effect as the existing
   `clear_tournament()`, batched into one call): every joined player's
   status is gone, every drafted team is gone (both the local draft
-  state and the server snapshot), every matchup/lock is gone. Nobody
-  carries into the next tournament — rejoining always requires a fresh
-  "参加比赛" click. `tournament_settings` is deliberately left alone
-  (same as `clear_tournament()` already leaves it alone) — a "brand
-  new tournament" reuses whatever team-count/players-per-team/draft-
-  order was last configured, it doesn't forget it.
+  state and the server snapshot), every matchup/lock/manual pairing is
+  gone. Nobody carries into the next tournament — rejoining always
+  requires a fresh "参加比赛" click. `tournament_settings` is
+  deliberately left alone (same as `clear_tournament()` already leaves
+  it alone) — a "brand new tournament" reuses whatever team-count/
+  players-per-team/draft-order was last configured, it doesn't forget
+  it.
 
 **Real-time sync, end to end.** `tournament_matches` is added to the
 `supabase_realtime` publication and is public-read (RLS: no secrets in
@@ -2340,16 +2374,16 @@ side, `DraftArenaPage` now:
 2. Subscribes to it for the rest of the page's life
    (`subscribeFinalMatchups()`), regardless of which stage this client
    is currently on. An INSERT/UPDATE sets `finalMatches` and flips
-   local `stage` to `'final'` — this is what makes Random Roll/Lock/
-   Reset appear identically and instantly for every connected client,
-   not just the one that clicked the button. A DELETE (End Tournament)
-   clears local state and calls `onExitToLobby()` immediately, so
-   *every* connected client on the Draft Arena — mid-draft or already
-   on the Final Matchups stage — is sent back to the Tournament Lobby,
-   per the requirement. (Clients already sitting in the Lobby already
-   see the participant list clear live, via the pre-existing
-   `subscribeLobby()`/`tournament_participants` Realtime path —
-   untouched.)
+   local `stage` to `'final'` — this is what makes Manual Pairing/
+   Random Roll/Lock/Remove/Reset appear identically and instantly for
+   every connected client, not just the one that clicked the button. A
+   DELETE (End Tournament) clears local state and calls
+   `onExitToLobby()` immediately, so *every* connected client on the
+   Draft Arena — mid-draft or already on the Final Matchups stage — is
+   sent back to the Tournament Lobby, per the requirement. (Clients
+   already sitting in the Lobby already see the participant list clear
+   live, via the pre-existing `subscribeLobby()`/`tournament_participants`
+   Realtime path — untouched.)
 3. `onProceed` (the header's 进入最终对阵 button) now calls
    `enterFinalMatchups()` with the current local team list instead of
    being a no-op; the Realtime subscription above (which fires for the
@@ -2359,18 +2393,37 @@ side, `DraftArenaPage` now:
 **New UI: `FinalMatchupsStage`** (DraftArena.jsx). Same page shell,
 same header language (`PanelFrame`, `GlowHeading`, `TEAL`/`TEAL_DIM`/
 `TEAL_SOFT`, the teal glow) as the rest of the Draft Arena — this is
-explicitly the same page's next stage, not a new screen. Each matchup
-renders as a bracket-style pair: two `MatchTeamSlot`s (captain
-`Avatar` + `{name} 战队`, amber-tinted and glowing when locked) beside
-a `VS` node that doubles as the lock toggle (🔓/🔒, teal or amber to
-match). A bottom action bar — visible only to Admin/Developer accounts
-(`isStaff`, computed from the `account` prop now threaded through
-`App.jsx` → `DraftArenaPage`) — holds 🎲 随机排位, 🔄 重置, and 🏁
-结束锦标赛; regular accounts see the same bracket read-only, live, with
-no controls. Reset and End Tournament both go through the project's
-existing `ConfirmDialog` (same component the Tournament Lobby already
-uses for 退出比赛/清空参赛名单/etc.) before calling their RPC, since
-both are irreversible.
+explicitly the same page's next stage, not a new screen. A 手动配对
+panel lists every "remaining" team as a selectable `RemainingTeamChip`
+(captain `Avatar` + `{name} 战队`); selecting two and pressing 锁定此
+对阵 calls `createManualMatchup`. Below it, 已生成对阵 renders each
+existing matchup as a bracket-style pair via `MatchPair`: two
+`MatchTeamSlot`s (amber-tinted and glowing when locked) beside a `VS`
+node that doubles as the lock toggle, plus a small ✕ 解除 button to
+dissolve it outright. A bottom action bar — visible only to
+Admin/Developer accounts (`isStaff`, computed from the `account` prop
+now threaded through `App.jsx` → `DraftArenaPage`) — holds 🎲 随机排位
+(disabled once there are no remaining teams left to roll), 🔄 重置, and
+🏁 结束锦标赛; regular accounts see the same bracket read-only, live,
+with no controls. Reset and End Tournament both go through the
+project's existing `ConfirmDialog` (same component the Tournament
+Lobby already uses for 退出比赛/清空参赛名单/etc.) before calling their
+RPC, since both are irreversible.
+
+**Design correction, mid-build.** The first working version of this
+stage seeded a default sequential pairing (Team 1 vs Team 2, Team 3 vs
+Team 4...) the moment 进入最终对阵 was clicked, so Random Roll's job
+was only ever "reshuffle whatever isn't locked," and locking meant
+toggling a flag on an already-existing pair. That shipped, built, and
+worked — but didn't match the intended product behavior: a genuinely
+blank canvas where the admin explicitly chooses, for every team, either
+"pair these two by hand" or "let the system randomize them," with
+nothing ever appearing on screen unprompted. The schema, all six RPCs,
+and `FinalMatchupsStage` were reworked to the shape described above
+before this was considered done — `matchups` starting (and, after
+Reset, returning to) `'[]'::jsonb` instead of a pre-filled array, and
+`create_manual_matchup`/`remove_tournament_matchup` added as new,
+previously-nonexistent operations.
 
 **Known limitation, carried over from Section 907, not newly
 introduced here:** the drafting itself (captain assignment, snake-order
@@ -2381,4 +2434,5 @@ it — `enter_final_matchups()` simply snapshots whichever local team
 list calls it first (or most recently, since it's an upsert). The
 Final Matchups stage itself, once entered, has no such limitation — it
 has no local-only state at all, by design.
+
 

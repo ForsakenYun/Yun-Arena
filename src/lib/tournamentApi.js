@@ -25,6 +25,9 @@ const ERROR_MESSAGES = {
   no_final_matchups: '尚未生成最终对阵，请先进入最终对阵阶段',
   invalid_final_matchup_teams: '战队数据无效，无法生成最终对阵',
   invalid_match_index: '对阵编号无效',
+  invalid_team_index: '战队编号无效',
+  duplicate_team_selection: '请选择两支不同的战队',
+  team_already_matched: '该战队已在其他对阵中，请先解除原有配对',
 }
 
 function friendlyError(error, fallback) {
@@ -338,8 +341,9 @@ export function subscribeFinalMatchups(onChange) {
 }
 
 // Admin/Developer only. Snapshots the given teams (see toFinalMatchupTeam
-// below for the exact shape) and seeds the default sequential pairing.
-// Called once, when 进入最终对阵 is clicked.
+// below for the exact shape) and starts with a completely blank matchups
+// array -- nothing is auto-generated. Called once, when 进入最终对阵 is
+// clicked.
 export async function enterFinalMatchups(teams) {
   const { data, error } = await supabase.rpc('enter_final_matchups', {
     p_token: requireToken(),
@@ -349,8 +353,34 @@ export async function enterFinalMatchups(teams) {
   return normalizeMatchesRow(data)
 }
 
-// Admin/Developer only. Randomizes only the unlocked slots; locked slots
-// (and the teams inside them) never move.
+// Admin/Developer only. Manual Pairing: hand-picks two teams and locks
+// them together in one step (a manually created matchup is always born
+// locked). Either team already appearing in any existing matchup is
+// rejected server-side.
+export async function createManualMatchup(teamAIdx, teamBIdx) {
+  const { data, error } = await supabase.rpc('create_manual_matchup', {
+    p_token: requireToken(),
+    p_team_a: teamAIdx,
+    p_team_b: teamBIdx,
+  })
+  if (error) throw new Error(friendlyError(error, '创建对阵失败'))
+  return normalizeMatchesRow(data)
+}
+
+// Admin/Developer only. Dissolves one matchup entirely -- both teams
+// return to the "remaining teams" pool immediately.
+export async function removeTournamentMatchup(matchIndex) {
+  const { data, error } = await supabase.rpc('remove_tournament_matchup', {
+    p_token: requireToken(),
+    p_match_index: matchIndex,
+  })
+  if (error) throw new Error(friendlyError(error, '解除对阵失败'))
+  return normalizeMatchesRow(data)
+}
+
+// Admin/Developer only. Randomizes only teams not yet in ANY existing
+// matchup (locked or unlocked); locked matchups are left completely
+// untouched.
 export async function rollTournamentMatchups() {
   const { data, error } = await supabase.rpc('roll_tournament_matchups', { p_token: requireToken() })
   if (error) throw new Error(friendlyError(error, '随机排位失败'))
@@ -369,8 +399,9 @@ export async function lockTournamentMatchup(matchIndex, locked) {
   return normalizeMatchesRow(data)
 }
 
-// Admin/Developer only. Restores the default sequential pairing, every
-// slot unlocked -- exactly the state right after 进入最终对阵.
+// Admin/Developer only. Restores a completely blank matchups array -- no
+// generated matchups, no locks, no manual pairings -- exactly the state
+// right after 进入最终对阵.
 export async function resetTournamentMatchups() {
   const { data, error } = await supabase.rpc('reset_tournament_matchups', { p_token: requireToken() })
   if (error) throw new Error(friendlyError(error, '重置对阵失败'))

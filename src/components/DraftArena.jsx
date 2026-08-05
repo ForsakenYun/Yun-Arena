@@ -3,6 +3,7 @@ import {
   fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby,
   fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchups,
   lockTournamentMatchup, resetTournamentMatchups, endTournament, toFinalMatchupTeam,
+  createManualMatchup, removeTournamentMatchup,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
@@ -861,16 +862,29 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   FINAL MATCHUPS STAGE — Concept 1 "Tournament Bracket". Entered from
-   DraftArena's 进入最终对阵 button once drafting is finished; renders in
-   the exact same page shell (DraftArenaPage below), same background/font/
-   scrollbar setup, same panel/glow language. Every team is named after its
-   captain (never "1号战队") -- see teamLabel() below. All of this stage's
-   state (teams snapshot + matchups + locks) lives in the `tournament_matches`
-   singleton row (see supabase/schema.sql, Section 6b) and is kept live via
-   Realtime, so Random Roll / Lock Match / Reset / End Tournament are all
-   genuinely synchronized across every connected client, not just the one
-   that clicked the button.
+   FINAL MATCHUPS STAGE — Concept 1 "Tournament Bracket", blank-canvas /
+   admin-in-control workflow. Entered from DraftArena's 进入最终对阵 button
+   once drafting is finished; renders in the exact same page shell
+   (DraftArenaPage below), same background/font/scrollbar setup, same
+   panel/glow language. Every team is named after its captain (never
+   "1号战队") -- see teamLabel() below.
+
+   The page starts completely blank -- no matchups exist at all. From
+   there the admin has two tools, freely mixable:
+     - Manual Pairing: pick exactly two "remaining" teams (teams not yet
+       in any matchup) and click 锁定 -- that pairing is created already
+       locked, permanently fixed until explicitly unlocked or removed.
+     - Random Roll: randomly pairs up whatever teams are still
+       "remaining" (i.e. not in any matchup, locked or not) into new
+       unlocked matchups. Locked matchups are never touched by a roll.
+   Reset wipes every matchup (manual or rolled, locked or not) back to
+   the same blank canvas.
+
+   All of this stage's state (teams snapshot + matchups) lives in the
+   `tournament_matches` singleton row (see supabase/schema.sql, Section
+   6b) and is kept live via Realtime, so Manual Pairing / Random Roll /
+   Lock / Reset / End Tournament are all genuinely synchronized across
+   every connected client, not just the one that clicked the button.
    ════════════════════════════════════════════════════════════════════════ */
 function teamLabel(team) {
   return team?.captainName ? `${team.captainName} 战队` : "（空）战队";
@@ -893,43 +907,81 @@ function MatchTeamSlot({ team, locked }) {
   );
 }
 
-function MatchPair({ index, matchup, teamsByIdx, locked, onToggleLock, canManage, busy }) {
+function MatchPair({ index, matchup, teamsByIdx, locked, onToggleLock, onRemove, canManage, busyLock, busyRemove }) {
   const teamA = matchup.a != null ? teamsByIdx.get(matchup.a) : null;
   const teamB = matchup.b != null ? teamsByIdx.get(matchup.b) : null;
+  const busy = busyLock || busyRemove;
   return (
     <div className="grid items-center gap-4" style={{ gridTemplateColumns: "1fr 96px" }}>
       <div className="flex flex-col gap-2.5">
         <MatchTeamSlot team={teamA} locked={locked} />
         <MatchTeamSlot team={teamB} locked={locked} />
       </div>
-      <button
-        onClick={() => canManage && onToggleLock(index, !locked)}
-        disabled={!canManage || busy}
-        className="flex flex-col items-center justify-center gap-1 rounded-xl py-4 transition-all"
-        style={{
-          background: locked ? "rgba(251,191,36,0.08)" : "rgba(0,245,212,0.06)",
-          border: `1px solid ${locked ? "#fbbf24" : TEAL}`,
-          boxShadow: locked ? "0 0 16px rgba(251,191,36,0.3)" : "0 0 16px rgba(0,245,212,0.25)",
-          cursor: canManage ? "pointer" : "default",
-          opacity: busy ? 0.5 : 1,
-        }}
-        title={canManage ? (locked ? "点击解锁此对阵" : "点击锁定此对阵") : undefined}
-      >
-        <span className="font-display font-black text-sm" style={{ color: locked ? "#fbbf24" : TEAL }}>VS</span>
-        <span className="text-[9px]">{locked ? "🔒" : canManage ? "🔓" : ""}</span>
-        <span className="text-[8px] font-bold tracking-wider text-white/30">M{String(index + 1).padStart(2, "0")}</span>
-      </button>
+      <div className="flex flex-col items-center gap-2">
+        <button
+          onClick={() => canManage && onToggleLock(index, !locked)}
+          disabled={!canManage || busy}
+          className="w-full flex flex-col items-center justify-center gap-1 rounded-xl py-4 transition-all"
+          style={{
+            background: locked ? "rgba(251,191,36,0.08)" : "rgba(0,245,212,0.06)",
+            border: `1px solid ${locked ? "#fbbf24" : TEAL}`,
+            boxShadow: locked ? "0 0 16px rgba(251,191,36,0.3)" : "0 0 16px rgba(0,245,212,0.25)",
+            cursor: canManage ? "pointer" : "default",
+            opacity: busy ? 0.5 : 1,
+          }}
+          title={canManage ? (locked ? "点击解锁此对阵" : "点击锁定此对阵") : undefined}
+        >
+          <span className="font-display font-black text-sm" style={{ color: locked ? "#fbbf24" : TEAL }}>VS</span>
+          <span className="text-[9px]">{locked ? "🔒" : canManage ? "🔓" : ""}</span>
+          <span className="text-[8px] font-bold tracking-wider text-white/30">M{String(index + 1).padStart(2, "0")}</span>
+        </button>
+        {canManage && (
+          <button onClick={() => onRemove(index)} disabled={busy}
+            className="text-[10px] font-bold text-white/25 hover:text-red-400 transition-colors"
+            style={{ opacity: busy ? 0.4 : 1, cursor: busy ? "not-allowed" : "pointer" }}
+            title="解除此对阵，两支战队将返回剩余战队池">
+            ✕ 解除
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
+// Selectable chip in the "剩余战队" pool -- part of Manual Pairing. Up to
+// two can be selected at once (order matters only for which becomes
+// team A vs team B, which has no gameplay meaning); selecting a third
+// while two are already picked replaces the earliest selection so the
+// picker never gets stuck.
+function RemainingTeamChip({ team, selected, onClick, disabled }) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className="flex items-center gap-2 px-3 py-2 rounded-xl transition-all"
+      style={{
+        background: selected ? "rgba(0,245,212,0.14)" : "rgba(255,255,255,0.02)",
+        border: `1.5px solid ${selected ? TEAL : "rgba(255,255,255,0.1)"}`,
+        boxShadow: selected ? "0 0 14px rgba(0,245,212,0.35)" : "none",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled && !selected ? 0.5 : 1,
+      }}>
+      <Avatar avatarUrl={team.captainAvatarUrl} size={22} glow={selected} />
+      <span className="text-[12px] font-bold text-white truncate">{teamLabel(team)}</span>
+    </button>
+  );
+}
+
 function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }) {
-  const [busy, setBusy] = useState(null); // null | 'roll' | 'reset' | 'end'
+  const [busy, setBusy] = useState(null); // null | 'roll' | 'reset' | 'end' | 'pair' | 'lock:i' | 'remove:i'
   const [error, setError] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [selectedPair, setSelectedPair] = useState([]); // up to 2 team idx, Manual Pairing in progress
 
   const teamsByIdx = new Map(teams.map((t) => [t.idx, t]));
+  const usedIdx = new Set();
+  matchups.forEach((m) => { if (m.a != null) usedIdx.add(m.a); if (m.b != null) usedIdx.add(m.b); });
+  const remainingTeams = teams.filter((t) => !usedIdx.has(t.idx));
+
   const lockedCount = matchups.filter((m) => m.locked).length;
   const totalCount = matchups.length;
 
@@ -947,8 +999,26 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
 
   const handleRoll = () => run("roll", () => rollTournamentMatchups());
   const handleToggleLock = (index, nextLocked) => run(`lock:${index}`, () => lockTournamentMatchup(index, nextLocked));
-  const handleReset = () => { setConfirmReset(false); run("reset", () => resetTournamentMatchups()); };
+  const handleRemove = (index) => run(`remove:${index}`, () => removeTournamentMatchup(index));
+  const handleReset = () => { setConfirmReset(false); setSelectedPair([]); run("reset", () => resetTournamentMatchups()); };
   const handleEnd = () => { setConfirmEnd(false); run("end", () => endTournament()); };
+
+  const toggleSelectTeam = (idx) => {
+    setSelectedPair((prev) => {
+      if (prev.includes(idx)) return prev.filter((v) => v !== idx);
+      if (prev.length < 2) return [...prev, idx];
+      return [prev[1], idx]; // already 2 selected -- drop the oldest, keep picking moving
+    });
+  };
+
+  const handleCreatePairing = () => {
+    if (selectedPair.length !== 2) return;
+    const [a, b] = selectedPair;
+    run("pair", async () => {
+      await createManualMatchup(a, b);
+      setSelectedPair([]);
+    });
+  };
 
   return (
     <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-4 lg:overflow-hidden">
@@ -977,33 +1047,67 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
               <GlowHeading size="text-3xl" className="font-display">生成最终对阵</GlowHeading>
             </div>
             <div className="text-[11px] text-white/40 truncate">
-              全部选手已选完 · 共 {totalCount} 组对阵 · 已锁定 {lockedCount}/{totalCount}
+              全部选手已选完 · 已生成 {totalCount} 组对阵 · 已锁定 {lockedCount} 组 · 剩余 {remainingTeams.length} 支战队待配对
               {error && <span className="ml-3" style={{ color: "#f87171" }}>⚠ {error}</span>}
             </div>
           </div>
 
           <div className="flex-shrink-0 flex items-center gap-6 px-8" style={{ borderLeft: "1px solid rgba(0,245,212,0.16)" }}>
             <div className="text-center">
-              <div className="font-display font-black text-2xl" style={{ color: TEAL }}>{lockedCount}<span className="text-white/30">/{totalCount}</span></div>
-              <div className="text-[9px] font-semibold text-white/40 tracking-wider mt-0.5">已锁定对阵</div>
+              <div className="font-display font-black text-2xl" style={{ color: TEAL }}>{remainingTeams.length}</div>
+              <div className="text-[9px] font-semibold text-white/40 tracking-wider mt-0.5">剩余待配对</div>
             </div>
           </div>
         </div>
       </PanelFrame>
 
-      <div className="flex-1 lg:min-h-0 overflow-y-auto">
-        <PanelFrame className="p-8">
-          <h2 className="font-display text-sm font-bold tracking-widest mb-6" style={{ color: TEAL }}>首轮对阵 · ROUND 1</h2>
+      <div className="flex-1 lg:min-h-0 overflow-y-auto flex flex-col gap-4">
+        {isStaff && (remainingTeams.length > 0 || matchups.length === 0) && (
+          <PanelFrame className="p-6 shrink-0">
+            <h2 className="font-display text-sm font-bold tracking-widest mb-1" style={{ color: "#22c55e" }}>手动配对 · 剩余战队（{remainingTeams.length}）</h2>
+            <p className="text-[11px] text-white/35 mb-4">选择两支战队后点击「锁定此对阵」，该对阵将被永久锁定，直到手动解锁或解除。</p>
+            {remainingTeams.length === 0 ? (
+              <div className="text-xs text-white/25 py-3">所有战队均已配对。</div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                {remainingTeams.map((t) => (
+                  <RemainingTeamChip key={t.idx} team={t} selected={selectedPair.includes(t.idx)}
+                    onClick={() => toggleSelectTeam(t.idx)} disabled={busy !== null} />
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-3 mt-4">
+              <button onClick={handleCreatePairing} disabled={selectedPair.length !== 2 || busy !== null}
+                className="font-display font-extrabold tracking-wide text-xs px-5 py-2.5 rounded-xl border transition-all"
+                style={{
+                  background: selectedPair.length === 2 ? "rgba(34,197,94,0.14)" : "rgba(0,0,0,0.3)",
+                  color: selectedPair.length === 2 ? "#4ade80" : "rgba(255,255,255,0.25)",
+                  borderColor: selectedPair.length === 2 ? "#22c55e" : "rgba(255,255,255,0.08)",
+                  boxShadow: selectedPair.length === 2 ? "0 0 16px rgba(34,197,94,0.35)" : "none",
+                  cursor: selectedPair.length === 2 && busy === null ? "pointer" : "not-allowed",
+                }}>
+                {busy === "pair" ? "创建中…" : "🔒 锁定此对阵"}
+              </button>
+              {selectedPair.length > 0 && (
+                <span className="text-[11px] text-white/40">已选择 {selectedPair.length}/2 支战队</span>
+              )}
+            </div>
+          </PanelFrame>
+        )}
+
+        <PanelFrame className="p-8 flex-1">
+          <h2 className="font-display text-sm font-bold tracking-widest mb-6" style={{ color: TEAL }}>已生成对阵 · {totalCount}</h2>
           {totalCount === 0 ? (
             <div className="flex flex-col items-center py-10 text-white/30 text-center">
               <div className="text-3xl mb-2">🎲</div>
-              <div className="text-sm">暂无对阵数据</div>
+              <div className="text-sm">暂无对阵 —— 手动配对锁定，或直接随机排位</div>
             </div>
           ) : (
             <div className="grid gap-8" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
               {matchups.map((m, i) => (
                 <MatchPair key={i} index={i} matchup={m} teamsByIdx={teamsByIdx} locked={!!m.locked}
-                  onToggleLock={handleToggleLock} canManage={isStaff} busy={busy === `lock:${i}`} />
+                  onToggleLock={handleToggleLock} onRemove={handleRemove} canManage={isStaff}
+                  busyLock={busy === `lock:${i}`} busyRemove={busy === `remove:${i}`} />
               ))}
             </div>
           )}
@@ -1012,9 +1116,9 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
 
       {isStaff && (
         <PanelFrame className="shrink-0 p-4 flex items-center justify-center gap-4 flex-wrap">
-          <button onClick={handleRoll} disabled={busy !== null || totalCount === 0}
+          <button onClick={handleRoll} disabled={busy !== null || remainingTeams.length === 0}
             className="font-display font-extrabold tracking-wide text-sm px-6 py-3 rounded-xl border transition-all"
-            style={{ background: `linear-gradient(to bottom, ${TEAL}, #00c2a8)`, color: "#000", borderColor: TEAL, boxShadow: "0 0 22px rgba(0,245,212,0.55)", opacity: busy !== null || totalCount === 0 ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
+            style={{ background: `linear-gradient(to bottom, ${TEAL}, #00c2a8)`, color: "#000", borderColor: TEAL, boxShadow: "0 0 22px rgba(0,245,212,0.55)", opacity: busy !== null || remainingTeams.length === 0 ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
             {busy === "roll" ? "排位中…" : "🎲 随机排位"}
           </button>
           <button onClick={() => setConfirmReset(true)} disabled={busy !== null || totalCount === 0}
@@ -1027,14 +1131,14 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
             style={{ background: "rgba(248,113,113,0.08)", color: "#f87171", borderColor: "#5a1414", opacity: busy !== null ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
             🏁 结束锦标赛
           </button>
-          <span className="text-[10px] text-white/25 ml-2">🔒 点击任意对阵右侧的 VS 图标即可锁定 / 解锁</span>
+          <span className="text-[10px] text-white/25 ml-2">🎲 随机排位只会分配剩余待配对的战队，已锁定的对阵不受影响</span>
         </PanelFrame>
       )}
 
       {confirmReset && (
         <ConfirmDialog
           title="确认重置对阵"
-          message="将清除所有已生成的对阵与所有锁定，恢复到刚进入最终对阵时的状态。此操作无法撤销。"
+          message="将清除所有已生成的对阵、所有锁定与所有手动配对，恢复到刚进入最终对阵时的空白状态。此操作无法撤销。"
           confirmLabel="确认重置"
           tone="danger"
           busy={busy === "reset"}
