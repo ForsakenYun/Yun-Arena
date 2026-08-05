@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>最终对阵生成 · 5 个 UI 预览方案</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&family=Chakra+Petch:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --void:#060a0a;
+    --panel-a:#0a1414;
+    --panel-b:#060a0a;
+    --border:rgba(0,245,212,0.25);
+    --teal:#00f5d4;
+    --teal-dim:#0d3b38;
+    --teal-soft:#7df3e1;
+    --amber:#fbbf24;
+    --green:#22c55e;
+    --danger:#f87171;
+    --ink:#e8f6f3;
+    --muted:rgba(255,255,255,0.4);
+    --gold:#f59e0b;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--void);color:var(--ink);font-family:'Noto Sans SC',sans-serif;-webkit-font-smoothing:antialiased;}
+  .font-display{font-family:'Orbitron',sans-serif;}
+  .font-mono{font-family:'Chakra Petch','Noto Sans SC',monospace;}
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-track{background:#060a0a;}
+  ::-webkit-scrollbar-thumb{background:var(--teal-dim);border-radius:4px;}
+
+  /* ---------- preview chrome (not part of the real app) ---------- */
+  .meta-bar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:12px 20px; background:rgba(6,10,10,0.92); backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);
+  }
+  .meta-title{font-family:'Orbitron',sans-serif; font-weight:800; font-size:13px; letter-spacing:.08em; color:var(--teal-soft); margin-right:8px; white-space:nowrap;}
+  .tab-btn{
+    font-family:'Orbitron',sans-serif; font-size:11px; font-weight:700; letter-spacing:.04em;
+    padding:8px 14px; border-radius:9px; border:1px solid var(--teal-dim); background:rgba(0,245,212,0.04);
+    color:var(--teal-soft); cursor:pointer; transition:all .15s ease; white-space:nowrap;
+  }
+  .tab-btn:hover{border-color:var(--teal); color:#fff;}
+  .tab-btn.active{background:linear-gradient(to bottom, var(--teal), #00c2a8); color:#04150a; border-color:var(--teal); box-shadow:0 0 18px rgba(0,245,212,.5);}
+  .badge-note{margin-left:auto; font-size:10px; color:var(--muted); font-family:'Chakra Petch',sans-serif; letter-spacing:.05em; white-space:nowrap;}
+
+  .concept{display:none; padding:26px 26px 60px;}
+  .concept.active{display:block;}
+  .concept-label{
+    max-width:1400px; margin:0 auto 18px; display:flex; align-items:baseline; gap:10px;
+  }
+  .concept-label .num{font-family:'Orbitron',sans-serif; font-weight:900; font-size:22px; color:var(--teal); text-shadow:0 0 10px rgba(0,245,212,.6);}
+  .concept-label .name{font-family:'Orbitron',sans-serif; font-weight:800; font-size:15px; letter-spacing:.06em; color:#fff;}
+  .concept-label .tag{font-size:11px; color:var(--muted);}
+
+  .stage{max-width:1400px; margin:0 auto;}
+
+  /* ---------- shared header (unchanged masthead, inherited from DraftArena) ---------- */
+  .df-header{
+    height:120px; border-radius:16px; border:1px solid var(--border);
+    background:linear-gradient(to bottom, var(--panel-a), var(--panel-b));
+    box-shadow:0 0 0 1px rgba(0,245,212,0.06), 0 0 24px rgba(0,245,212,0.08);
+    display:flex; align-items:stretch; overflow:hidden; margin-bottom:16px;
+  }
+  .df-header .nav-col{
+    flex-shrink:0; display:flex; flex-direction:column; justify-content:center; gap:10px; padding:0 20px;
+    border-right:1px solid rgba(0,245,212,0.16);
+  }
+  .ghost-pill{
+    font-size:11px; font-weight:700; padding:8px 14px; border-radius:8px; white-space:nowrap;
+    background:rgba(0,245,212,0.05); border:1px solid rgba(0,245,212,0.28); color:var(--teal-soft);
+  }
+  .df-header .mast{flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; padding:0 32px; gap:6px;}
+  .df-header .tname{font-family:'Orbitron',sans-serif; font-weight:800; font-size:20px; color:var(--teal); text-shadow:0 0 14px rgba(0,245,212,.45), 0 0 34px rgba(0,245,212,.2);}
+  .df-header .row{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+  .phase-pill{
+    font-size:11px; font-weight:900; padding:2px 12px; border-radius:999px; letter-spacing:.15em;
+    background:rgba(0,245,212,0.12); color:var(--teal); border:1px solid rgba(0,245,212,0.35);
+  }
+  .glow-h{
+    font-family:'Orbitron',sans-serif; font-weight:900; letter-spacing:.03em; color:#fff; margin:0;
+    text-shadow:0 0 6px rgba(0,245,212,.9), 0 0 18px rgba(0,245,212,.55), 0 0 42px rgba(0,245,212,.3);
+    font-size:26px;
+  }
+  .df-header .sub{font-size:11px; color:rgba(255,255,255,.4);}
+  .df-header .side{flex-shrink:0; display:flex; align-items:center; gap:16px; padding:0 26px; border-left:1px solid rgba(0,245,212,0.16);}
+  .prog-count{font-family:'Orbitron',sans-serif; font-weight:800; font-size:13px; color:var(--teal);}
+
+  /* ---------- shared bottom action bar ---------- */
+  .action-bar{
+    margin-top:18px; border-radius:16px; border:1px solid var(--border);
+    background:linear-gradient(to bottom, var(--panel-a), var(--panel-b));
+    box-shadow:0 0 0 1px rgba(0,245,212,0.06), 0 0 24px rgba(0,245,212,0.08);
+    display:flex; align-items:center; justify-content:center; gap:14px; padding:18px; flex-wrap:wrap;
+  }
+  .act-btn{
+    font-family:'Orbitron',sans-serif; font-size:12px; font-weight:800; letter-spacing:.04em;
+    padding:12px 22px; border-radius:11px; border:1px solid; cursor:default; display:flex; align-items:center; gap:8px;
+  }
+  .act-roll{background:linear-gradient(to bottom, var(--teal), #00c2a8); color:#04150a; border-color:var(--teal); box-shadow:0 0 22px rgba(0,245,212,0.5);}
+  .act-lock{background:rgba(251,191,36,0.08); color:var(--amber); border-color:#fbbf2466;}
+  .act-reset{background:rgba(0,0,0,0.3); color:var(--teal-soft); border-color:var(--teal-dim);}
+  .act-end{background:rgba(248,113,113,0.08); color:var(--danger); border-color:#5a1414;}
+
+  /* ============================================================
+     CONCEPT 1 — TOURNAMENT BRACKET
+     ============================================================ */
+  .c1-wrap{
+    border-radius:16px; border:1px solid var(--border);
+    background:linear-gradient(to bottom, var(--panel-a), var(--panel-b));
+    box-shadow:0 0 0 1px rgba(0,245,212,0.06), 0 0 24px rgba(0,245,212,0.08);
+    padding:36px 28px; min-height:420px;
+  }
+  .c1-title{font-family:'Orbitron',sans-serif; font-size:13px; font-weight:800; letter-spacing:.15em; color:var(--teal); margin:0 0 26px;}
+  .c1-bracket{display:flex; flex-direction:column; gap:0;}
+  .c1-pair{display:grid; grid-template-columns:260px 60px 120px; align-items:center; position:relative; min-height:96px;}
+  .c1-slots{display:flex; flex-direction:column; gap:14px;}
+  .c1-slot{
+    display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:10px;
+    background:rgba(0,245,212,0.04); border:1px solid var(--teal-dim); position:relative;
+  }
+  .c1-slot.locked{border-color:#fbbf2466; background:rgba(251,191,36,0.06);}
+  .c1-hex{width:26px; height:26px; border-radius:6px; background:rgba(0,245,212,0.15); border:1px solid var(--teal); display:flex; align-items:center; justify-content:center; font-family:'Orbitron',sans-serif; font-weight:800; font-size:11px; color:var(--teal); flex-shrink:0;}
+  .c1-slot .cn{font-size:13px; font-weight:700; color:#fff;}
+  .c1-connector{position:relative; height:100%;}
+  .c1-connector svg{position:absolute; inset:0; width:100%; height:100%; overflow:visible;}
+  .c1-vs-box{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    padding:12px 14px; border-radius:12px; background:rgba(0,245,212,0.06);
+    border:1px solid var(--teal); box-shadow:0 0 16px rgba(0,245,212,0.25);
+  }
+  .c1-vs-box.locked{border-color:var(--amber); box-shadow:0 0 16px rgba(251,191,36,0.3);}
+  .c1-vs-label{font-family:'Orbitron',sans-serif; font-weight:900; font-size:14px; color:var(--teal);}
+  .c1-vs-box.locked .c1-vs-label{color:var(--amber);}
+  .c1-vs-num{font-size:9px; color:var(--muted); font-family:'Chakra Petch',sans-serif; letter-spacing:.1em;}
+  .c1-ghost-col{display:flex; flex-direction:column; gap:14px; opacity:.28;}
+  .c1-ghost{height:38px; border-radius:8px; border:1px dashed var(--teal-dim);}
+
+  /* ============================================================
+     CONCEPT 2 — ESPORTS MATCH CARD
+     ============================================================ */
+  .c2-grid{display:grid; grid-template-columns:repeat(2, 1fr); gap:20px;}
+  .c2-card{
+    position:relative; border-radius:16px; overflow:hidden;
+    background:linear-gradient(to bottom, var(--panel-a), var(--panel-b));
+    border:1px solid var(--border); box-shadow:0 0 0 1px rgba(0,245,212,0.06), 0 0 24px rgba(0,245,212,0.08);
+    padding:20px;
+  }
+  .c2-card.locked{border-color:var(--amber); box-shadow:0 0 0 1px rgba(251,191,36,0.15), 0 0 24px rgba(251,191,36,0.18);}
+  .c2-index{position:absolute; top:14px; left:18px; font-family:'Chakra Petch',sans-serif; font-size:10px; letter-spacing:.15em; color:var(--muted);}
+  .c2-lock{position:absolute; top:12px; right:14px; font-size:15px; opacity:.35;}
+  .c2-card.locked .c2-lock{opacity:1; filter:drop-shadow(0 0 6px rgba(251,191,36,.7));}
+  .c2-row{display:flex; align-items:center; justify-content:center; gap:22px; margin-top:14px;}
+  .c2-team{display:flex; flex-direction:column; align-items:center; gap:8px; width:150px;}
+  .c2-crest{width:56px; height:56px; border-radius:14px; background:rgba(0,245,212,0.1); border:1.5px solid var(--teal); box-shadow:0 0 14px rgba(0,245,212,.35); display:flex; align-items:center; justify-content:center; font-family:'Orbitron',sans-serif; font-weight:900; font-size:20px; color:var(--teal);}
+  .c2-tname{font-family:'Orbitron',sans-serif; font-weight:800; font-size:13px; color:#fff; text-align:center;}
+  .c2-tsub{font-size:10px; color:var(--muted);}
+  .c2-vs{font-family:'Orbitron',sans-serif; font-weight:900; font-size:20px; color:var(--teal-dim); flex-shrink:0;}
+
+  /* ============================================================
+     CONCEPT 3 — ARENA BOARD
+     ============================================================ */
+  .c3-board{
+    border-radius:16px; border:1px solid var(--border); overflow:hidden;
+    background:linear-gradient(to bottom, var(--panel-a), var(--panel-b));
+    box-shadow:0 0 0 1px rgba(0,245,212,0.06), 0 0 24px rgba(0,245,212,0.08);
+  }
+  .c3-board-head{
+    padding:16px 24px; border-bottom:1px solid rgba(0,245,212,.16); display:flex; align-items:center; justify-content:space-between;
+  }
+  .c3-board-head .t{font-family:'Orbitron',sans-serif; font-weight:800; font-size:13px; letter-spacing:.14em; color:var(--teal);}
+  .c3-board-head .c{font-family:'Chakra Petch',sans-serif; font-size:10px; color:var(--muted);}
+  .c3-row{
+    display:grid; grid-template-columns:70px 1fr 46px 1fr 90px; align-items:center;
+    padding:16px 24px; border-bottom:1px solid rgba(0,245,212,.08); position:relative;
+  }
+  .c3-row:last-child{border-bottom:none;}
+  .c3-row.locked{background:rgba(251,191,36,0.04);}
+  .c3-row.locked::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--amber); box-shadow:0 0 8px var(--amber);}
+  .c3-mnum{font-family:'Chakra Petch',sans-serif; font-size:11px; color:var(--muted); letter-spacing:.1em;}
+  .c3-flip{
+    font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:16px; letter-spacing:.03em; color:#fff;
+    background:rgba(0,245,212,0.05); border:1px solid var(--teal-dim); border-radius:8px; padding:10px 16px; text-align:center;
+  }
+  .c3-row.locked .c3-flip{border-color:#fbbf2455;}
+  .c3-vs{text-align:center; font-family:'Orbitron',sans-serif; font-weight:900; font-size:12px; color:var(--teal-dim);}
+  .c3-status{text-align:right; font-size:10px; font-family:'Chakra Petch',sans-serif; letter-spacing:.08em; color:var(--muted);}
+  .c3-row.locked .c3-status{color:var(--amber);}
+  .c3-scan{height:2px; background:linear-gradient(90deg, transparent, rgba(0,245,212,.5), transparent); margin:0 24px;}
+
+  /* ============================================================
+     CONCEPT 4 — TOURNAMENT CONTROL CENTER
+     ============================================================ */
+  .c4-grid{display:grid; grid-template-columns:210px 1fr 230px; gap:16px; align-items:stretch;}
+  .c4-panel{
+    border-radius:14px; border:1px solid var(--border);
+    background:linear-gradient(to bottom, var(--panel-a), var(--panel-b));
+    box-shadow:0 0 0 1px rgba(0,245,212,0.06), 0 0 24px rgba(0,245,212,0.08);
+    padding:16px;
+  }
+  .c4-h{font-family:'Orbitron',sans-serif; font-size:11px; font-weight:800; letter-spacing:.12em; color:var(--teal); margin:0 0 12px;}
+  .c4-pool-item{display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; background:rgba(0,245,212,.04); border:1px solid var(--teal-dim); margin-bottom:8px; font-size:12px; font-weight:700; color:#fff;}
+  .c4-dot{width:6px; height:6px; border-radius:50%; background:var(--teal); box-shadow:0 0 6px var(--teal); flex-shrink:0;}
+  .c4-match-row{
+    display:grid; grid-template-columns:1fr 34px 1fr 30px; align-items:center; gap:8px;
+    padding:12px 14px; border-radius:10px; background:rgba(0,245,212,.03); border:1px solid var(--teal-dim); margin-bottom:10px;
+  }
+  .c4-match-row.locked{border-color:#fbbf2466; background:rgba(251,191,36,.05);}
+  .c4-slot{font-size:12px; font-weight:700; color:#fff; text-align:center; padding:6px 4px; border-radius:6px; background:rgba(0,245,212,.05);}
+  .c4-mvs{text-align:center; font-family:'Orbitron',sans-serif; font-size:11px; color:var(--teal-dim); font-weight:900;}
+  .c4-lockmark{text-align:center; font-size:12px; opacity:.3;}
+  .c4-match-row.locked .c4-lockmark{opacity:1;}
+  .c4-log{font-family:'Chakra Petch',sans-serif; font-size:11px; color:var(--muted); padding:7px 0; border-bottom:1px dashed rgba(0,245,212,.1); line-height:1.5;}
+  .c4-log span{color:var(--teal-soft);}
+  .c4-mini-actions{display:flex; gap:8px; margin-top:14px;}
+  .c4-mini-btn{flex:1; font-family:'Orbitron',sans-serif; font-size:9.5px; font-weight:800; text-align:center; padding:8px 4px; border-radius:8px; border:1px solid var(--teal-dim); color:var(--teal-soft); background:rgba(0,245,212,.04);}
+
+  /* ============================================================
+     CONCEPT 5 — PREMIUM CHAMPIONSHIP
+     ============================================================ */
+  .c5-hero{
+    border-radius:20px; border:1px solid var(--border); position:relative; overflow:hidden;
+    background:radial-gradient(ellipse at 50% 0%, rgba(0,245,212,0.08), transparent 60%), linear-gradient(to bottom, var(--panel-a), var(--panel-b));
+    box-shadow:0 0 0 1px rgba(0,245,212,0.06), 0 0 40px rgba(0,245,212,0.1);
+    padding:40px 30px 30px; text-align:center;
+  }
+  .c5-eyebrow{font-family:'Chakra Petch',sans-serif; font-size:11px; letter-spacing:.3em; color:var(--gold); margin-bottom:10px;}
+  .c5-vs-stage{display:flex; align-items:center; justify-content:center; gap:40px; margin:18px 0 26px;}
+  .c5-team{display:flex; flex-direction:column; align-items:center; gap:10px; width:180px;}
+  .c5-crest{
+    width:88px; height:88px; border-radius:22px; background:rgba(0,245,212,0.1);
+    border:2px solid var(--teal); box-shadow:0 0 30px rgba(0,245,212,.45);
+    display:flex; align-items:center; justify-content:center; font-family:'Orbitron',sans-serif; font-weight:900; font-size:32px; color:var(--teal);
+  }
+  .c5-tname{font-family:'Orbitron',sans-serif; font-weight:900; font-size:17px; color:#fff; text-shadow:0 0 10px rgba(0,245,212,.4);}
+  .c5-ribbon{font-size:10px; color:var(--gold); font-family:'Chakra Petch',sans-serif; letter-spacing:.1em;}
+  .c5-vs-mega{font-family:'Orbitron',sans-serif; font-weight:900; font-size:44px; background:linear-gradient(to bottom, var(--gold), #fff8, var(--teal)); -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(0 0 18px rgba(0,245,212,.5));}
+  .c5-carousel{display:flex; gap:14px; justify-content:center; overflow-x:auto; padding:4px 4px 8px;}
+  .c5-mini{
+    flex-shrink:0; width:220px; border-radius:14px; border:1px solid var(--teal-dim); background:rgba(0,245,212,.03);
+    padding:12px 14px; display:flex; align-items:center; justify-content:center; gap:10px;
+  }
+  .c5-mini.locked{border-color:var(--amber); background:rgba(251,191,36,.05);}
+  .c5-mini .n{font-family:'Orbitron',sans-serif; font-weight:700; font-size:12px; color:#fff;}
+  .c5-mini .v{font-family:'Orbitron',sans-serif; font-size:10px; color:var(--teal-dim); font-weight:900;}
+  .c5-dots{display:flex; gap:6px; justify-content:center; margin-top:14px;}
+  .c5-dot{width:6px; height:6px; border-radius:50%; background:var(--teal-dim);}
+  .c5-dot.on{background:var(--teal); box-shadow:0 0 6px var(--teal);}
+</style>
+</head>
+<body>
+
+<div class="meta-bar">
+  <span class="meta-title">📐 最终对阵生成 — 5 个 UI 预览方案</span>
+  <button class="tab-btn active" data-c="1">① 锦标赛树状图</button>
+  <button class="tab-btn" data-c="2">② 电竞对战卡</button>
+  <button class="tab-btn" data-c="3">③ 竞技场公告板</button>
+  <button class="tab-btn" data-c="4">④ 赛事控制中心</button>
+  <button class="tab-btn" data-c="5">⑤ 高级冠军风格</button>
+  <span class="badge-note">纯视觉预览 · 无功能</span>
+</div>
+
+<!-- ============================================================ CONCEPT 1 ============================================================ -->
+<div class="concept active" data-c="1">
+  <div class="concept-label">
+    <span class="num">01</span><span class="name">锦标赛树状图 · Tournament Bracket</span>
+    <span class="tag">— 经典对阵树，连接线将战队汇入 VS 节点</span>
+  </div>
+  <div class="stage">
+    <div class="df-header">
+      <div class="nav-col">
+        <div class="ghost-pill">← 返回选手管理</div>
+        <div class="ghost-pill" style="color:#fbbf24;border-color:#fbbf2466;background:rgba(251,191,36,.08);">↩ 撤销上一次选择</div>
+      </div>
+      <div class="mast">
+        <div class="tname">DRAFT STAGE 锦标赛</div>
+        <div class="row">
+          <span class="phase-pill">第三阶段 —— 对阵生成</span>
+          <h1 class="glow-h">生成最终对阵</h1>
+        </div>
+        <div class="sub">全部选手已选完 · 8 支战队等待分组 → 点击下方随机排位或手动锁定对阵</div>
+      </div>
+      <div class="side">
+        <div style="text-align:center;">
+          <div class="prog-count">2 / 4</div>
+          <div style="font-size:9px;color:var(--muted);">已锁定对阵</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="c1-wrap">
+      <h2 class="c1-title">首轮对阵 · ROUND 1</h2>
+      <div class="c1-bracket">
+        <div class="c1-pair">
+          <div class="c1-slots">
+            <div class="c1-slot locked"><div class="c1-hex">L</div><div class="cn">LordYun 战队</div></div>
+            <div class="c1-slot locked"><div class="c1-hex">K</div><div class="cn">Kevin 战队</div></div>
+          </div>
+          <div class="c1-connector">
+            <svg viewBox="0 0 60 96" preserveAspectRatio="none">
+              <path d="M0,23 H30 V48 H60" fill="none" stroke="#fbbf24" stroke-width="2"/>
+              <path d="M0,73 H30 V48" fill="none" stroke="#fbbf24" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="c1-vs-box locked"><div class="c1-vs-label">VS</div><div class="c1-vs-num">MATCH 01 · 已锁定</div></div>
+        </div>
+        <div class="c1-pair">
+          <div class="c1-slots">
+            <div class="c1-slot"><div class="c1-hex">D</div><div class="cn">Dragon 战队</div></div>
+            <div class="c1-slot"><div class="c1-hex">A</div><div class="cn">Alice 战队</div></div>
+          </div>
+          <div class="c1-connector">
+            <svg viewBox="0 0 60 96" preserveAspectRatio="none">
+              <path d="M0,23 H30 V48 H60" fill="none" stroke="#00f5d4" stroke-width="2"/>
+              <path d="M0,73 H30 V48" fill="none" stroke="#00f5d4" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="c1-vs-box"><div class="c1-vs-label">VS</div><div class="c1-vs-num">MATCH 02 · 待随机</div></div>
+        </div>
+        <div class="c1-pair">
+          <div class="c1-slots">
+            <div class="c1-slot locked"><div class="c1-hex">P</div><div class="cn">Phoenix 战队</div></div>
+            <div class="c1-slot locked"><div class="c1-hex">S</div><div class="cn">Storm 战队</div></div>
+          </div>
+          <div class="c1-connector">
+            <svg viewBox="0 0 60 96" preserveAspectRatio="none">
+              <path d="M0,23 H30 V48 H60" fill="none" stroke="#fbbf24" stroke-width="2"/>
+              <path d="M0,73 H30 V48" fill="none" stroke="#fbbf24" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="c1-vs-box locked"><div class="c1-vs-label">VS</div><div class="c1-vs-num">MATCH 03 · 已锁定</div></div>
+        </div>
+        <div class="c1-pair">
+          <div class="c1-slots">
+            <div class="c1-slot"><div class="c1-hex">N</div><div class="cn">Nova 战队</div></div>
+            <div class="c1-slot"><div class="c1-hex">R</div><div class="cn">Raiden 战队</div></div>
+          </div>
+          <div class="c1-connector">
+            <svg viewBox="0 0 60 96" preserveAspectRatio="none">
+              <path d="M0,23 H30 V48 H60" fill="none" stroke="#00f5d4" stroke-width="2"/>
+              <path d="M0,73 H30 V48" fill="none" stroke="#00f5d4" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="c1-vs-box"><div class="c1-vs-label">VS</div><div class="c1-vs-num">MATCH 04 · 待随机</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <div class="act-btn act-roll">🎲 随机排位</div>
+      <div class="act-btn act-lock">🔒 锁定对阵</div>
+      <div class="act-btn act-reset">🔄 重置</div>
+      <div class="act-btn act-end">🏁 结束锦标赛</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ CONCEPT 2 ============================================================ -->
+<div class="concept" data-c="2">
+  <div class="concept-label">
+    <span class="num">02</span><span class="name">电竞对战卡 · Esports Match Card</span>
+    <span class="tag">— 2×2 对战卡网格，锁定状态以徽标高亮</span>
+  </div>
+  <div class="stage">
+    <div class="df-header">
+      <div class="nav-col">
+        <div class="ghost-pill">← 返回选手管理</div>
+        <div class="ghost-pill" style="color:#fbbf24;border-color:#fbbf2466;background:rgba(251,191,36,.08);">↩ 撤销上一次选择</div>
+      </div>
+      <div class="mast">
+        <div class="tname">DRAFT STAGE 锦标赛</div>
+        <div class="row">
+          <span class="phase-pill">第三阶段 —— 对阵生成</span>
+          <h1 class="glow-h">生成最终对阵</h1>
+        </div>
+        <div class="sub">全部选手已选完 · 8 支战队等待分组 → 点击下方随机排位或手动锁定对阵</div>
+      </div>
+      <div class="side">
+        <div style="text-align:center;">
+          <div class="prog-count">2 / 4</div>
+          <div style="font-size:9px;color:var(--muted);">已锁定对阵</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="c2-grid">
+      <div class="c2-card locked">
+        <div class="c2-index">MATCH 01</div><div class="c2-lock">🔒</div>
+        <div class="c2-row">
+          <div class="c2-team"><div class="c2-crest">L</div><div class="c2-tname">LordYun 战队</div><div class="c2-tsub">队长队伍</div></div>
+          <div class="c2-vs">VS</div>
+          <div class="c2-team"><div class="c2-crest">K</div><div class="c2-tname">Kevin 战队</div><div class="c2-tsub">队长队伍</div></div>
+        </div>
+      </div>
+      <div class="c2-card">
+        <div class="c2-index">MATCH 02</div><div class="c2-lock">🔓</div>
+        <div class="c2-row">
+          <div class="c2-team"><div class="c2-crest">D</div><div class="c2-tname">Dragon 战队</div><div class="c2-tsub">队长队伍</div></div>
+          <div class="c2-vs">VS</div>
+          <div class="c2-team"><div class="c2-crest">A</div><div class="c2-tname">Alice 战队</div><div class="c2-tsub">队长队伍</div></div>
+        </div>
+      </div>
+      <div class="c2-card locked">
+        <div class="c2-index">MATCH 03</div><div class="c2-lock">🔒</div>
+        <div class="c2-row">
+          <div class="c2-team"><div class="c2-crest">P</div><div class="c2-tname">Phoenix 战队</div><div class="c2-tsub">队长队伍</div></div>
+          <div class="c2-vs">VS</div>
+          <div class="c2-team"><div class="c2-crest">S</div><div class="c2-tname">Storm 战队</div><div class="c2-tsub">队长队伍</div></div>
+        </div>
+      </div>
+      <div class="c2-card">
+        <div class="c2-index">MATCH 04</div><div class="c2-lock">🔓</div>
+        <div class="c2-row">
+          <div class="c2-team"><div class="c2-crest">N</div><div class="c2-tname">Nova 战队</div><div class="c2-tsub">队长队伍</div></div>
+          <div class="c2-vs">VS</div>
+          <div class="c2-team"><div class="c2-crest">R</div><div class="c2-tname">Raiden 战队</div><div class="c2-tsub">队长队伍</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <div class="act-btn act-roll">🎲 随机排位</div>
+      <div class="act-btn act-lock">🔒 锁定对阵</div>
+      <div class="act-btn act-reset">🔄 重置</div>
+      <div class="act-btn act-end">🏁 结束锦标赛</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ CONCEPT 3 ============================================================ -->
+<div class="concept" data-c="3">
+  <div class="concept-label">
+    <span class="num">03</span><span class="name">竞技场公告板 · Arena Board</span>
+    <span class="tag">— 翻牌记分板风格，等宽字体 + 扫描线</span>
+  </div>
+  <div class="stage">
+    <div class="df-header">
+      <div class="nav-col">
+        <div class="ghost-pill">← 返回选手管理</div>
+        <div class="ghost-pill" style="color:#fbbf24;border-color:#fbbf2466;background:rgba(251,191,36,.08);">↩ 撤销上一次选择</div>
+      </div>
+      <div class="mast">
+        <div class="tname">DRAFT STAGE 锦标赛</div>
+        <div class="row">
+          <span class="phase-pill">第三阶段 —— 对阵生成</span>
+          <h1 class="glow-h">生成最终对阵</h1>
+        </div>
+        <div class="sub">全部选手已选完 · 8 支战队等待分组 → 点击下方随机排位或手动锁定对阵</div>
+      </div>
+      <div class="side">
+        <div style="text-align:center;">
+          <div class="prog-count">2 / 4</div>
+          <div style="font-size:9px;color:var(--muted);">已锁定对阵</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="c3-board">
+      <div class="c3-board-head">
+        <span class="t">对阵公告板 · MATCHUP BOARD</span>
+        <span class="c">LIVE · 4 组对阵</span>
+      </div>
+      <div class="c3-row locked">
+        <div class="c3-mnum">M-01</div>
+        <div class="c3-flip">LordYun 战队</div>
+        <div class="c3-vs">VS</div>
+        <div class="c3-flip">Kevin 战队</div>
+        <div class="c3-status">🔒 已锁定</div>
+      </div>
+      <div class="c3-row">
+        <div class="c3-mnum">M-02</div>
+        <div class="c3-flip">Dragon 战队</div>
+        <div class="c3-vs">VS</div>
+        <div class="c3-flip">Alice 战队</div>
+        <div class="c3-status">待随机</div>
+      </div>
+      <div class="c3-row locked">
+        <div class="c3-mnum">M-03</div>
+        <div class="c3-flip">Phoenix 战队</div>
+        <div class="c3-vs">VS</div>
+        <div class="c3-flip">Storm 战队</div>
+        <div class="c3-status">🔒 已锁定</div>
+      </div>
+      <div class="c3-row">
+        <div class="c3-mnum">M-04</div>
+        <div class="c3-flip">Nova 战队</div>
+        <div class="c3-vs">VS</div>
+        <div class="c3-flip">Raiden 战队</div>
+        <div class="c3-status">待随机</div>
+      </div>
+      <div class="c3-scan"></div>
+    </div>
+
+    <div class="action-bar">
+      <div class="act-btn act-roll">🎲 随机排位</div>
+      <div class="act-btn act-lock">🔒 锁定对阵</div>
+      <div class="act-btn act-reset">🔄 重置</div>
+      <div class="act-btn act-end">🏁 结束锦标赛</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ CONCEPT 4 ============================================================ -->
+<div class="concept" data-c="4">
+  <div class="concept-label">
+    <span class="num">04</span><span class="name">赛事控制中心 · Tournament Control Center</span>
+    <span class="tag">— 三栏管理台：战队池 / 对阵生成器 / 操作日志</span>
+  </div>
+  <div class="stage">
+    <div class="df-header">
+      <div class="nav-col">
+        <div class="ghost-pill">← 返回选手管理</div>
+        <div class="ghost-pill" style="color:#fbbf24;border-color:#fbbf2466;background:rgba(251,191,36,.08);">↩ 撤销上一次选择</div>
+      </div>
+      <div class="mast">
+        <div class="tname">DRAFT STAGE 锦标赛</div>
+        <div class="row">
+          <span class="phase-pill">第三阶段 —— 对阵生成</span>
+          <h1 class="glow-h">生成最终对阵</h1>
+        </div>
+        <div class="sub">全部选手已选完 · 8 支战队等待分组 → 点击下方随机排位或手动锁定对阵</div>
+      </div>
+      <div class="side">
+        <div style="text-align:center;">
+          <div class="prog-count">2 / 4</div>
+          <div style="font-size:9px;color:var(--muted);">已锁定对阵</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="c4-grid">
+      <div class="c4-panel">
+        <h3 class="c4-h">战队池 · 8</h3>
+        <div class="c4-pool-item"><span class="c4-dot"></span>LordYun 战队</div>
+        <div class="c4-pool-item"><span class="c4-dot"></span>Alice 战队</div>
+        <div class="c4-pool-item"><span class="c4-dot"></span>Dragon 战队</div>
+        <div class="c4-pool-item"><span class="c4-dot"></span>Kevin 战队</div>
+        <div class="c4-pool-item"><span class="c4-dot"></span>Phoenix 战队</div>
+        <div class="c4-pool-item"><span class="c4-dot"></span>Nova 战队</div>
+        <div class="c4-pool-item"><span class="c4-dot"></span>Raiden 战队</div>
+        <div class="c4-pool-item"><span class="c4-dot"></span>Storm 战队</div>
+      </div>
+
+      <div class="c4-panel">
+        <h3 class="c4-h">对阵生成器 · MATCHUP BUILDER</h3>
+        <div class="c4-match-row locked">
+          <div class="c4-slot">LordYun 战队</div><div class="c4-mvs">VS</div><div class="c4-slot">Kevin 战队</div><div class="c4-lockmark">🔒</div>
+        </div>
+        <div class="c4-match-row">
+          <div class="c4-slot">Dragon 战队</div><div class="c4-mvs">VS</div><div class="c4-slot">Alice 战队</div><div class="c4-lockmark">🔓</div>
+        </div>
+        <div class="c4-match-row locked">
+          <div class="c4-slot">Phoenix 战队</div><div class="c4-mvs">VS</div><div class="c4-slot">Storm 战队</div><div class="c4-lockmark">🔒</div>
+        </div>
+        <div class="c4-match-row">
+          <div class="c4-slot">Nova 战队</div><div class="c4-mvs">VS</div><div class="c4-slot">Raiden 战队</div><div class="c4-lockmark">🔓</div>
+        </div>
+        <div class="c4-mini-actions">
+          <div class="c4-mini-btn">🎲 随机</div>
+          <div class="c4-mini-btn">🔒 锁定</div>
+          <div class="c4-mini-btn">🔄 重置</div>
+        </div>
+      </div>
+
+      <div class="c4-panel">
+        <h3 class="c4-h">操作日志 · LOG</h3>
+        <div class="c4-log"><span>系统</span> · 8 支战队进入对阵生成阶段</div>
+        <div class="c4-log"><span>管理员</span> · 锁定 M-01 LordYun vs Kevin</div>
+        <div class="c4-log"><span>管理员</span> · 锁定 M-03 Phoenix vs Storm</div>
+        <div class="c4-log"><span>系统</span> · 等待随机分配剩余 4 支战队</div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <div class="act-btn act-roll">🎲 随机排位</div>
+      <div class="act-btn act-lock">🔒 锁定对阵</div>
+      <div class="act-btn act-reset">🔄 重置</div>
+      <div class="act-btn act-end">🏁 结束锦标赛</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ CONCEPT 5 ============================================================ -->
+<div class="concept" data-c="5">
+  <div class="concept-label">
+    <span class="num">05</span><span class="name">高级冠军风格 · Premium Championship</span>
+    <span class="tag">— 舞台式主推对阵 + 底部对阵轮播</span>
+  </div>
+  <div class="stage">
+    <div class="df-header">
+      <div class="nav-col">
+        <div class="ghost-pill">← 返回选手管理</div>
+        <div class="ghost-pill" style="color:#fbbf24;border-color:#fbbf2466;background:rgba(251,191,36,.08);">↩ 撤销上一次选择</div>
+      </div>
+      <div class="mast">
+        <div class="tname">DRAFT STAGE 锦标赛</div>
+        <div class="row">
+          <span class="phase-pill">第三阶段 —— 对阵生成</span>
+          <h1 class="glow-h">生成最终对阵</h1>
+        </div>
+        <div class="sub">全部选手已选完 · 8 支战队等待分组 → 点击下方随机排位或手动锁定对阵</div>
+      </div>
+      <div class="side">
+        <div style="text-align:center;">
+          <div class="prog-count">2 / 4</div>
+          <div style="font-size:9px;color:var(--muted);">已锁定对阵</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="c5-hero">
+      <div class="c5-eyebrow">🏆 焦点对阵 · FEATURED MATCHUP · 已锁定</div>
+      <div class="c5-vs-stage">
+        <div class="c5-team">
+          <div class="c5-crest">L</div>
+          <div class="c5-tname">LordYun 战队</div>
+          <div class="c5-ribbon">队长 · LordYun</div>
+        </div>
+        <div class="c5-vs-mega">VS</div>
+        <div class="c5-team">
+          <div class="c5-crest">K</div>
+          <div class="c5-tname">Kevin 战队</div>
+          <div class="c5-ribbon">队长 · Kevin</div>
+        </div>
+      </div>
+
+      <div class="c5-carousel">
+        <div class="c5-mini locked"><span class="n">LordYun</span><span class="v">VS</span><span class="n">Kevin</span></div>
+        <div class="c5-mini"><span class="n">Dragon</span><span class="v">VS</span><span class="n">Alice</span></div>
+        <div class="c5-mini locked"><span class="n">Phoenix</span><span class="v">VS</span><span class="n">Storm</span></div>
+        <div class="c5-mini"><span class="n">Nova</span><span class="v">VS</span><span class="n">Raiden</span></div>
+      </div>
+      <div class="c5-dots">
+        <span class="c5-dot on"></span><span class="c5-dot"></span><span class="c5-dot"></span><span class="c5-dot"></span>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <div class="act-btn act-roll">🎲 随机排位</div>
+      <div class="act-btn act-lock">🔒 锁定对阵</div>
+      <div class="act-btn act-reset">🔄 重置</div>
+      <div class="act-btn act-end">🏁 结束锦标赛</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = btn.dataset.c;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.concept').forEach(el => el.classList.toggle('active', el.dataset.c === c));
+    });
+  });
+</script>
+</body>
+</html>

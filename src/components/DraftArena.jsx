@@ -1,5 +1,10 @@
 import React, { useState, useLayoutEffect, useEffect, useRef } from "react";
-import { fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby } from "../lib/tournamentApi.js";
+import {
+  fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby,
+  fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchups,
+  lockTournamentMatchup, resetTournamentMatchups, endTournament, toFinalMatchupTeam,
+} from "../lib/tournamentApi.js";
+import ConfirmDialog from "./ConfirmDialog.jsx";
 
 /* ════════════════════════════════════════════════════════════════════════
    CONSTANTS & THEME (unchanged from Dashboard.jsx)
@@ -18,13 +23,13 @@ const POSITIONS = [
   { id: 5, label: "5号位", name: "Hard Support" },
 ];
 
-const TEAM_CARD_W = 130;
-// Fixed height for the captain slot row (23px avatar/icon + top/bottom
+const TEAM_CARD_W = 190;
+// Fixed height for the captain slot row (34px avatar/icon + 6px top/bottom
 // padding = the row's natural height when a captain is assigned). Applied
 // explicitly to the row in every state (empty / assignable-prompt /
 // assigned) so the Team panel never grows or shifts depending on content --
 // the row always reserves exactly this much space, from first paint.
-const CAPTAIN_SLOT_H = 31;
+const CAPTAIN_SLOT_H = 46;
 // Fixed height for the top bar/header PanelFrame (button row + progress-bar
 // row + the panel's own p-4 padding). Sized generously for the tallest
 // realistic content across every phase (the teammate-phase round-label
@@ -121,7 +126,7 @@ function SubRoleBadge({ positions }) {
 }
 function CaptainBadge() {
   return (
-    <span className="inline-block text-[7px] font-bold px-[5px] py-0.5 rounded leading-none"
+    <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded leading-none"
       style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.4)" }}>
       队长
     </span>
@@ -204,19 +209,19 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
   const captainHidden = !!hiddenKeys && hiddenKeys.has(`cap:${teamIdx}`);
   return (
     <PanelFrame
-      className={`p-[9px] flex-shrink-0 scroll-m-8 transition-all duration-300 ${isActive ? "scale-[1.03]" : ""} ${canAssign ? "cursor-pointer hover:brightness-125" : ""}`}
+      className={`p-3 flex-shrink-0 scroll-m-8 transition-all duration-300 ${isActive ? "scale-[1.03]" : ""} ${canAssign ? "cursor-pointer hover:brightness-125" : ""}`}
       style={{ width: TEAM_CARD_W }}
       data-team-panel={teamIdx}
       onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}>
       <div className="absolute inset-0 rounded-2xl pointer-events-none"
         style={{ boxShadow: isActive ? `0 0 0 2px ${TEAL}, 0 0 26px ${TEAL}99` : canAssign ? `0 0 0 2px #22c55e, 0 0 18px #22c55e66` : "none", transition: "box-shadow 0.3s" }} />
-      <div className="relative mb-[5px]">
-        <div className="text-center px-[14px]">
-          <span className="text-[8px] font-black tracking-widest truncate inline-block max-w-full" style={{ color: TEAL, textShadow: `0 0 8px ${TEAL}99`, textTransform: useCaptainName ? "none" : "uppercase" }}>{displayName}</span>
+      <div className="relative mb-2">
+        <div className="text-center px-6">
+          <span className="text-[11px] font-black tracking-widest truncate inline-block max-w-full" style={{ color: TEAL, textShadow: `0 0 8px ${TEAL}99`, textTransform: useCaptainName ? "none" : "uppercase" }}>{displayName}</span>
         </div>
-        {isActive && <span className="absolute top-1/2 right-0 -translate-y-1/2 text-[7px] font-bold px-[5px] py-0.5 rounded-full animate-pulse flex-shrink-0" style={{ background: TEAL, color: "#000" }}>选人中</span>}
+        {isActive && <span className="absolute top-1/2 right-0 -translate-y-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full animate-pulse flex-shrink-0" style={{ background: TEAL, color: "#000" }}>选人中</span>}
       </div>
-      <div className="flex items-center gap-[5px] mb-[5px] p-[5px] rounded-lg w-full"
+      <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg w-full"
         data-slot-key={`cap:${teamIdx}`}
         style={{
           height: CAPTAIN_SLOT_H,
@@ -231,45 +236,44 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
         }}>
         {canAssign ? (
           <>
-            <div className="w-[23px] h-[23px] rounded-lg border border-dashed flex items-center justify-center text-[12px] flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
-            <span className="text-[8px] font-bold italic" style={{ color: "#22c55e" }}>→ 分配队长</span>
+            <div className="w-[34px] h-[34px] rounded-lg border border-dashed flex items-center justify-center text-sm flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
+            <span className="text-[11px] font-bold italic" style={{ color: "#22c55e" }}>→ 分配队长</span>
           </>
         ) : team.captain ? (
           <>
-            <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={23} glow />
+            <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={34} glow />
             <div className="min-w-0 flex-1">
-              <div className="text-[8px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
+              <div className="text-[11px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
               <div className="mt-0.5"><CaptainBadge /></div>
             </div>
           </>
         ) : (
-          <div className="flex items-center gap-[5px] w-full">
-            <div className="w-[23px] h-[23px] rounded-lg border border-dashed border-white/15 flex items-center justify-center text-white/20 text-[10px] flex-shrink-0">?</div>
-            <span className="text-[8px] italic text-white/25">等待队长</span>
+          <div className="flex items-center gap-2 w-full">
+            <div className="w-[34px] h-[34px] rounded-lg border border-dashed border-white/15 flex items-center justify-center text-white/20 text-xs flex-shrink-0">?</div>
+            <span className="text-[11px] italic text-white/25">等待队长</span>
           </div>
         )}
       </div>
-      <div className="space-y-[2px]">
+      <div className="space-y-1">
         {team.slots.map((slot, i) => {
           const slotKey = `slot:${teamIdx}:${i}`;
           const slotHidden = !!hiddenKeys && hiddenKeys.has(slotKey);
           return (
             <div key={i} data-slot-key={slotKey}
-              className={`flex items-center gap-[5px] p-[5px] rounded-lg border text-[8px] ${slot ? "bg-black/30" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
+              className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] ${slot ? "bg-black/30" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
               style={{ ...(slot ? { borderColor: TEAL_DIM } : {}), opacity: slotHidden ? 0 : 1 }}>
-              <span className="w-4 h-[14px] flex items-center justify-center rounded text-[7px] font-bold flex-shrink-0"
+              <span className="w-6 h-5 flex items-center justify-center rounded text-[9px] font-bold flex-shrink-0"
                 style={{ background: slot ? `${TEAL}22` : "transparent", color: slot ? TEAL : "#3a4a4a", border: `1px solid ${slot ? TEAL+"55" : "#1c2b2e"}` }}>
                 {POSITIONS[i % 5]?.id ?? "?"}
               </span>
               {slot ? (
                 <>
-                  <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={14} />
+                  <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={20} />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold text-white text-[7px]">{slot.name}</div>
+                    <div className="truncate font-semibold text-white text-[10px]">{slot.name}</div>
                   </div>
                 </>
               ) : <span className="italic">空位</span>}
-
             </div>
           );
         })}
@@ -293,14 +297,14 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
    player's id so values stay stable across re-renders but still vary from
    player to player.
    ════════════════════════════════════════════════════════════════════════ */
-const PLAYER_CARD_W = 88;
-const PLAYER_CARD_AVATAR = 26;
-const PLAYER_CARD_PAD = 6;
-const PLAYER_CARD_GAP = 6;
-const PLAYER_CARD_NAME_FONT = 10;
-const PLAYER_CARD_LABEL_FONT = 7;
-const PLAYER_CARD_VALUE_FONT = 10;
-const PLAYER_CARD_STAT_PAD = 5;
+const PLAYER_CARD_W = 130;
+const PLAYER_CARD_AVATAR = 36;
+const PLAYER_CARD_PAD = 9;
+const PLAYER_CARD_GAP = 7;
+const PLAYER_CARD_NAME_FONT = 13;
+const PLAYER_CARD_LABEL_FONT = 9;
+const PLAYER_CARD_VALUE_FONT = 13;
+const PLAYER_CARD_STAT_PAD = 7;
 const PLAYER_CARD_BG = "linear-gradient(to bottom, #bfe6de 0%, #97cfc2 100%)";
 const PLAYER_CARD_BORDER = "#5aa696";
 const PLAYER_CARD_STAT_BG = "#d3ece5";
@@ -344,8 +348,8 @@ function SquareAvatar({ avatarId, avatarUrl, size }) {
 
 function StatPill({ label, value, color }) {
   return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="font-bold rounded-md text-white whitespace-nowrap" style={{ background: color, fontSize: PLAYER_CARD_LABEL_FONT, padding: "1px 5px" }}>{label}</span>
+    <div className="flex flex-col items-center gap-1">
+      <span className="font-bold rounded-md text-white whitespace-nowrap" style={{ background: color, fontSize: PLAYER_CARD_LABEL_FONT, padding: "2px 6px" }}>{label}</span>
       <span className="font-black leading-none" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_VALUE_FONT }}>{value}</span>
     </div>
   );
@@ -355,7 +359,7 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
   const stats = placeholderStats(player.id);
   return (
     <button onClick={onClick} disabled={disabled} type="button" data-card-id={player.id}
-      className={`relative flex-shrink-0 text-left rounded-xl transition-all duration-200 ${disabled ? "" : "hover:scale-[1.03]"}`}
+      className={`relative flex-shrink-0 text-left rounded-2xl transition-all duration-200 ${disabled ? "" : "hover:scale-[1.03]"}`}
       style={{
         width: PLAYER_CARD_W, padding: PLAYER_CARD_PAD,
         background: PLAYER_CARD_BG, border: `2px solid ${selected ? "#22c55e" : PLAYER_CARD_BORDER}`,
@@ -366,13 +370,13 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
       }}>
       {badge && (
         <span className="absolute z-10 font-black rounded-full"
-          style={{ top: 5, right: 5, background: "#22c55e", color: "#04150a", fontSize: 7, padding: "1px 5px", boxShadow: "0 2px 6px rgba(0,0,0,0.35)" }}>
+          style={{ top: 8, right: 8, background: "#22c55e", color: "#04150a", fontSize: 9, padding: "2px 7px", boxShadow: "0 2px 6px rgba(0,0,0,0.35)" }}>
           {badge}
         </span>
       )}
       <SquareAvatar avatarId={player.avatarId ?? DEFAULT_AVATAR_ID} avatarUrl={player.avatarUrl} size={PLAYER_CARD_AVATAR} />
       <div className="text-center font-black truncate" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_NAME_FONT, marginTop: PLAYER_CARD_GAP }}>{player.name}</div>
-      <div className="rounded-lg" style={{ background: PLAYER_CARD_STAT_BG, border: `1px solid ${PLAYER_CARD_STAT_BORDER}`, padding: PLAYER_CARD_STAT_PAD, marginTop: PLAYER_CARD_GAP }}>
+      <div className="rounded-xl" style={{ background: PLAYER_CARD_STAT_BG, border: `1px solid ${PLAYER_CARD_STAT_BORDER}`, padding: PLAYER_CARD_STAT_PAD, marginTop: PLAYER_CARD_GAP }}>
         <div className="grid grid-cols-2" style={{ rowGap: PLAYER_CARD_GAP, columnGap: PLAYER_CARD_PAD * 0.4 }}>
           <StatPill label="胜率" value={`${stats.winRate}%`} color={STAT_PILL_COLORS.winRate} />
           <StatPill label="冠军" value={stats.champion} color={STAT_PILL_COLORS.champion} />
@@ -692,17 +696,41 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                 {tournamentName}
               </div>
             )}
-            <div className="flex items-baseline gap-3 flex-wrap min-w-0">
-              <span className="text-[11px] font-black px-3 py-0.5 rounded-full tracking-widest flex-shrink-0"
-                style={{ background: draftPhase === "captain" ? "rgba(34,197,94,0.12)" : "rgba(0,245,212,0.12)", color: draftPhase === "captain" ? "#22c55e" : TEAL, border: `1px solid ${draftPhase === "captain" ? "rgba(34,197,94,0.4)" : TEAL+"55"}` }}>
-                {draftPhase === "captain" ? "第一阶段 —— 队长分配" : "第二阶段 —— 队员选秀"}
+            <div className="flex flex-col items-start gap-2 min-w-0">
+              <span
+                className="text-[11px] font-black px-3 py-0.5 rounded-full tracking-widest"
+                style={{
+                  background:
+                    draftPhase === "captain"
+                      ? "rgba(34,197,94,0.12)"
+                      : "rgba(0,245,212,0.12)",
+                  color: draftPhase === "captain" ? "#22c55e" : TEAL,
+                  border: `1px solid ${
+                    draftPhase === "captain"
+                      ? "rgba(34,197,94,0.4)"
+                      : TEAL + "55"
+                  }`,
+                }}
+              >
+                {draftPhase === "captain"
+                  ? "第一阶段 —— 队长分配"
+                  : "第二阶段 —— 队员选秀"}
               </span>
+
               {draftPhase === "captain" ? (
-                <GlowHeading size="text-3xl" className="font-display truncate">{selectedCaptain ? `将 ${selectedCaptain.name.toUpperCase()} 分配到战队` : "选择一名队长"}</GlowHeading>
+                <GlowHeading size="text-3xl" className="font-display">
+                  {selectedCaptain
+                    ? `将 ${selectedCaptain.name.toUpperCase()} 分配到战队`
+                    : "选择一名队长"}
+                </GlowHeading>
               ) : allDrafted ? (
-                <GlowHeading size="text-3xl" className="font-display truncate">全部选手已选完 🏆</GlowHeading>
+                <GlowHeading size="text-3xl" className="font-display">
+                  全部选手已选完 🏆
+                </GlowHeading>
               ) : (
-                <GlowHeading size="text-3xl" className="font-display truncate">{teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合</GlowHeading>
+                <GlowHeading size="text-3xl" className="font-display">
+                  {teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合
+                </GlowHeading>
               )}
             </div>
             <div className="text-[11px] text-white/40 truncate">
@@ -774,8 +802,8 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
             flex cross-axis stretch from ever growing a sibling to match
             another card's box (see PlayerStatCard below for why that
             matters). */}
-        <div className="lg:max-h-[55%] lg:shrink lg:min-h-0 overflow-y-auto p-8">
-          <div className="flex flex-wrap items-start gap-x-[10px] gap-y-[16px] pb-1">
+        <div className="lg:max-h-[55%] lg:shrink lg:min-h-0 overflow-y-auto pt-2 px-8 pb-5">
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-6 pb-1">
             {teams.map((team, i) => (
               <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
                 assignable={draftPhase === "captain" && !!selectedCaptain}
@@ -790,7 +818,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
             <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
               <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: "#22c55e" }}>队长候选池（{captainCandidates.length}人未分配）</h2>
               <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
-                <div className="flex flex-wrap items-start gap-x-[8px] gap-y-[8px]">
+                <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
                   {captainCandidates.map((c) => (
                     <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={selectedCaptain?.id === c.id} badge="队长" />
                   ))}
@@ -812,7 +840,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
               <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: TEAL }}>待选选手（{pool?.length ?? 0}）</h2>
               {pool && pool.length > 0 ? (
                 <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
-                  <div className="flex flex-wrap items-start gap-x-[8px] gap-y-[8px]">
+                  <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
                     {pool.map((p) => (
                       <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
                     ))}
@@ -828,6 +856,203 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   FINAL MATCHUPS STAGE — Concept 1 "Tournament Bracket". Entered from
+   DraftArena's 进入最终对阵 button once drafting is finished; renders in
+   the exact same page shell (DraftArenaPage below), same background/font/
+   scrollbar setup, same panel/glow language. Every team is named after its
+   captain (never "1号战队") -- see teamLabel() below. All of this stage's
+   state (teams snapshot + matchups + locks) lives in the `tournament_matches`
+   singleton row (see supabase/schema.sql, Section 6b) and is kept live via
+   Realtime, so Random Roll / Lock Match / Reset / End Tournament are all
+   genuinely synchronized across every connected client, not just the one
+   that clicked the button.
+   ════════════════════════════════════════════════════════════════════════ */
+function teamLabel(team) {
+  return team?.captainName ? `${team.captainName} 战队` : "（空）战队";
+}
+
+function MatchTeamSlot({ team, locked }) {
+  if (!team) {
+    return (
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl" style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)" }}>
+        <div className="text-xs text-white/25 font-bold">轮空</div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl transition-all"
+      style={{ background: locked ? "rgba(251,191,36,0.06)" : "rgba(0,245,212,0.04)", border: `1px solid ${locked ? "#fbbf2466" : TEAL_DIM}` }}>
+      <Avatar avatarUrl={team.captainAvatarUrl} size={26} glow={locked} />
+      <div className="text-[13px] font-black text-white truncate">{teamLabel(team)}</div>
+    </div>
+  );
+}
+
+function MatchPair({ index, matchup, teamsByIdx, locked, onToggleLock, canManage, busy }) {
+  const teamA = matchup.a != null ? teamsByIdx.get(matchup.a) : null;
+  const teamB = matchup.b != null ? teamsByIdx.get(matchup.b) : null;
+  return (
+    <div className="grid items-center gap-4" style={{ gridTemplateColumns: "1fr 96px" }}>
+      <div className="flex flex-col gap-2.5">
+        <MatchTeamSlot team={teamA} locked={locked} />
+        <MatchTeamSlot team={teamB} locked={locked} />
+      </div>
+      <button
+        onClick={() => canManage && onToggleLock(index, !locked)}
+        disabled={!canManage || busy}
+        className="flex flex-col items-center justify-center gap-1 rounded-xl py-4 transition-all"
+        style={{
+          background: locked ? "rgba(251,191,36,0.08)" : "rgba(0,245,212,0.06)",
+          border: `1px solid ${locked ? "#fbbf24" : TEAL}`,
+          boxShadow: locked ? "0 0 16px rgba(251,191,36,0.3)" : "0 0 16px rgba(0,245,212,0.25)",
+          cursor: canManage ? "pointer" : "default",
+          opacity: busy ? 0.5 : 1,
+        }}
+        title={canManage ? (locked ? "点击解锁此对阵" : "点击锁定此对阵") : undefined}
+      >
+        <span className="font-display font-black text-sm" style={{ color: locked ? "#fbbf24" : TEAL }}>VS</span>
+        <span className="text-[9px]">{locked ? "🔒" : canManage ? "🔓" : ""}</span>
+        <span className="text-[8px] font-bold tracking-wider text-white/30">M{String(index + 1).padStart(2, "0")}</span>
+      </button>
+    </div>
+  );
+}
+
+function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }) {
+  const [busy, setBusy] = useState(null); // null | 'roll' | 'reset' | 'end'
+  const [error, setError] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
+
+  const teamsByIdx = new Map(teams.map((t) => [t.idx, t]));
+  const lockedCount = matchups.filter((m) => m.locked).length;
+  const totalCount = matchups.length;
+
+  async function run(action, fn) {
+    setBusy(action);
+    setError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setError(err.message || "操作失败");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const handleRoll = () => run("roll", () => rollTournamentMatchups());
+  const handleToggleLock = (index, nextLocked) => run(`lock:${index}`, () => lockTournamentMatchup(index, nextLocked));
+  const handleReset = () => { setConfirmReset(false); run("reset", () => resetTournamentMatchups()); };
+  const handleEnd = () => { setConfirmEnd(false); run("end", () => endTournament()); };
+
+  return (
+    <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-4 lg:overflow-hidden">
+      <PanelFrame className="shrink-0" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
+        <div className="h-full flex items-stretch">
+          <div className="flex-shrink-0 flex flex-col justify-center gap-2.5 px-5" style={{ borderRight: "1px solid rgba(0,245,212,0.16)" }}>
+            <button onClick={onBack}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
+              style={{ background: "rgba(0,245,212,0.05)", borderColor: "rgba(0,245,212,0.28)", color: TEAL_SOFT }}>
+              ← 返回选手管理
+            </button>
+          </div>
+
+          <div className="flex-1 min-w-0 flex flex-col justify-center px-8 gap-1.5">
+            {tournamentName && (
+              <div className="font-display font-extrabold text-2xl truncate"
+                style={{ color: TEAL, textShadow: "0 0 14px rgba(0,245,212,0.45), 0 0 34px rgba(0,245,212,0.2)" }}>
+                {tournamentName}
+              </div>
+            )}
+            <div className="flex flex-col items-start gap-2 min-w-0">
+              <span className="text-[11px] font-black px-3 py-0.5 rounded-full tracking-widest"
+                style={{ background: "rgba(0,245,212,0.12)", color: TEAL, border: `1px solid ${TEAL}55` }}>
+                第三阶段 —— 对阵生成
+              </span>
+              <GlowHeading size="text-3xl" className="font-display">生成最终对阵</GlowHeading>
+            </div>
+            <div className="text-[11px] text-white/40 truncate">
+              全部选手已选完 · 共 {totalCount} 组对阵 · 已锁定 {lockedCount}/{totalCount}
+              {error && <span className="ml-3" style={{ color: "#f87171" }}>⚠ {error}</span>}
+            </div>
+          </div>
+
+          <div className="flex-shrink-0 flex items-center gap-6 px-8" style={{ borderLeft: "1px solid rgba(0,245,212,0.16)" }}>
+            <div className="text-center">
+              <div className="font-display font-black text-2xl" style={{ color: TEAL }}>{lockedCount}<span className="text-white/30">/{totalCount}</span></div>
+              <div className="text-[9px] font-semibold text-white/40 tracking-wider mt-0.5">已锁定对阵</div>
+            </div>
+          </div>
+        </div>
+      </PanelFrame>
+
+      <div className="flex-1 lg:min-h-0 overflow-y-auto">
+        <PanelFrame className="p-8">
+          <h2 className="font-display text-sm font-bold tracking-widest mb-6" style={{ color: TEAL }}>首轮对阵 · ROUND 1</h2>
+          {totalCount === 0 ? (
+            <div className="flex flex-col items-center py-10 text-white/30 text-center">
+              <div className="text-3xl mb-2">🎲</div>
+              <div className="text-sm">暂无对阵数据</div>
+            </div>
+          ) : (
+            <div className="grid gap-8" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+              {matchups.map((m, i) => (
+                <MatchPair key={i} index={i} matchup={m} teamsByIdx={teamsByIdx} locked={!!m.locked}
+                  onToggleLock={handleToggleLock} canManage={isStaff} busy={busy === `lock:${i}`} />
+              ))}
+            </div>
+          )}
+        </PanelFrame>
+      </div>
+
+      {isStaff && (
+        <PanelFrame className="shrink-0 p-4 flex items-center justify-center gap-4 flex-wrap">
+          <button onClick={handleRoll} disabled={busy !== null || totalCount === 0}
+            className="font-display font-extrabold tracking-wide text-sm px-6 py-3 rounded-xl border transition-all"
+            style={{ background: `linear-gradient(to bottom, ${TEAL}, #00c2a8)`, color: "#000", borderColor: TEAL, boxShadow: "0 0 22px rgba(0,245,212,0.55)", opacity: busy !== null || totalCount === 0 ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
+            {busy === "roll" ? "排位中…" : "🎲 随机排位"}
+          </button>
+          <button onClick={() => setConfirmReset(true)} disabled={busy !== null || totalCount === 0}
+            className="font-display font-extrabold tracking-wide text-sm px-6 py-3 rounded-xl border transition-all"
+            style={{ background: "rgba(0,0,0,0.3)", color: TEAL_SOFT, borderColor: TEAL_DIM, opacity: busy !== null || totalCount === 0 ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
+            🔄 重置
+          </button>
+          <button onClick={() => setConfirmEnd(true)} disabled={busy !== null}
+            className="font-display font-extrabold tracking-wide text-sm px-6 py-3 rounded-xl border transition-all"
+            style={{ background: "rgba(248,113,113,0.08)", color: "#f87171", borderColor: "#5a1414", opacity: busy !== null ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
+            🏁 结束锦标赛
+          </button>
+          <span className="text-[10px] text-white/25 ml-2">🔒 点击任意对阵右侧的 VS 图标即可锁定 / 解锁</span>
+        </PanelFrame>
+      )}
+
+      {confirmReset && (
+        <ConfirmDialog
+          title="确认重置对阵"
+          message="将清除所有已生成的对阵与所有锁定，恢复到刚进入最终对阵时的状态。此操作无法撤销。"
+          confirmLabel="确认重置"
+          tone="danger"
+          busy={busy === "reset"}
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={handleReset}
+        />
+      )}
+      {confirmEnd && (
+        <ConfirmDialog
+          title="确认结束锦标赛"
+          message="将结束当前锦标赛：清空所有参赛名单、已选战队与对阵数据，所有已连接用户都会被送回锦标赛大厅。若要参加下一届锦标赛，需要重新点击「参加比赛」。此操作无法撤销。"
+          confirmLabel="确认结束"
+          tone="danger"
+          busy={busy === "end"}
+          onCancel={() => setConfirmEnd(false)}
+          onConfirm={handleEnd}
+        />
+      )}
     </div>
   );
 }
@@ -915,9 +1140,14 @@ function toDraftPlayer(participant) {
    so in the normal flow the pools this seeds with are never empty or
    mismatched in size -- but this page doesn't re-validate that itself.
    ════════════════════════════════════════════════════════════════════════ */
-export default function DraftArenaPage({ onExitToLobby }) {
+export default function DraftArenaPage({ onExitToLobby, account }) {
   const [tournamentName, setTournamentName] = useState('')
   const [tournament, setTournament] = useState(() => initialTournament([]))
+  const [finalMatches, setFinalMatches] = useState(null) // { teams, matchups } | null
+  const [stage, setStage] = useState('draft') // 'draft' | 'final'
+  const [proceedError, setProceedError] = useState(null)
+
+  const isStaff = account && (account.permission_role === 'admin' || account.permission_role === 'developer')
 
   useEffect(() => {
     let cancelled = false
@@ -937,16 +1167,91 @@ export default function DraftArenaPage({ onExitToLobby }) {
     return () => { cancelled = true }
   }, [])
 
+  // Final Matchups Synchronization (Phase 5, Section: Final Matchups
+  // stage): fetched once on mount (so a client opening the page *after*
+  // someone else already clicked 进入最终对阵 lands straight on the Final
+  // Matchups stage, not stuck showing a fresh empty draft board), then kept
+  // live via Realtime for the rest of the page's lifetime -- regardless of
+  // which stage this client is currently on. An INSERT/UPDATE means "render
+  // (or re-render) the Final Matchups stage with this data"; a DELETE means
+  // End Tournament just ran, so every connected client -- drafting or
+  // already on the Final Matchups stage -- leaves for the Tournament Lobby
+  // immediately, exactly like the requirement that no player automatically
+  // remains in the next tournament.
+  useEffect(() => {
+    let cancelled = false
+    fetchFinalMatchups()
+      .then((row) => {
+        if (cancelled || !row) return
+        setFinalMatches(row)
+        setStage('final')
+      })
+      .catch(() => {})
+
+    const unsubscribe = subscribeFinalMatchups((payload) => {
+      if (payload.eventType === 'DELETE') {
+        setFinalMatches(null)
+        setStage('draft')
+        ;(onExitToLobby || (() => {}))()
+        return
+      }
+      const row = payload.new
+      if (!row) return
+      setFinalMatches({
+        teams: Array.isArray(row.teams) ? row.teams : [],
+        matchups: Array.isArray(row.matchups) ? row.matchups : [],
+      })
+      setStage('final')
+    })
+
+    return () => { cancelled = true; unsubscribe() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 进入最终对阵: snapshots the just-finished draft's teams (captain
+  // identity only) into the tournament_matches singleton via
+  // enterFinalMatchups(). The Realtime subscription above (which fires for
+  // this client too, not just others) is what actually flips `stage` to
+  // 'final' once the write lands -- this just kicks the write off and
+  // surfaces an error inline if it's rejected (e.g. session expired, or a
+  // non-staff account somehow reaches this button).
+  async function handleProceed() {
+    setProceedError(null)
+    try {
+      const teamsPayload = tournament.teams.map((team, idx) => toFinalMatchupTeam(team, idx))
+      await enterFinalMatchups(teamsPayload)
+    } catch (err) {
+      setProceedError(err.message || '生成最终对阵失败')
+    }
+  }
+
   return (
     <div className="min-h-screen w-full text-white font-sans flex flex-col lg:h-screen lg:overflow-hidden" style={{ background: "radial-gradient(ellipse at top, #0b1716 0%, #050807 55%, #020303 100%)" }}>
       <GlobalStyle />
-      <DraftArena
-        tournament={tournament}
-        setTournament={setTournament}
-        onBack={onExitToLobby || (() => {})}
-        onProceed={() => {}}
-        tournamentName={tournamentName}
-      />
+      {stage === 'final' && finalMatches ? (
+        <FinalMatchupsStage
+          tournamentName={tournamentName}
+          teams={finalMatches.teams}
+          matchups={finalMatches.matchups}
+          isStaff={isStaff}
+          onBack={onExitToLobby || (() => {})}
+        />
+      ) : (
+        <DraftArena
+          tournament={tournament}
+          setTournament={setTournament}
+          onBack={onExitToLobby || (() => {})}
+          onProceed={handleProceed}
+          tournamentName={tournamentName}
+        />
+      )}
+      {proceedError && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-bold"
+          style={{ background: "rgba(20,4,4,0.95)", border: "1px solid #5a1414", color: "#f87171" }}
+          onClick={() => setProceedError(null)}>
+          ⚠ {proceedError}（点击关闭）
+        </div>
+      )}
     </div>
   );
 }

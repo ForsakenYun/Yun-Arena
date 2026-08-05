@@ -120,7 +120,7 @@ export default function App() {
   if (isDashboard) {
     view = <AdminDashboard account={account} onLogout={handleLogout} onOpenLobby={() => (window.location.hash = 'lobby')} />
   } else if (isDraft) {
-    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} />
+    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} account={account} />
   } else if (account) {
     // Default logged-in destination for everyone (Section: navigation).
     // Admin/Developer accounts can reach this from the dashboard's

@@ -22,6 +22,9 @@ const ERROR_MESSAGES = {
   invalid_draft_order_team_count: '每轮的号码数量必须等于队伍数量',
   invalid_draft_order_duplicate_or_missing: '每轮中每支队伍必须且只能出现一次',
   invalid_temp_participant_count: '临时测试用户数量无效',
+  no_final_matchups: '尚未生成最终对阵，请先进入最终对阵阶段',
+  invalid_final_matchup_teams: '战队数据无效，无法生成最终对阵',
+  invalid_match_index: '对阵编号无效',
 }
 
 function friendlyError(error, fallback) {
@@ -297,4 +300,103 @@ export function validateDraftRound(numbers, teamCount) {
     seen.add(value)
   }
   return null
+}
+
+/* ---------- Final Matchups (Draft Arena, Phase 5 -- 对阵生成) ---------- */
+// The only server-persisted snapshot of a completed draft's teams --
+// captain identity only (id/name/avatar), never full rosters, since only
+// captain-vs-captain matchups are ever shown on this stage. Its presence
+// is itself the signal that every connected Draft Arena client uses (via
+// Realtime) to switch into the Final Matchups stage; its absence means no
+// tournament has reached this stage yet, or End Tournament just cleared it.
+function normalizeMatchesRow(row) {
+  if (!row) return null
+  return {
+    teams: Array.isArray(row.teams) ? row.teams : [],
+    matchups: Array.isArray(row.matchups) ? row.matchups : [],
+    updatedAt: row.updated_at ?? null,
+  }
+}
+
+export async function fetchFinalMatchups() {
+  const { data, error } = await supabase.from('tournament_matches').select('*').maybeSingle()
+  if (error) throw new Error(friendlyError(error, '获取最终对阵失败'))
+  return normalizeMatchesRow(data)
+}
+
+// One row, one channel -- every INSERT/UPDATE means "render this stage
+// with this data", every DELETE means "End Tournament happened, leave
+// this stage" (see DraftArena.jsx's subscription for how DELETE is
+// handled, since payload.new is empty on delete and the caller needs the
+// raw event, not just the normalized row).
+export function subscribeFinalMatchups(onChange) {
+  const channel = supabase
+    .channel('tournament-matches-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_matches' }, onChange)
+    .subscribe()
+  return () => supabase.removeChannel(channel)
+}
+
+// Admin/Developer only. Snapshots the given teams (see toFinalMatchupTeam
+// below for the exact shape) and seeds the default sequential pairing.
+// Called once, when 进入最终对阵 is clicked.
+export async function enterFinalMatchups(teams) {
+  const { data, error } = await supabase.rpc('enter_final_matchups', {
+    p_token: requireToken(),
+    p_teams: teams,
+  })
+  if (error) throw new Error(friendlyError(error, '生成最终对阵失败'))
+  return normalizeMatchesRow(data)
+}
+
+// Admin/Developer only. Randomizes only the unlocked slots; locked slots
+// (and the teams inside them) never move.
+export async function rollTournamentMatchups() {
+  const { data, error } = await supabase.rpc('roll_tournament_matchups', { p_token: requireToken() })
+  if (error) throw new Error(friendlyError(error, '随机排位失败'))
+  return normalizeMatchesRow(data)
+}
+
+// Admin/Developer only. Toggles a single match slot's lock flag by its
+// position in the matchups array.
+export async function lockTournamentMatchup(matchIndex, locked) {
+  const { data, error } = await supabase.rpc('lock_tournament_matchup', {
+    p_token: requireToken(),
+    p_match_index: matchIndex,
+    p_locked: locked,
+  })
+  if (error) throw new Error(friendlyError(error, '锁定对阵失败'))
+  return normalizeMatchesRow(data)
+}
+
+// Admin/Developer only. Restores the default sequential pairing, every
+// slot unlocked -- exactly the state right after 进入最终对阵.
+export async function resetTournamentMatchups() {
+  const { data, error } = await supabase.rpc('reset_tournament_matchups', { p_token: requireToken() })
+  if (error) throw new Error(friendlyError(error, '重置对阵失败'))
+  return normalizeMatchesRow(data)
+}
+
+// Admin/Developer only. Ends the tournament outright: clears the Final
+// Matchups snapshot and every joined participant (same effect as
+// clear_tournament, batched into the same call) -- nobody carries over
+// into the next tournament, and every connected client (drafting or
+// already on the Final Matchups stage) is sent back to the Tournament
+// Lobby by the resulting Realtime DELETE event.
+export async function endTournament() {
+  const { error } = await supabase.rpc('end_tournament', { p_token: requireToken() })
+  if (error) throw new Error(friendlyError(error, '结束锦标赛失败'))
+}
+
+// Builds the exact captain-only shape enterFinalMatchups() persists, from
+// a drafted `teams` array (DraftArena's local tournament.teams -- each
+// {captain: {id,name,avatarUrl}, slots: [...]}). idx is each team's
+// position in that array, which is what matchups[].a/b refer back to.
+export function toFinalMatchupTeam(team, idx) {
+  return {
+    idx,
+    captainAccountId: team.captain?.id ?? null,
+    captainName: team.captain?.name ?? '',
+    captainAvatarUrl: team.captain?.avatarUrl ?? null,
+  }
 }

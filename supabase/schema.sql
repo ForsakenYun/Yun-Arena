@@ -194,6 +194,39 @@ alter table public.tournament_settings
 comment on table public.tournament_settings is
   'Singleton row (Tournament Lobby -- Tournament Settings). Public read (safe -- name, team count, players per team, draft order, and who last touched it), written only through save_tournament_settings() by an Admin/Developer. There is never more than one row; a save always updates the same record rather than creating a new one, which is how "remember the last saved settings" works. draft_order is a JSON array of rounds (one array of team numbers per round, length = players_per_team - 1); this is Draft Order Settings only -- configuring the order captains draft goes here, actually running the draft is a future phase.';
 
+-- Final Matchups (Phase 5 -- Draft Arena, Concept 1 "Tournament Bracket").
+-- Singleton row, same trick as tournament_settings (id can only ever be
+-- true). This is the ONLY server-persisted snapshot of the completed
+-- draft's teams -- captain assignments made during the Captain/Teammate
+-- phases themselves are still local-only React state (see DraftArena.jsx),
+-- exactly as documented before this phase. The moment an admin clicks
+-- 进入最终对阵, that local team list is snapshotted here (captain identity
+-- only -- id/name/avatar -- not full rosters, since only captain-vs-captain
+-- matchups are ever displayed on this stage) via enter_final_matchups(),
+-- and from that point on every connected client (whoever has the Draft
+-- Arena open, regardless of their own local draft progress) renders this
+-- row instead, kept live by Realtime. This is what makes Random Roll/Lock
+-- Match/Reset genuinely multi-client-synchronized instead of "synchronized
+-- only for whoever clicked the button."
+--
+-- matchups is a JSON array, one element per match slot, each shaped like
+-- {"a": <team index>, "b": <team index or null for a bye>, "locked": bool}.
+-- The array's order IS the slot order shown on screen; a slot's identity
+-- (and therefore what a lock protects) is its position in this array, not
+-- the teams inside it. teams is a JSON array of {"idx", "captainAccountId",
+-- "captainName", "captainAvatarUrl"}, idx matching the a/b values above.
+create table if not exists public.tournament_matches (
+  id          boolean primary key default true,
+  teams       jsonb not null default '[]'::jsonb,
+  matchups    jsonb not null default '[]'::jsonb,
+  updated_at  timestamptz not null default now(),
+  updated_by  uuid references public.accounts(id) on delete set null,
+  constraint tournament_matches_singleton check (id)
+);
+
+comment on table public.tournament_matches is
+  'Singleton row (Draft Arena -- Final Matchups / 对阵生成 stage). Public read, written only through enter_final_matchups()/roll_tournament_matchups()/lock_tournament_matchup()/reset_tournament_matchups(), all Admin/Developer-only. Absence of this row means no tournament has reached the Final Matchups stage yet (or End Tournament just cleared it); its presence is itself the signal every connected Draft Arena client uses to switch into this stage, via Realtime.';
+
 -- ----------------------------------------------------------------------------
 -- 2. Row Level Security
 -- ----------------------------------------------------------------------------
@@ -206,6 +239,7 @@ alter table public.sync_events  enable row level security;
 alter table public.tournament_participants enable row level security;
 alter table public.presence                enable row level security;
 alter table public.tournament_settings     enable row level security;
+alter table public.tournament_matches      enable row level security;
 
 -- accounts: public read only (no password column exists on this table at all)
 drop policy if exists "accounts_public_read" on public.accounts;
@@ -254,7 +288,17 @@ create policy "tournament_settings_public_read" on public.tournament_settings
 revoke insert, update, delete on public.tournament_settings from anon, authenticated;
 grant select on public.tournament_settings to anon, authenticated;
 
--- Enable Realtime on the two tables clients actually subscribe to.
+-- tournament_matches: public read (safe -- captain names/avatars are
+-- already public via accounts, and matchups carry no secrets), writes only
+-- via the SECURITY DEFINER functions below (Section 6b).
+drop policy if exists "tournament_matches_public_read" on public.tournament_matches;
+create policy "tournament_matches_public_read" on public.tournament_matches
+  for select using (true);
+
+revoke insert, update, delete on public.tournament_matches from anon, authenticated;
+grant select on public.tournament_matches to anon, authenticated;
+
+-- Enable Realtime on the tables clients actually subscribe to.
 do $$
 begin
   if not exists (
@@ -283,6 +327,16 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'presence'
   ) then
     alter publication supabase_realtime add table public.presence;
+  end if;
+
+  -- Final Matchups stage (Phase 5): every connected Draft Arena client
+  -- subscribes to this table so matchups/locks/rolls/reset/end-tournament
+  -- all appear live, exactly like the rest of the project's synced state.
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'tournament_matches'
+  ) then
+    alter publication supabase_realtime add table public.tournament_matches;
   end if;
 end $$;
 
@@ -1068,6 +1122,265 @@ end;
 $$;
 
 -- ----------------------------------------------------------------------------
+-- 6b. Draft Arena: Final Matchups stage (Phase 5 -- Concept 1 "Tournament
+--     Bracket"). Admin/Developer-only, same pattern as the rest of Section
+--     6. See the public.tournament_matches comment above for the overall
+--     shape/rationale.
+-- ----------------------------------------------------------------------------
+
+-- Internal helper: builds the default sequential pairing for a teams array
+-- -- (0,1), (2,3), (4,5)... in teams' own order, all unlocked. This is the
+-- exact shape both enter_final_matchups() (first arrival at the stage) and
+-- reset_tournament_matchups() ("restore to the state when first entered")
+-- produce, so both call this one function rather than duplicating the
+-- pairing logic. A trailing unpaired team (odd team count) gets a bye
+-- slot -- b is null.
+create or replace function public._default_matchups(p_teams jsonb)
+returns jsonb
+language plpgsql
+immutable
+as $$
+declare
+  v_idxs   int[];
+  v_result jsonb := '[]'::jsonb;
+  v_i      int;
+  v_n      int;
+begin
+  select array_agg((elem->>'idx')::int order by ord)
+  into v_idxs
+  from jsonb_array_elements(p_teams) with ordinality as t(elem, ord);
+
+  v_n := coalesce(array_length(v_idxs, 1), 0);
+  v_i := 1;
+  while v_i <= v_n loop
+    if v_i + 1 <= v_n then
+      v_result := v_result || jsonb_build_array(jsonb_build_object('a', v_idxs[v_i], 'b', v_idxs[v_i+1], 'locked', false));
+      v_i := v_i + 2;
+    else
+      v_result := v_result || jsonb_build_array(jsonb_build_object('a', v_idxs[v_i], 'b', null, 'locked', false));
+      v_i := v_i + 1;
+    end if;
+  end loop;
+
+  return v_result;
+end;
+$$;
+
+-- Snapshots the just-completed draft's teams (captain identity only --
+-- id/name/avatar; full rosters are never needed on this stage) into the
+-- singleton row and seeds the default sequential pairing. Called once,
+-- when 进入最终对阵 is clicked. Safe to call again (e.g. a second admin
+-- also finishes a draft and proceeds) -- it simply overwrites the singleton
+-- with whichever snapshot arrives, same "replace the one active record"
+-- behavior as save_tournament_settings.
+create or replace function public.enter_final_matchups(
+  p_token uuid,
+  p_teams jsonb
+)
+returns public.tournament_matches
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_actor public.accounts;
+  v_row   public.tournament_matches;
+begin
+  v_actor := public._require_role(p_token, array['admin', 'developer']);
+
+  if p_teams is null or jsonb_typeof(p_teams) <> 'array' or jsonb_array_length(p_teams) < 2 then
+    raise exception 'invalid_final_matchup_teams' using errcode = '22000';
+  end if;
+
+  insert into public.tournament_matches (id, teams, matchups, updated_at, updated_by)
+  values (true, p_teams, public._default_matchups(p_teams), now(), v_actor.id)
+  on conflict (id) do update
+    set teams      = excluded.teams,
+        matchups   = excluded.matchups,
+        updated_at = excluded.updated_at,
+        updated_by = excluded.updated_by
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- Randomizes only the unlocked slots. Locked slots (and the two teams
+-- inside them) are left completely untouched, both in content and in
+-- their slot position -- only the *other* teams (every team not currently
+-- sitting in a locked slot) are shuffled and redistributed across the
+-- remaining unlocked slots, in the same slot order they already occupied.
+-- This is what makes "lock a matchup, then re-roll" work exactly as
+-- specified: a locked LordYun-vs-Kevin pairing can never change until it's
+-- explicitly unlocked, no matter how many times Random Roll runs.
+create or replace function public.roll_tournament_matchups(p_token uuid)
+returns public.tournament_matches
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_actor      public.accounts;
+  v_row        public.tournament_matches;
+  v_m          jsonb;
+  v_locked_ids int[] := '{}';
+  v_free_ids   int[];
+  v_shuffled   int[];
+  v_free_count int;
+  v_new        jsonb := '[]'::jsonb;
+  v_ptr        int := 1;
+  v_a          int;
+  v_b          int;
+begin
+  v_actor := public._require_role(p_token, array['admin', 'developer']);
+
+  select * into v_row from public.tournament_matches where id = true;
+  if not found then
+    raise exception 'no_final_matchups' using errcode = '22000';
+  end if;
+
+  for v_m in
+    select elem from jsonb_array_elements(v_row.matchups) with ordinality as t(elem, ord) order by ord
+  loop
+    if coalesce((v_m->>'locked')::boolean, false) then
+      if v_m->>'a' is not null then v_locked_ids := v_locked_ids || (v_m->>'a')::int; end if;
+      if v_m->>'b' is not null then v_locked_ids := v_locked_ids || (v_m->>'b')::int; end if;
+    end if;
+  end loop;
+
+  select array_agg((elem->>'idx')::int)
+  into v_free_ids
+  from jsonb_array_elements(v_row.teams) elem
+  where not ((elem->>'idx')::int = any(v_locked_ids));
+
+  v_free_count := coalesce(array_length(v_free_ids, 1), 0);
+
+  if v_free_count > 0 then
+    select array_agg(x order by random()) into v_shuffled from unnest(v_free_ids) as x;
+  else
+    v_shuffled := '{}';
+  end if;
+
+  for v_m in
+    select elem from jsonb_array_elements(v_row.matchups) with ordinality as t(elem, ord) order by ord
+  loop
+    if coalesce((v_m->>'locked')::boolean, false) then
+      v_new := v_new || jsonb_build_array(v_m);
+    else
+      if v_ptr <= v_free_count then v_a := v_shuffled[v_ptr]; v_ptr := v_ptr + 1; else v_a := null; end if;
+      if v_ptr <= v_free_count then v_b := v_shuffled[v_ptr]; v_ptr := v_ptr + 1; else v_b := null; end if;
+      v_new := v_new || jsonb_build_array(jsonb_build_object('a', v_a, 'b', v_b, 'locked', false));
+    end if;
+  end loop;
+
+  update public.tournament_matches
+  set matchups = v_new, updated_at = now(), updated_by = v_actor.id
+  where id = true
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- Toggles a single match slot's lock flag by its position in the matchups
+-- array. Never touches which teams are in that slot -- lock/unlock is
+-- purely a flag flip, so an admin can lock a slot at any time, including
+-- before Random Roll has ever run once (the default sequential pairing
+-- from enter_final_matchups() is already a valid thing to lock).
+create or replace function public.lock_tournament_matchup(
+  p_token       uuid,
+  p_match_index integer,
+  p_locked      boolean
+)
+returns public.tournament_matches
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_actor public.accounts;
+  v_row   public.tournament_matches;
+begin
+  v_actor := public._require_role(p_token, array['admin', 'developer']);
+
+  select * into v_row from public.tournament_matches where id = true;
+  if not found then
+    raise exception 'no_final_matchups' using errcode = '22000';
+  end if;
+
+  if p_match_index is null or p_match_index < 0 or p_match_index >= jsonb_array_length(v_row.matchups) then
+    raise exception 'invalid_match_index' using errcode = '22023';
+  end if;
+
+  update public.tournament_matches
+  set matchups   = jsonb_set(v_row.matchups, array[p_match_index::text, 'locked'], to_jsonb(coalesce(p_locked, false))),
+      updated_at = now(),
+      updated_by = v_actor.id
+  where id = true
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- Restores the exact state the page was in the moment 进入最终对阵 was
+-- first clicked: the default sequential pairing, every slot unlocked.
+-- Teams themselves are untouched (Reset doesn't re-fetch the draft --
+-- "return every team to the original ungenerated state" means the
+-- matchups, not the roster of teams available to match).
+create or replace function public.reset_tournament_matchups(p_token uuid)
+returns public.tournament_matches
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_actor public.accounts;
+  v_row   public.tournament_matches;
+begin
+  v_actor := public._require_role(p_token, array['admin', 'developer']);
+
+  select * into v_row from public.tournament_matches where id = true;
+  if not found then
+    raise exception 'no_final_matchups' using errcode = '22000';
+  end if;
+
+  update public.tournament_matches
+  set matchups   = public._default_matchups(v_row.teams),
+      updated_at = now(),
+      updated_by = v_actor.id
+  where id = true
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- Ends the current tournament outright: deletes the Final Matchups
+-- singleton (its disappearance is the Realtime signal every connected
+-- Draft Arena client -- drafting or already on the Final Matchups stage --
+-- uses to leave immediately, see subscribeFinalMatchups() in
+-- tournamentApi.js) and clears every joined participant, exactly like
+-- clear_tournament(), so nobody carries over into the next tournament --
+-- anyone who wants in must click 参加比赛 again. tournament_settings
+-- (name/team count/players per team/draft order) is deliberately left
+-- alone, same as clear_tournament() leaves it alone -- "a brand new
+-- tournament" reuses whatever was last configured until an admin changes
+-- it, it doesn't forget the configuration.
+create or replace function public.end_tournament(p_token uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+begin
+  perform public._require_role(p_token, array['admin', 'developer']);
+  delete from public.tournament_matches      where true;
+  delete from public.tournament_participants where true;
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
 -- 7. Admin Dashboard: invite code management (Admin + Developer)
 -- ----------------------------------------------------------------------------
 
@@ -1162,6 +1475,11 @@ grant execute on function
   public.create_temp_participants(uuid, integer, integer),
   public.remove_temp_participants(uuid),
   public.save_tournament_settings(uuid, text, integer, integer, jsonb),
+  public.enter_final_matchups(uuid, jsonb),
+  public.roll_tournament_matchups(uuid),
+  public.lock_tournament_matchup(uuid, integer, boolean),
+  public.reset_tournament_matchups(uuid),
+  public.end_tournament(uuid),
   public.list_invite_codes(uuid),
   public.create_invite_code(uuid, integer, timestamptz),
   public.delete_invite_code(uuid, uuid)
