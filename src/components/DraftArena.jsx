@@ -3,7 +3,7 @@ import {
   fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby,
   fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchups,
   lockTournamentMatchup, resetTournamentMatchups, endTournament, toFinalMatchupTeam,
-  createManualMatchup, removeTournamentMatchup,
+  lockTeamsIntoPool, unlockTeamFromPool, removeTournamentMatchup,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 
@@ -953,37 +953,42 @@ function MatchPair({ index, matchup, teamsByIdx, locked, onToggleLock, onRemove,
 // team A vs team B, which has no gameplay meaning); selecting a third
 // while two are already picked replaces the earliest selection so the
 // picker never gets stuck.
-function RemainingTeamChip({ team, selected, onClick, disabled }) {
+function RemainingTeamChip({ team, selected, pooled, onClick, disabled, removable }) {
   return (
     <button onClick={onClick} disabled={disabled}
       className="flex items-center gap-2 px-3 py-2 rounded-xl transition-all"
       style={{
-        background: selected ? "rgba(0,245,212,0.14)" : "rgba(255,255,255,0.02)",
-        border: `1.5px solid ${selected ? TEAL : "rgba(255,255,255,0.1)"}`,
-        boxShadow: selected ? "0 0 14px rgba(0,245,212,0.35)" : "none",
+        background: pooled ? "rgba(251,191,36,0.12)" : selected ? "rgba(0,245,212,0.14)" : "rgba(255,255,255,0.02)",
+        border: `1.5px solid ${pooled ? "#fbbf24" : selected ? TEAL : "rgba(255,255,255,0.1)"}`,
+        boxShadow: pooled ? "0 0 14px rgba(251,191,36,0.35)" : selected ? "0 0 14px rgba(0,245,212,0.35)" : "none",
         cursor: disabled ? "default" : "pointer",
-        opacity: disabled && !selected ? 0.5 : 1,
+        opacity: disabled && !selected && !pooled ? 0.5 : 1,
       }}>
-      <Avatar avatarUrl={team.captainAvatarUrl} size={22} glow={selected} />
+      <Avatar avatarUrl={team.captainAvatarUrl} size={22} glow={selected || pooled} />
       <span className="text-[12px] font-bold text-white truncate">{teamLabel(team)}</span>
+      {pooled && <span className="text-[10px]" style={{ color: "#fbbf24" }}>{removable ? "✕" : "🔒"}</span>}
     </button>
   );
 }
 
-function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }) {
-  const [busy, setBusy] = useState(null); // null | 'roll' | 'reset' | 'end' | 'pair' | 'lock:i' | 'remove:i'
+function FinalMatchupsStage({ tournamentName, teams, matchups, pool, isStaff, onBack }) {
+  const [busy, setBusy] = useState(null); // null | 'roll' | 'reset' | 'end' | 'pool' | 'unpool:idx' | 'lock:i' | 'remove:i'
   const [error, setError] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
-  const [selectedPair, setSelectedPair] = useState([]); // up to 2 team idx, Manual Pairing in progress
+  const [selected, setSelected] = useState([]); // any number of team idx, staged before "Lock Into Pool"
 
   const teamsByIdx = new Map(teams.map((t) => [t.idx, t]));
   const usedIdx = new Set();
   matchups.forEach((m) => { if (m.a != null) usedIdx.add(m.a); if (m.b != null) usedIdx.add(m.b); });
-  const remainingTeams = teams.filter((t) => !usedIdx.has(t.idx));
+  const poolSet = new Set(pool);
+  const unmatchedTeams = teams.filter((t) => !usedIdx.has(t.idx));
+  const pooledTeams = unmatchedTeams.filter((t) => poolSet.has(t.idx));
+  const selectableTeams = unmatchedTeams.filter((t) => !poolSet.has(t.idx));
 
   const lockedCount = matchups.filter((m) => m.locked).length;
   const totalCount = matchups.length;
+  const rollScopeSize = pooledTeams.length >= 2 ? pooledTeams.length : unmatchedTeams.length;
 
   async function run(action, fn) {
     setBusy(action);
@@ -1000,25 +1005,22 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
   const handleRoll = () => run("roll", () => rollTournamentMatchups());
   const handleToggleLock = (index, nextLocked) => run(`lock:${index}`, () => lockTournamentMatchup(index, nextLocked));
   const handleRemove = (index) => run(`remove:${index}`, () => removeTournamentMatchup(index));
-  const handleReset = () => { setConfirmReset(false); setSelectedPair([]); run("reset", () => resetTournamentMatchups()); };
+  const handleReset = () => { setConfirmReset(false); setSelected([]); run("reset", () => resetTournamentMatchups()); };
   const handleEnd = () => { setConfirmEnd(false); run("end", () => endTournament()); };
 
   const toggleSelectTeam = (idx) => {
-    setSelectedPair((prev) => {
-      if (prev.includes(idx)) return prev.filter((v) => v !== idx);
-      if (prev.length < 2) return [...prev, idx];
-      return [prev[1], idx]; // already 2 selected -- drop the oldest, keep picking moving
+    setSelected((prev) => (prev.includes(idx) ? prev.filter((v) => v !== idx) : [...prev, idx]));
+  };
+
+  const handleLockIntoPool = () => {
+    if (selected.length < 2) return;
+    run("pool", async () => {
+      await lockTeamsIntoPool(selected);
+      setSelected([]);
     });
   };
 
-  const handleCreatePairing = () => {
-    if (selectedPair.length !== 2) return;
-    const [a, b] = selectedPair;
-    run("pair", async () => {
-      await createManualMatchup(a, b);
-      setSelectedPair([]);
-    });
-  };
+  const handleUnpool = (idx) => run(`unpool:${idx}`, () => unlockTeamFromPool(idx));
 
   return (
     <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-4 lg:overflow-hidden">
@@ -1047,14 +1049,15 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
               <GlowHeading size="text-3xl" className="font-display">生成最终对阵</GlowHeading>
             </div>
             <div className="text-[11px] text-white/40 truncate">
-              全部选手已选完 · 已生成 {totalCount} 组对阵 · 已锁定 {lockedCount} 组 · 剩余 {remainingTeams.length} 支战队待配对
+              全部选手已选完 · 已生成 {totalCount} 组对阵 · 已锁定 {lockedCount} 组 · 剩余 {unmatchedTeams.length} 支战队
+              {pooledTeams.length > 0 && <span> · 随机池 {pooledTeams.length} 支</span>}
               {error && <span className="ml-3" style={{ color: "#f87171" }}>⚠ {error}</span>}
             </div>
           </div>
 
           <div className="flex-shrink-0 flex items-center gap-6 px-8" style={{ borderLeft: "1px solid rgba(0,245,212,0.16)" }}>
             <div className="text-center">
-              <div className="font-display font-black text-2xl" style={{ color: TEAL }}>{remainingTeams.length}</div>
+              <div className="font-display font-black text-2xl" style={{ color: TEAL }}>{unmatchedTeams.length}</div>
               <div className="text-[9px] font-semibold text-white/40 tracking-wider mt-0.5">剩余待配对</div>
             </div>
           </div>
@@ -1062,36 +1065,52 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
       </PanelFrame>
 
       <div className="flex-1 lg:min-h-0 overflow-y-auto flex flex-col gap-4">
-        {isStaff && (remainingTeams.length > 0 || matchups.length === 0) && (
+        {isStaff && (unmatchedTeams.length > 0) && (
           <PanelFrame className="p-6 shrink-0">
-            <h2 className="font-display text-sm font-bold tracking-widest mb-1" style={{ color: "#22c55e" }}>手动配对 · 剩余战队（{remainingTeams.length}）</h2>
-            <p className="text-[11px] text-white/35 mb-4">选择两支战队后点击「锁定此对阵」，该对阵将被永久锁定，直到手动解锁或解除。</p>
-            {remainingTeams.length === 0 ? (
-              <div className="text-xs text-white/25 py-3">所有战队均已配对。</div>
+            <h2 className="font-display text-sm font-bold tracking-widest mb-1" style={{ color: "#22c55e" }}>随机池 · 剩余战队（{selectableTeams.length}）</h2>
+            <p className="text-[11px] text-white/35 mb-4">
+              选择任意数量的战队后点击「加入随机池」——这不会立刻生成对阵，只是把这些战队标记为下一次「随机排位」的范围。随机排位会在池内随机配对（人数为奇数时随机产生一个轮空名额）。
+            </p>
+            {selectableTeams.length === 0 ? (
+              <div className="text-xs text-white/25 py-3">所有剩余战队均已加入随机池。</div>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
-                {remainingTeams.map((t) => (
-                  <RemainingTeamChip key={t.idx} team={t} selected={selectedPair.includes(t.idx)}
+                {selectableTeams.map((t) => (
+                  <RemainingTeamChip key={t.idx} team={t} selected={selected.includes(t.idx)}
                     onClick={() => toggleSelectTeam(t.idx)} disabled={busy !== null} />
                 ))}
               </div>
             )}
             <div className="flex items-center gap-3 mt-4">
-              <button onClick={handleCreatePairing} disabled={selectedPair.length !== 2 || busy !== null}
+              <button onClick={handleLockIntoPool} disabled={selected.length < 2 || busy !== null}
                 className="font-display font-extrabold tracking-wide text-xs px-5 py-2.5 rounded-xl border transition-all"
                 style={{
-                  background: selectedPair.length === 2 ? "rgba(34,197,94,0.14)" : "rgba(0,0,0,0.3)",
-                  color: selectedPair.length === 2 ? "#4ade80" : "rgba(255,255,255,0.25)",
-                  borderColor: selectedPair.length === 2 ? "#22c55e" : "rgba(255,255,255,0.08)",
-                  boxShadow: selectedPair.length === 2 ? "0 0 16px rgba(34,197,94,0.35)" : "none",
-                  cursor: selectedPair.length === 2 && busy === null ? "pointer" : "not-allowed",
+                  background: selected.length >= 2 ? "rgba(34,197,94,0.14)" : "rgba(0,0,0,0.3)",
+                  color: selected.length >= 2 ? "#4ade80" : "rgba(255,255,255,0.25)",
+                  borderColor: selected.length >= 2 ? "#22c55e" : "rgba(255,255,255,0.08)",
+                  boxShadow: selected.length >= 2 ? "0 0 16px rgba(34,197,94,0.35)" : "none",
+                  cursor: selected.length >= 2 && busy === null ? "pointer" : "not-allowed",
                 }}>
-                {busy === "pair" ? "创建中…" : "🔒 锁定此对阵"}
+                {busy === "pool" ? "加入中…" : "🔒 加入随机池"}
               </button>
-              {selectedPair.length > 0 && (
-                <span className="text-[11px] text-white/40">已选择 {selectedPair.length}/2 支战队</span>
+              {selected.length > 0 && (
+                <span className="text-[11px] text-white/40">已选择 {selected.length} 支战队</span>
               )}
             </div>
+
+            {pooledTeams.length > 0 && (
+              <div className="mt-5 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <h3 className="font-display text-[11px] font-bold tracking-widest mb-3" style={{ color: "#fbbf24" }}>
+                  已加入随机池（{pooledTeams.length}）—— 随机排位将只在这些战队之间分配
+                </h3>
+                <div className="flex flex-wrap items-center gap-3">
+                  {pooledTeams.map((t) => (
+                    <RemainingTeamChip key={t.idx} team={t} pooled removable
+                      onClick={() => handleUnpool(t.idx)} disabled={busy !== null} />
+                  ))}
+                </div>
+              </div>
+            )}
           </PanelFrame>
         )}
 
@@ -1100,7 +1119,7 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
           {totalCount === 0 ? (
             <div className="flex flex-col items-center py-10 text-white/30 text-center">
               <div className="text-3xl mb-2">🎲</div>
-              <div className="text-sm">暂无对阵 —— 手动配对锁定，或直接随机排位</div>
+              <div className="text-sm">暂无对阵 —— 加入随机池后随机排位，或直接对全部剩余战队随机排位</div>
             </div>
           ) : (
             <div className="grid gap-8" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
@@ -1116,14 +1135,14 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
 
       {isStaff && (
         <PanelFrame className="shrink-0 p-4 flex items-center justify-center gap-4 flex-wrap">
-          <button onClick={handleRoll} disabled={busy !== null || remainingTeams.length === 0}
+          <button onClick={handleRoll} disabled={busy !== null || rollScopeSize < 2}
             className="font-display font-extrabold tracking-wide text-sm px-6 py-3 rounded-xl border transition-all"
-            style={{ background: `linear-gradient(to bottom, ${TEAL}, #00c2a8)`, color: "#000", borderColor: TEAL, boxShadow: "0 0 22px rgba(0,245,212,0.55)", opacity: busy !== null || remainingTeams.length === 0 ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
-            {busy === "roll" ? "排位中…" : "🎲 随机排位"}
+            style={{ background: `linear-gradient(to bottom, ${TEAL}, #00c2a8)`, color: "#000", borderColor: TEAL, boxShadow: "0 0 22px rgba(0,245,212,0.55)", opacity: busy !== null || rollScopeSize < 2 ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
+            {busy === "roll" ? "排位中…" : pooledTeams.length >= 2 ? `🎲 随机排位（随机池 ${pooledTeams.length} 支）` : "🎲 随机排位"}
           </button>
-          <button onClick={() => setConfirmReset(true)} disabled={busy !== null || totalCount === 0}
+          <button onClick={() => setConfirmReset(true)} disabled={busy !== null || (totalCount === 0 && pooledTeams.length === 0)}
             className="font-display font-extrabold tracking-wide text-sm px-6 py-3 rounded-xl border transition-all"
-            style={{ background: "rgba(0,0,0,0.3)", color: TEAL_SOFT, borderColor: TEAL_DIM, opacity: busy !== null || totalCount === 0 ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
+            style={{ background: "rgba(0,0,0,0.3)", color: TEAL_SOFT, borderColor: TEAL_DIM, opacity: busy !== null || (totalCount === 0 && pooledTeams.length === 0) ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
             🔄 重置
           </button>
           <button onClick={() => setConfirmEnd(true)} disabled={busy !== null}
@@ -1131,14 +1150,18 @@ function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack }
             style={{ background: "rgba(248,113,113,0.08)", color: "#f87171", borderColor: "#5a1414", opacity: busy !== null ? 0.4 : 1, cursor: busy !== null ? "not-allowed" : "pointer" }}>
             🏁 结束锦标赛
           </button>
-          <span className="text-[10px] text-white/25 ml-2">🎲 随机排位只会分配剩余待配对的战队，已锁定的对阵不受影响</span>
+          <span className="text-[10px] text-white/25 ml-2">
+            {pooledTeams.length >= 2
+              ? "🎲 随机排位只会在随机池内的战队之间分配，其余战队不受影响"
+              : "🎲 未加入随机池时，随机排位会分配全部剩余战队（人数为奇数时随机产生轮空）"}
+          </span>
         </PanelFrame>
       )}
 
       {confirmReset && (
         <ConfirmDialog
           title="确认重置对阵"
-          message="将清除所有已生成的对阵、所有锁定与所有手动配对，恢复到刚进入最终对阵时的空白状态。此操作无法撤销。"
+          message="将清除所有已生成的对阵、所有锁定与随机池中的选择，恢复到刚进入最终对阵时的空白状态。此操作无法撤销。"
           confirmLabel="确认重置"
           tone="danger"
           busy={busy === "reset"}
@@ -1304,6 +1327,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       setFinalMatches({
         teams: Array.isArray(row.teams) ? row.teams : [],
         matchups: Array.isArray(row.matchups) ? row.matchups : [],
+        pool: Array.isArray(row.pool) ? row.pool : [],
       })
       setStage('final')
     })
@@ -1337,6 +1361,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
           tournamentName={tournamentName}
           teams={finalMatches.teams}
           matchups={finalMatches.matchups}
+          pool={finalMatches.pool || []}
           isStaff={isStaff}
           onBack={onExitToLobby || (() => {})}
         />

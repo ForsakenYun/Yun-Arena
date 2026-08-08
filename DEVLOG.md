@@ -2435,4 +2435,99 @@ list calls it first (or most recently, since it's an upsert). The
 Final Matchups stage itself, once entered, has no such limitation — it
 has no local-only state at all, by design.
 
+## 39. Lock / Random Roll rework — pool-scoped randomization, any group size
+
+The two-team-only "Manual Pairing" from Section 38 has been replaced
+with a genuinely different rule, at the explicit request that followed
+choosing a visual direction (01 冠军海报版) but before that visual work
+was applied: **locking teams no longer creates a matchup.** It stages
+them as the scope for the *next* Random Roll.
+
+**The rule, exactly as specified:**
+- Select any number of currently-unmatched teams (2 or more, no cap)
+  and click Lock — they're added to a **pool**. This alone never
+  creates a matchup; `{Lock A, Lock B, Lock C, Lock D}` means
+  "randomize A, B, C and D," not "A vs B, C vs D."
+- Random Roll, when the pool has 2+ teams, pairs up *only* those pool
+  teams — shuffle, then pair consecutively; a leftover team on an odd
+  count gets a **randomized** bye (whichever team lands last in the
+  shuffle, not always the same one). Every other still-unmatched team,
+  and every existing matchup (locked or not), is left completely
+  untouched. The pool is emptied once its teams land in new matchups.
+- Random Roll with an **empty** pool falls back to the original
+  Section 38 behavior — every not-yet-locked team gets swept up and
+  reshuffled together — so a bare "just click Random Roll" still works
+  exactly as it always has.
+- `floor(count / 2)` real matchups, `+1` bye if the count is odd —
+  verified for every count from 2 through 8 (see below).
+
+**Schema (`supabase/schema.sql`).** `tournament_matches` gained a
+`pool jsonb not null default '[]'::jsonb` column — a plain array of
+team indices, e.g. `[0, 2, 5, 6]`, with no pairing information at all
+(pairing is decided by whichever Random Roll consumes it). Two new
+RPCs, both Admin/Developer-gated like the rest of Section 6b:
+- `lock_teams_into_pool(p_team_idxs jsonb)` — validates every index is
+  a real team that isn't already in a matchup, unions them into the
+  existing pool (so an admin can build the pool up across several
+  selections rather than committing everything in one call), rejects
+  anything invalid with `invalid_pool_selection`.
+- `unlock_team_from_pool(p_team_idx)` — removes one team from the pool
+  before it's been rolled (changing your mind); no-op-safe if the team
+  isn't pooled.
+
+`roll_tournament_matchups()` was rewritten around one branch: if
+`array_length(pool, 1) >= 2`, every existing matchup (locked or not) is
+kept as-is and only the pool teams are shuffled/paired/byed; otherwise
+it's the original whole-board logic from Section 38 (keep locked
+entries, dissolve unlocked ones, reshuffle everything unmatched).
+Either branch clears `pool` back to `'[]'::jsonb` afterward.
+`reset_tournament_matchups()` and `enter_final_matchups()` both also
+reset `pool` to blank, so "no staged selection" is part of the same
+blank-canvas guarantee Section 38 established for `matchups`.
+`create_manual_matchup()` no longer exists — a 2-team pool rolled to
+completion is a strict special case of the new rule (only one possible
+pairing), so nothing was lost, it just now takes a Lock-then-Roll
+instead of a single click.
+
+**Client (`tournamentApi.js`, `DraftArena.jsx`).**
+`normalizeMatchesRow()` now carries `pool` alongside `teams`/
+`matchups`; `lockTeamsIntoPool(teamIdxs)` and `unlockTeamFromPool(idx)`
+replace `createManualMatchup()`. `FinalMatchupsStage`'s team-selection
+state (`selected`) is no longer capped at two — `toggleSelectTeam`
+just adds/removes freely. The "剩余战队" panel now splits into
+**selectable** (unmatched, not pooled — click to select, then 🔒 加入
+随机池) and, once non-empty, a **已加入随机池** section listing pooled
+teams with a per-team ✕ to unpool. Random Roll's label and enabled
+state react to the pool: `🎲 随机排位（随机池 N 支）` when 2+ teams are
+pooled, plain `🎲 随机排位` otherwise, disabled only when there's truly
+nothing rollable (pool < 2 *and* fewer than 2 unmatched teams overall).
+The per-matchup lock/unlock toggle and ✕ 解除 (dissolve) button, Reset,
+End Tournament, and the Realtime sync path are all unchanged from
+Section 38 — this was deliberately a logic-only change.
+
+**Verification.** Since this environment can't run Postgres directly,
+`scripts/verify_pool_roll_logic.js` mirrors `roll_tournament_matchups()`'s
+algorithm exactly in plain JS and asserts it against the full spec: the
+2-through-8 matchup/bye table, that a 4-team pool can produce any of
+its three possible pairings (not just the selection order) across 200
+trials, that the bye lands on every team in a 3-team pool across 300
+trials (not stuck on one), that a pool roll never touches teams outside
+it, and that both pool-scoped and fallback rolls leave locked matchups
+untouched. All checks pass. The actual `.sql` was hand-reviewed
+alongside this (dollar-quote balance, function-count, and no stale
+references all checked directly against the file), and the full
+`vite build` succeeds with the updated `DraftArena.jsx`/
+`tournamentApi.js`.
+
+**Not yet done, by design:** the cinematic Final Matchups visual
+design (Preview 03 / 01 冠军海报版, A — Medium typography chosen in the
+last design round) has still not been applied to this real
+`FinalMatchupsStage` component — it only exists in the standalone
+preview HTML files. `FinalMatchupsStage` currently has no Random Roll
+animation at all; Realtime pushes the new state and React just
+re-renders. The "animation must reserve its space up front and never
+resize the layout" requirement carries forward to whenever that visual
+work actually lands here, not to anything in this change.
+
+
 

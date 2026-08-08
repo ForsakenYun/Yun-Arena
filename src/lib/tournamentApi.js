@@ -25,9 +25,7 @@ const ERROR_MESSAGES = {
   no_final_matchups: '尚未生成最终对阵，请先进入最终对阵阶段',
   invalid_final_matchup_teams: '战队数据无效，无法生成最终对阵',
   invalid_match_index: '对阵编号无效',
-  invalid_team_index: '战队编号无效',
-  duplicate_team_selection: '请选择两支不同的战队',
-  team_already_matched: '该战队已在其他对阵中，请先解除原有配对',
+  invalid_pool_selection: '选中的战队无效，或已在其他对阵中',
 }
 
 function friendlyError(error, fallback) {
@@ -317,6 +315,7 @@ function normalizeMatchesRow(row) {
   return {
     teams: Array.isArray(row.teams) ? row.teams : [],
     matchups: Array.isArray(row.matchups) ? row.matchups : [],
+    pool: Array.isArray(row.pool) ? row.pool : [],
     updatedAt: row.updated_at ?? null,
   }
 }
@@ -342,8 +341,8 @@ export function subscribeFinalMatchups(onChange) {
 
 // Admin/Developer only. Snapshots the given teams (see toFinalMatchupTeam
 // below for the exact shape) and starts with a completely blank matchups
-// array -- nothing is auto-generated. Called once, when 进入最终对阵 is
-// clicked.
+// array and an empty pool -- nothing is auto-generated. Called once, when
+// 进入最终对阵 is clicked.
 export async function enterFinalMatchups(teams) {
   const { data, error } = await supabase.rpc('enter_final_matchups', {
     p_token: requireToken(),
@@ -353,17 +352,27 @@ export async function enterFinalMatchups(teams) {
   return normalizeMatchesRow(data)
 }
 
-// Admin/Developer only. Manual Pairing: hand-picks two teams and locks
-// them together in one step (a manually created matchup is always born
-// locked). Either team already appearing in any existing matchup is
-// rejected server-side.
-export async function createManualMatchup(teamAIdx, teamBIdx) {
-  const { data, error } = await supabase.rpc('create_manual_matchup', {
+// Admin/Developer only. Lock Into Pool: stages any number (2+) of
+// currently-remaining teams as the scope for the next Random Roll. This
+// never creates a matchup by itself -- it only marks "include these teams
+// in the next roll." Random Roll is what actually decides who plays who.
+export async function lockTeamsIntoPool(teamIdxs) {
+  const { data, error } = await supabase.rpc('lock_teams_into_pool', {
     p_token: requireToken(),
-    p_team_a: teamAIdx,
-    p_team_b: teamBIdx,
+    p_team_idxs: teamIdxs,
   })
-  if (error) throw new Error(friendlyError(error, '创建对阵失败'))
+  if (error) throw new Error(friendlyError(error, '加入随机池失败'))
+  return normalizeMatchesRow(data)
+}
+
+// Admin/Developer only. Removes a single team from the pool before it's
+// been rolled (changing your mind about the selection).
+export async function unlockTeamFromPool(teamIdx) {
+  const { data, error } = await supabase.rpc('unlock_team_from_pool', {
+    p_token: requireToken(),
+    p_team_idx: teamIdx,
+  })
+  if (error) throw new Error(friendlyError(error, '移出随机池失败'))
   return normalizeMatchesRow(data)
 }
 
@@ -378,9 +387,10 @@ export async function removeTournamentMatchup(matchIndex) {
   return normalizeMatchesRow(data)
 }
 
-// Admin/Developer only. Randomizes only teams not yet in ANY existing
-// matchup (locked or unlocked); locked matchups are left completely
-// untouched.
+// Admin/Developer only. If a pool is staged (2+ teams), randomizes ONLY
+// those teams (with a randomized bye on an odd count) and clears the
+// pool. If the pool is empty, falls back to the original behavior:
+// randomizes every team not yet in a locked matchup.
 export async function rollTournamentMatchups() {
   const { data, error } = await supabase.rpc('roll_tournament_matchups', { p_token: requireToken() })
   if (error) throw new Error(friendlyError(error, '随机排位失败'))
@@ -399,9 +409,9 @@ export async function lockTournamentMatchup(matchIndex, locked) {
   return normalizeMatchesRow(data)
 }
 
-// Admin/Developer only. Restores a completely blank matchups array -- no
-// generated matchups, no locks, no manual pairings -- exactly the state
-// right after 进入最终对阵.
+// Admin/Developer only. Restores a completely blank matchups array and an
+// empty pool -- no generated matchups, no locks, no staged selections --
+// exactly the state right after 进入最终对阵.
 export async function resetTournamentMatchups() {
   const { data, error } = await supabase.rpc('reset_tournament_matchups', { p_token: requireToken() })
   if (error) throw new Error(friendlyError(error, '重置对阵失败'))

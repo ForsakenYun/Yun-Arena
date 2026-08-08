@@ -206,30 +206,43 @@ comment on table public.tournament_settings is
 -- with matchups starting completely blank -- nothing is auto-generated.
 -- From that point on every connected client (whoever has the Draft Arena
 -- open, regardless of their own local draft progress) renders this row
--- instead, kept live by Realtime. This is what makes Random Roll/Manual
--- Pairing/Lock/Reset genuinely multi-client-synchronized instead of
--- "synchronized only for whoever clicked the button."
+-- instead, kept live by Realtime. This is what makes Random Roll/Lock Into
+-- Pool/Reset genuinely multi-client-synchronized instead of "synchronized
+-- only for whoever clicked the button."
 --
 -- matchups is a JSON array, one element per existing matchup, each shaped
 -- like {"a": <team index>, "b": <team index or null for a bye>, "locked":
 -- bool}. Unlike a fixed bracket, this array only ever contains matchups
 -- that actually exist -- a team not yet in any entry simply doesn't appear
--- anywhere in it, and is what create_manual_matchup()/roll_tournament_
--- matchups() below call a "remaining" team. A slot's identity (what a lock
--- protects) is its position in this array. teams is a JSON array of
--- {"idx", "captainAccountId", "captainName", "captainAvatarUrl"}, idx
--- matching the a/b values above.
+-- anywhere in it, and is what roll_tournament_matchups() below calls a
+-- "remaining" team. A slot's identity (what a lock protects) is its
+-- position in this array. teams is a JSON array of {"idx",
+-- "captainAccountId", "captainName", "captainAvatarUrl"}, idx matching the
+-- a/b values above.
+--
+-- pool is a JSON array of team indices an admin has staged via
+-- lock_teams_into_pool() -- "include these teams in the next Random Roll,"
+-- NOT "these specific teams play each other." Locking teams into the pool
+-- never creates a matchup by itself; only roll_tournament_matchups()
+-- actually pairs anyone up, and it pairs *only* pool teams (randomly, with
+-- a randomly-chosen bye if the pool has an odd count) when the pool is
+-- non-empty, ignoring every other still-unmatched team. An empty pool at
+-- roll time means "no explicit selection was staged," so the roll falls
+-- back to its original behavior -- every still-unmatched team, no
+-- selection required. Either way the pool is emptied out once its teams
+-- land in new matchups.
 create table if not exists public.tournament_matches (
   id          boolean primary key default true,
   teams       jsonb not null default '[]'::jsonb,
   matchups    jsonb not null default '[]'::jsonb,
+  pool        jsonb not null default '[]'::jsonb,
   updated_at  timestamptz not null default now(),
   updated_by  uuid references public.accounts(id) on delete set null,
   constraint tournament_matches_singleton check (id)
 );
 
 comment on table public.tournament_matches is
-  'Singleton row (Draft Arena -- Final Matchups / 对阵生成 stage). Public read, written only through enter_final_matchups()/create_manual_matchup()/remove_tournament_matchup()/roll_tournament_matchups()/lock_tournament_matchup()/reset_tournament_matchups(), all Admin/Developer-only. matchups starts (and, after Reset, returns to) a blank array -- nothing is ever auto-generated. Absence of this row means no tournament has reached the Final Matchups stage yet (or End Tournament just cleared it); its presence is itself the signal every connected Draft Arena client uses to switch into this stage, via Realtime.';
+  'Singleton row (Draft Arena -- Final Matchups / 对阵生成 stage). Public read, written only through enter_final_matchups()/lock_teams_into_pool()/unlock_team_from_pool()/remove_tournament_matchup()/roll_tournament_matchups()/lock_tournament_matchup()/reset_tournament_matchups(), all Admin/Developer-only. matchups starts (and, after Reset, returns to) a blank array -- nothing is ever auto-generated. pool is the set of teams staged for the next Random Roll (see column comment above) -- it is a *scope* for randomization, never a fixed pairing. Absence of this row means no tournament has reached the Final Matchups stage yet (or End Tournament just cleared it); its presence is itself the signal every connected Draft Arena client uses to switch into this stage, via Realtime.';
 
 -- ----------------------------------------------------------------------------
 -- 2. Row Level Security
@@ -1162,11 +1175,12 @@ begin
     raise exception 'invalid_final_matchup_teams' using errcode = '22000';
   end if;
 
-  insert into public.tournament_matches (id, teams, matchups, updated_at, updated_by)
-  values (true, p_teams, '[]'::jsonb, now(), v_actor.id)
+  insert into public.tournament_matches (id, teams, matchups, pool, updated_at, updated_by)
+  values (true, p_teams, '[]'::jsonb, '[]'::jsonb, now(), v_actor.id)
   on conflict (id) do update
     set teams      = excluded.teams,
         matchups   = excluded.matchups,
+        pool       = excluded.pool,
         updated_at = excluded.updated_at,
         updated_by = excluded.updated_by
   returning * into v_row;
@@ -1175,19 +1189,17 @@ begin
 end;
 $$;
 
--- Manual Pairing: the admin hand-picks two teams and locks them together
--- in one step -- there is no "select then separately lock" on the server,
--- a manually created matchup is always born locked (the whole point is
--- "this matchup is now permanently fixed"). Appended as a new entry at the
--- end of the matchups array; existing entries (locked or not) are left
--- completely untouched. Either team already appearing in ANY existing
--- entry (locked or not -- a team mid-roll-result still "belongs" to that
--- slot until the next roll or an explicit removal) is rejected, since a
--- team can only ever be in one matchup at a time.
-create or replace function public.create_manual_matchup(
-  p_token  uuid,
-  p_team_a integer,
-  p_team_b integer
+-- Lock Into Pool: stages any number (2 or more) of currently-"remaining"
+-- teams -- not yet in any matchup -- into the pool. This does NOT create a
+-- matchup by itself; it only marks these teams as "include me in the next
+-- Random Roll." Locking {A, B, C, D} into the pool means "randomize A, B,
+-- C and D," never "A plays B, C plays D." Safe to call more than once
+-- before rolling -- each call adds to the existing pool (duplicates
+-- collapsed) rather than replacing it, so an admin can build up the pool
+-- across several selections.
+create or replace function public.lock_teams_into_pool(
+  p_token     uuid,
+  p_team_idxs jsonb
 )
 returns public.tournament_matches
 language plpgsql
@@ -1199,7 +1211,9 @@ declare
   v_row        public.tournament_matches;
   v_valid_idxs int[];
   v_used_idxs  int[] := '{}';
+  v_new_idxs   int[];
   v_m          jsonb;
+  v_pool       int[];
 begin
   v_actor := public._require_role(p_token, array['admin', 'developer']);
 
@@ -1208,14 +1222,11 @@ begin
     raise exception 'no_final_matchups' using errcode = '22000';
   end if;
 
-  if p_team_a is null or p_team_b is null or p_team_a = p_team_b then
-    raise exception 'duplicate_team_selection' using errcode = '22000';
+  if p_team_idxs is null or jsonb_typeof(p_team_idxs) <> 'array' or jsonb_array_length(p_team_idxs) < 2 then
+    raise exception 'invalid_pool_selection' using errcode = '22000';
   end if;
 
   select array_agg((elem->>'idx')::int) into v_valid_idxs from jsonb_array_elements(v_row.teams) elem;
-  if not (p_team_a = any(v_valid_idxs)) or not (p_team_b = any(v_valid_idxs)) then
-    raise exception 'invalid_team_index' using errcode = '22000';
-  end if;
 
   for v_m in select * from jsonb_array_elements(v_row.matchups)
   loop
@@ -1223,12 +1234,21 @@ begin
     if v_m->>'b' is not null then v_used_idxs := v_used_idxs || (v_m->>'b')::int; end if;
   end loop;
 
-  if p_team_a = any(v_used_idxs) or p_team_b = any(v_used_idxs) then
-    raise exception 'team_already_matched' using errcode = '22000';
+  select array_agg(distinct (elem)::int) into v_new_idxs from jsonb_array_elements_text(p_team_idxs) elem;
+
+  if exists (
+    select 1 from unnest(v_new_idxs) t
+    where not (t = any(v_valid_idxs)) or t = any(v_used_idxs)
+  ) then
+    raise exception 'invalid_pool_selection' using errcode = '22000';
   end if;
 
+  select array_agg(elem::int) into v_pool from jsonb_array_elements_text(v_row.pool) elem;
+  v_pool := coalesce(v_pool, '{}');
+  select array_agg(distinct x) into v_pool from unnest(v_pool || v_new_idxs) as x;
+
   update public.tournament_matches
-  set matchups   = v_row.matchups || jsonb_build_array(jsonb_build_object('a', p_team_a, 'b', p_team_b, 'locked', true)),
+  set pool       = to_jsonb(v_pool),
       updated_at = now(),
       updated_by = v_actor.id
   where id = true
@@ -1238,10 +1258,50 @@ begin
 end;
 $$;
 
--- Dissolves one matchup entirely (manual pairing made by mistake, or an
--- unwanted roll result) -- both teams go straight back into the "remaining
--- teams" pool, immediately, without needing to wait for the next Random
--- Roll. Removes by array position, same indexing as lock_tournament_matchup.
+-- Removes a single team from the pool (an admin changing their mind before
+-- Random Roll actually runs). No-op-safe on a team that is not currently
+-- pooled.
+create or replace function public.unlock_team_from_pool(
+  p_token   uuid,
+  p_team_idx integer
+)
+returns public.tournament_matches
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_actor public.accounts;
+  v_row   public.tournament_matches;
+  v_pool  int[];
+begin
+  v_actor := public._require_role(p_token, array['admin', 'developer']);
+
+  select * into v_row from public.tournament_matches where id = true;
+  if not found then
+    raise exception 'no_final_matchups' using errcode = '22000';
+  end if;
+
+  select array_agg(elem::int) into v_pool from jsonb_array_elements_text(v_row.pool) elem;
+  v_pool := coalesce(v_pool, '{}');
+  v_pool := array(select x from unnest(v_pool) as x where x <> p_team_idx);
+
+  update public.tournament_matches
+  set pool       = to_jsonb(v_pool),
+      updated_at = now(),
+      updated_by = v_actor.id
+  where id = true
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+-- Dissolves one matchup entirely (a roll result the admin wants to undo)
+-- -- both teams go straight back into the "remaining teams" pool of
+-- selectable teams immediately, without needing to wait for the next
+-- Random Roll. Removes by array position, same indexing as
+-- lock_tournament_matchup.
 create or replace function public.remove_tournament_matchup(
   p_token       uuid,
   p_match_index integer
@@ -1277,14 +1337,20 @@ begin
 end;
 $$;
 
--- Random Roll only ever touches teams that aren't in ANY existing matchup
--- yet -- neither a locked entry (manual pairing, or a previously-locked
--- roll result) nor an unlocked entry (a still-unlocked earlier roll
--- result, which gets dissolved and re-shuffled along with every other
--- still-unmatched team). Locked entries are copied through completely
--- untouched, in their original array position. This is what makes "lock a
--- matchup, then roll the rest" and "roll again to reshuffle only what's
--- still unlocked" both work exactly as specified.
+-- Random Roll has two modes, chosen automatically by whether a pool is
+-- staged:
+--   * Pool non-empty (an admin explicitly locked 2+ teams into it via
+--     lock_teams_into_pool): roll ONLY those pool teams against each
+--     other -- shuffle them, pair consecutively, a random leftover team
+--     gets a bye (b = null) on an odd count -- and leave every other
+--     still-unmatched team completely untouched. The pool is emptied
+--     once its teams land in the new matchups.
+--   * Pool empty (nothing was explicitly staged): falls back to the
+--     original whole-board behavior -- every team not in a *locked*
+--     matchup (a locked entry, or a still-unlocked earlier roll result)
+--     is gathered up and reshuffled together. This is what makes a bare
+--     "just click Random Roll" still work exactly as it always has.
+-- Locked matchup entries are never touched by either mode.
 create or replace function public.roll_tournament_matchups(p_token uuid)
 returns public.tournament_matches
 language plpgsql
@@ -1296,6 +1362,7 @@ declare
   v_row        public.tournament_matches;
   v_m          jsonb;
   v_used_idxs  int[] := '{}';
+  v_pool_idxs  int[];
   v_free_ids   int[];
   v_shuffled   int[];
   v_free_count int;
@@ -1312,23 +1379,34 @@ begin
     raise exception 'no_final_matchups' using errcode = '22000';
   end if;
 
-  -- Keep every locked entry exactly as-is; everything else (an unlocked
-  -- earlier roll result) is dropped so its teams flow back into the free
-  -- pool below.
-  for v_m in
-    select elem from jsonb_array_elements(v_row.matchups) with ordinality as t(elem, ord) order by ord
-  loop
-    if coalesce((v_m->>'locked')::boolean, false) then
-      v_kept := v_kept || jsonb_build_array(v_m);
-      if v_m->>'a' is not null then v_used_idxs := v_used_idxs || (v_m->>'a')::int; end if;
-      if v_m->>'b' is not null then v_used_idxs := v_used_idxs || (v_m->>'b')::int; end if;
-    end if;
-  end loop;
+  select array_agg(elem::int) into v_pool_idxs from jsonb_array_elements_text(v_row.pool) elem;
+  v_pool_idxs := coalesce(v_pool_idxs, '{}');
 
-  select array_agg((elem->>'idx')::int)
-  into v_free_ids
-  from jsonb_array_elements(v_row.teams) elem
-  where not ((elem->>'idx')::int = any(v_used_idxs));
+  if array_length(v_pool_idxs, 1) >= 2 then
+    -- Pool-scoped roll: every existing matchup (locked or not) is kept
+    -- exactly as-is -- the pool is a separate, explicitly-chosen scope,
+    -- never touching anything outside it.
+    v_kept := v_row.matchups;
+    v_free_ids := v_pool_idxs;
+  else
+    -- Fallback whole-board roll: keep locked entries, dissolve unlocked
+    -- ones, gather every unmatched team (identical to the original
+    -- behavior before pool-scoped rolling existed).
+    for v_m in
+      select elem from jsonb_array_elements(v_row.matchups) with ordinality as t(elem, ord) order by ord
+    loop
+      if coalesce((v_m->>'locked')::boolean, false) then
+        v_kept := v_kept || jsonb_build_array(v_m);
+        if v_m->>'a' is not null then v_used_idxs := v_used_idxs || (v_m->>'a')::int; end if;
+        if v_m->>'b' is not null then v_used_idxs := v_used_idxs || (v_m->>'b')::int; end if;
+      end if;
+    end loop;
+
+    select array_agg((elem->>'idx')::int)
+    into v_free_ids
+    from jsonb_array_elements(v_row.teams) elem
+    where not ((elem->>'idx')::int = any(v_used_idxs));
+  end if;
 
   v_free_count := coalesce(array_length(v_free_ids, 1), 0);
 
@@ -1343,7 +1421,10 @@ begin
   end if;
 
   update public.tournament_matches
-  set matchups = v_kept || v_rolled, updated_at = now(), updated_by = v_actor.id
+  set matchups   = v_kept || v_rolled,
+      pool       = '[]'::jsonb,
+      updated_at = now(),
+      updated_by = v_actor.id
   where id = true
   returning * into v_row;
 
@@ -1393,11 +1474,11 @@ end;
 $$;
 
 -- Restores the exact state the page was in the moment 进入最终对阵 was
--- first clicked: a completely blank matchups array -- no generated
--- matchups, no locks, no manual pairings. Teams themselves are untouched
--- (Reset doesn't re-fetch the draft -- "return every team to the original
--- ungenerated state" means the matchups, not the roster of teams available
--- to match).
+-- first clicked: a completely blank matchups array and a completely
+-- empty pool -- no generated matchups, no locks, no staged pool
+-- selections. Teams themselves are untouched (Reset doesn't re-fetch the
+-- draft -- "return every team to the original ungenerated state" means
+-- the matchups, not the roster of teams available to match).
 create or replace function public.reset_tournament_matchups(p_token uuid)
 returns public.tournament_matches
 language plpgsql
@@ -1417,6 +1498,7 @@ begin
 
   update public.tournament_matches
   set matchups   = '[]'::jsonb,
+      pool       = '[]'::jsonb,
       updated_at = now(),
       updated_by = v_actor.id
   where id = true
@@ -1546,7 +1628,8 @@ grant execute on function
   public.remove_temp_participants(uuid),
   public.save_tournament_settings(uuid, text, integer, integer, jsonb),
   public.enter_final_matchups(uuid, jsonb),
-  public.create_manual_matchup(uuid, integer, integer),
+  public.lock_teams_into_pool(uuid, jsonb),
+  public.unlock_team_from_pool(uuid, integer),
   public.remove_tournament_matchup(uuid, integer),
   public.roll_tournament_matchups(uuid),
   public.lock_tournament_matchup(uuid, integer, boolean),
