@@ -2529,5 +2529,95 @@ re-renders. The "animation must reserve its space up front and never
 resize the layout" requirement carries forward to whenever that visual
 work actually lands here, not to anything in this change.
 
+## 40. Bugfix — 生成最终对阵失败 on 进入最终对阵 (missing `pool` column migration)
+
+**Root cause.** Section 39 added a `pool jsonb` column to
+`tournament_matches` by editing the column list inside its
+`create table if not exists` statement. That statement is a no-op on
+any database where the table already exists — and it already did,
+created back in Section 38. `create or replace function` (used for
+every RPC) always takes effect on re-deploy regardless of table state,
+so `enter_final_matchups()`'s body got updated to
+`insert into ... (id, teams, matchups, pool, ...)` while the actual
+live table never gained the column. The very first `insert` a client
+made after that hit `column "pool" of relation "tournament_matches"
+does not exist` — a Postgres error with no mapped entry in
+`ERROR_MESSAGES`, so `friendlyError()` fell through to
+`enterFinalMatchups()`'s fallback string, `'生成最终对阵失败'`, exactly
+the message reported. Every other pool-aware function
+(`lock_teams_into_pool`, `unlock_team_from_pool`,
+`roll_tournament_matchups`, `reset_tournament_matchups`) reads or
+writes `pool` too and would have failed identically once reached — one
+root cause, not several. This project's own established convention for
+exactly this situation already exists in the file (`draft_order` on
+`tournament_settings`, `roll_number` on `tournament_participants`,
+`gender`/`is_temp` on `accounts`) — Section 39 simply didn't follow it
+for `pool`.
+
+This is also what the "the old Final Matchups stage/code still appears
+to exist" report actually was: not leftover application code (there is
+only one `FinalMatchupsStage`, one `tournament_matches` table
+definition, one copy of each RPC — verified with a direct search
+before touching anything), but the *previously-deployed database
+schema* still being live underneath the newer client/RPC code, since
+nothing had actually migrated it forward.
+
+**Fix.** One line, following the file's own established pattern
+exactly:
+```sql
+alter table public.tournament_matches
+  add column if not exists pool jsonb not null default '[]'::jsonb;
+```
+placed immediately after the `create table if not exists
+public.tournament_matches` block, same position `draft_order`'s alter
+occupies relative to `tournament_settings`. No RPC bodies, no client
+code, no other schema objects were touched — this was purely a missing
+migration statement, not a logic bug (the pool-scoped roll algorithm
+itself was already verified correct against every 2–8 team scenario in
+Section 39, and that verification still passes unchanged).
+
+**Verification — actually run, not just built.** A local Postgres 16
+instance was installed in this environment specifically to test this
+for real rather than trust a build pass:
+1. `schema.sql` was deployed with the fix line removed and the `pool`
+   column stripped from the `create table` -- i.e. exactly the state
+   of a database that had Section 38 deployed and nothing since. The
+   real `enter_final_matchups(uuid, jsonb)` RPC was called with the
+   same payload shape `enterFinalMatchups()` sends, and it failed with
+   `ERROR: column "pool" of relation "tournament_matches" does not
+   exist` -- reproducing the exact reported bug from the exact
+   real schema/client code, not a guess.
+2. The *fixed* `schema.sql` was then re-run against that same
+   already-broken database (the actual repair procedure any deployed
+   project needs to run) -- confirmed via `\d tournament_matches` that
+   `pool` now exists, then re-ran the identical `enter_final_matchups`
+   call, which succeeded and returned a row with `matchups: []`,
+   `pool: []`.
+3. Continued end-to-end on that repaired database: `lock_teams_into_pool`
+   staged 4 teams, `roll_tournament_matchups` paired exactly those 4
+   into 2 matchups and cleared the pool; `reset_tournament_matchups`
+   returned to blank; entering with 5 teams and pooling 3 of them
+   produced exactly 1 real matchup + 1 bye on roll, matching the spec
+   table precisely; `lock_tournament_matchup` toggled a matchup's lock;
+   `end_tournament` deleted the singleton row (`select count(*) from
+   tournament_matches` returned `0` afterward).
+4. Standard checks also re-run: `vite build` succeeds, `DraftArena.jsx`/
+   `App.jsx`/`tournamentApi.js` all parse cleanly, every client
+   `supabase.rpc(...)` call name and parameter name cross-checked
+   1:1 against its `create or replace function` definition, and a
+   repo-wide search confirms zero references anywhere to the retired
+   `create_manual_matchup`/`createManualMatchup`.
+
+**What this means for anyone applying this to a live project:**
+re-running the updated `supabase/schema.sql` against an
+already-deployed database is required and sufficient — it is written
+to be idempotent and safe to re-run (that's the whole point of the
+`if not exists`/`or replace` conventions throughout), but only for the
+objects it actually knows to `alter`. A brand new column added only
+inside a `create table if not exists` will silently never reach an
+existing table without its own explicit `alter table ... add column if
+not exists` line, exactly as this bug demonstrated.
+
+
 
 

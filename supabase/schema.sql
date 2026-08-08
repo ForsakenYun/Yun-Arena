@@ -241,6 +241,16 @@ create table if not exists public.tournament_matches (
   constraint tournament_matches_singleton check (id)
 );
 
+-- pool may not exist yet on a table created before Section 39's Lock Into
+-- Pool rework (create table if not exists is a no-op once the table
+-- already exists, same reason draft_order needed its own alter above) --
+-- add it idempotently so re-running this file against an already-live
+-- database actually reaches the column enter_final_matchups()/
+-- lock_teams_into_pool()/roll_tournament_matchups() all now read and
+-- write.
+alter table public.tournament_matches
+  add column if not exists pool jsonb not null default '[]'::jsonb;
+
 comment on table public.tournament_matches is
   'Singleton row (Draft Arena -- Final Matchups / 对阵生成 stage). Public read, written only through enter_final_matchups()/lock_teams_into_pool()/unlock_team_from_pool()/remove_tournament_matchup()/roll_tournament_matchups()/lock_tournament_matchup()/reset_tournament_matchups(), all Admin/Developer-only. matchups starts (and, after Reset, returns to) a blank array -- nothing is ever auto-generated. pool is the set of teams staged for the next Random Roll (see column comment above) -- it is a *scope* for randomization, never a fixed pairing. Absence of this row means no tournament has reached the Final Matchups stage yet (or End Tournament just cleared it); its presence is itself the signal every connected Draft Arena client uses to switch into this stage, via Realtime.';
 
