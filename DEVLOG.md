@@ -1,0 +1,2733 @@
+# DEVLOG.md · Project Handoff
+
+**项目**: 选秀台 (Draft Stage) — 锦标赛选秀网站
+
+This is the official project handoff document. It explains what the
+project is, what's been decided, what exists today, and what's still
+open — not how the code is written or how to run it (see `README.md`
+for setup/build instructions). It describes the current state of the
+project, not the history of how it got there. Read this before making
+changes, and keep it up to date as the project evolves.
+
+---
+
+## 1. Project Overview
+
+选秀台 (Draft Stage) is a tournament drafting website: a gaming-style
+platform where players register, get organized into teams via
+captains and players, and take part in drafts, live tournaments, and
+spectating.
+
+The site is being built one phase at a time, each fully completed and
+approved before the next begins. See Section 11 for the full roadmap.
+
+## 2. Current Working Features
+
+Everything below is built and functional against a **real Supabase
+Postgres backend** — no sample/mock data remains anywhere in Login,
+Registration, or the Admin Dashboard.
+
+- **Login** — real Username + Password authentication. Credentials are
+  checked against a bcrypt hash in the database via a database
+  function; nothing is hardcoded in the React app. Only one active
+  session is allowed per account — see Single Active Session Per
+  Account below.
+- **Registration** — real accounts are created directly in our own
+  `accounts` table (not Supabase Auth). Invite code, display name,
+  tournament role, username, password, and optional avatar (uploaded
+  to Supabase Storage) are all persisted for real. Confirm Password is
+  validated against Password before submitting.
+- **Single Active Session Per Account** — logging into an account that
+  already has a live session is rejected outright ("该账号已登录。请先退出当前登录后再尝试。"),
+  with no second session ever created. Enforced in `login_account`
+  itself, not just the frontend. See Section 15, Single Active Session
+  Per Account.
+- **Real Developer account** — `admin` / `111`, Developer permission
+  role, created by the seed step in `supabase/schema.sql`. The old
+  hardcoded Temporary Developer Login (former Section 8.1) has been
+  completely removed from the React app; this account now
+  authenticates exactly like any other. It can never be deleted
+  through the app, by anyone — see Section 10, Developer Account
+  Protection.
+- **Admin Dashboard** — only reachable by logging in with an Admin or
+  Developer account; tab-based shell unchanged visually.
+- **Tab Navigation** — unchanged from Phase 2.
+- **Registered Users** — live table backed by the `accounts` table,
+  updating in real time across every connected browser.
+- **User Edit/Delete** — writes to the real database through
+  permission-checked functions (`edit_user`, `delete_user`).
+  `delete_user` refuses to remove a Developer-role account, and the
+  Delete button is hidden entirely on Developer rows.
+- **Permission Role** — stored in the database (`permission_role`
+  column) and enforced server-side, not just displayed.
+- **Promote/Demote** — Developer-only, enforced both in the database
+  (`promote_user`/`demote_user` reject the call for non-Developers)
+  and in the UI (buttons are hidden for Admins). Both are gated behind
+  a confirmation dialog (确认提升管理员 / 确认移除管理员) before the
+  call is made.
+- **Invite Code Management** — codes are generated, validated,
+  counted, expired, and deleted for real; a code can no longer be used
+  to register once it hits its usage limit or expiration.
+- **Real-time synchronization** — Supabase Realtime keeps the
+  Registered Users table and the Invite Code table in sync across
+  every open browser with no page refresh. See Section 15 for how this
+  works for invite codes specifically, since they can't be broadcast
+  directly without undermining the invite gate.
+- **Logout** — a single click opens a confirmation dialog (确认退出登录);
+  confirming invalidates the session token server-side immediately and
+  returns to the Login page. Available from both the Admin Dashboard and
+  the Tournament Lobby.
+- **Live session / presence** — being logged in requires an active
+  heartbeat, not just a stored token. Closing the tab or browser (or a
+  crash) stops the heartbeat and the session expires server-side on
+  its own shortly after, with no reliance on the client getting to run
+  a logout. A lost connection while the tab stays open shows a
+  reconnect dialog instead of failing silently. See Section 15, Session
+  Liveness: Heartbeat & Presence.
+- **Tournament Lobby** — the real destination for logged-in "User"
+  accounts (Admin/Developer accounts can also reach it from a nav
+  button on the Admin Dashboard, to monitor the tournament). Any
+  logged-in account can join the tournament in one click; leaving asks
+  for confirmation first (确认离开比赛) since it's easy to hit by
+  accident. Admin/Developer accounts additionally see a 移除 action on
+  every row, letting them force-remove any participant — online or
+  not — after a confirmation dialog of their own; this only clears the
+  tournament_participants row, never the account, and the player can
+  rejoin any time with 参加比赛. The participant list, each
+  participant's Online/Disconnected status, and the live statistics all
+  sync in real time across every open browser. See Section 16.
+- **Roll Numbers** — Admin/Developer-only "随机摇号" button in the
+  Tournament Lobby. One click assigns every currently-joined
+  participant (online or offline) a unique random number from 1–100,
+  all at once, shown in an "抽签号" column beside their name; a new
+  roll overwrites the previous one entirely. Once any roll has
+  happened, the participant list automatically re-sorts itself
+  highest-number-first (new joiners with no number yet sort to the
+  bottom); before the first roll, the list stays in normal join order.
+  Numbers sync live to every open browser the same way the rest of the
+  roster does. A player who joins after a roll shows "—" until the
+  next roll. See Section 16, Roll Numbers.
+- **Clear Tournament Participants** — Admin/Developer-only "清空参赛名单"
+  button in the Tournament Lobby, behind a confirmation dialog
+  (确认清空参赛名单). Confirming removes every current participant in
+  one action — the same effect as each of them clicking 退出比赛
+  themselves, just batched — resetting the participant count to 0.
+  Accounts, permissions, and presence are untouched; it just clears
+  `tournament_participants`, syncing live across every open browser
+  through the same Realtime subscription the rest of the roster uses.
+  See Section 16, Clear Tournament Participants.
+- **Tournament Settings** — Admin/Developer-only "锦标赛设置" button in
+  the Tournament Lobby, opening a dialog with Tournament Name, Number
+  of Teams, Players Per Team, and Draft Order Settings. There is only
+  ever one settings record (a singleton row) — Save always replaces
+  it, never creates another, so reopening the dialog later always
+  shows whatever was saved last. This fully replaces the previously
+  planned standalone Tournament Configuration phase, which has been
+  cancelled. See Section 16, Tournament Settings.
+- **Draft Order Settings** — part of the Tournament Settings dialog.
+  Captains are assigned manually and never appear in the draft order,
+  so there are always exactly Players Per Team − 1 rounds. Saving (or
+  changing Number of Teams / Players Per Team) auto-generates a
+  default Snake Draft order sized to match; the admin can freely
+  retype any round instead (no comma required, spaces auto-insert as
+  team numbers are typed). Save is blocked with a clear message until
+  every round contains each team number exactly once. This only
+  configures the order — the Draft System itself, which will read and
+  follow it, is a future phase. See Section 16, Draft Order Settings.
+- **Draft Arena (Phase 5 — UI Completed, Settings + Participants
+  synced)** — the "开始比赛" button in the Tournament Lobby validates
+  the joined roster against Tournament Settings (see below), then
+  navigates to the Draft Arena page. The full drafting UI works
+  end-to-end in local state: captain-candidate assignment (click
+  candidate → click empty team card, with a flying "card slide"
+  assignment animation), a locked custom snake-order teammate draft, a
+  live team grid, a full pick-history undo stack, and a pick-by-pick
+  draft sequence strip. Its back button returns to the Tournament
+  Lobby. Tournament Name, Number of Teams, Players per Team, and Draft
+  Order are read from the Lobby's Tournament Settings (Section 16) on
+  every visit, so the number of teams/rounds/roster slots and the
+  Tournament Name shown in the Top Bar automatically match whatever is
+  currently configured (Section 24); the Captain Pool and Player Pool
+  are read from the Lobby's real joined participants, split by
+  Tournament Role, the same way (Section 25) — no more placeholder
+  pools. Nothing about the draft itself is persisted or synced across
+  clients yet, nor are settings/roster changes picked up live while
+  the page is already open — real-time data synchronization is the
+  next planned phase. See Sections 23-25.
+- **开始比赛 validation** — before entering the Draft Arena, the joined
+  roster must exactly match what Tournament Settings require: total
+  participants, captain count (must equal Number of Teams exactly),
+  and player count (Number of Teams × (Players per Team − 1)) are all
+  checked. Any mismatch blocks navigation and shows a breakdown of
+  required vs. current counts with what to fix, instead of starting.
+  See Section 25.
+- **Temporary Testing Buttons (Tournament Lobby)** — Admin/Developer-
+  only "创建临时玩家" / "移除临时玩家" buttons for exercising the Draft
+  System before registration is fully rolled out. Create generates
+  real accounts (real login credentials too) sized to the current
+  Tournament Settings and auto-joins them to the tournament; Remove
+  (behind a confirmation dialog) deletes exactly the accounts Create
+  made, never a real registered account. See Section 25.
+
+## 3. Current Limitations
+
+Intentional, not oversights:
+
+- **Sessions are simple bearer tokens, not JWTs.** There is no
+  Supabase Auth, so there's no JWT-based RLS. Every privileged
+  database function takes the session token as an explicit argument
+  and checks both its validity and its liveness manually — see
+  Section 15.
+- **No password reset, no "remember me," no email anywhere** — by
+  design, unchanged from Phase 1/2 decisions.
+
+## 4. Important Product Decisions
+
+Core decisions that should not be changed without an explicit request:
+
+- **No email anywhere** — not in login, not in registration.
+- **Registration is invite-only.** A valid invite code is required to
+  register; this must be enforced server-side once a backend exists.
+- **Username and Display Name are separate fields on purpose** — see
+  Section 5. This is not a duplicate or a mistake.
+- **Tournament Role and Permission Role are completely independent.**
+  A user's 队长/队员 label has no bearing on their Developer/Admin/User
+  permission level, and vice versa. Never conflate the two — see
+  Section 5.
+- **Only the Developer permission role will be able to manage
+  permissions**, once the permission system is enforced — an Admin
+  will not be able to promote, demote, or otherwise change anyone's
+  permission role. See Section 10.
+- **No terms-of-service checkbox, no "remember me," no "forgot
+  password."**
+- **Simplified Chinese interface** throughout the site.
+- **Dark theme with neon teal glow**, modern gaming-style UI, kept
+  visually consistent across every page.
+- **Login/Registration is intentionally minimal** — a single centered
+  card, no side panels or decorative graphics. Don't add heavy
+  decoration without being asked.
+- **Validation is deliberately low-friction** (e.g. `1` is a valid
+  username or password). Don't add stricter rules without being
+  asked.
+
+## 5. Terminology
+
+- **Username** — login credential only. Never shown publicly.
+- **Display Name (昵称)** — the public name shown throughout the site.
+  Kept separate from Username so people can log in with something
+  short while displaying a longer or Chinese name.
+- **Invite Code** — required to register. Without a valid code,
+  registration is not allowed.
+- **Tournament Role** — 队长 (Captain) or 队员 (Player), chosen at
+  registration. A tournament label only — it does not grant or
+  restrict access to any part of the website.
+- **Permission Role** — Developer (开发者), Admin (管理员), or User
+  (普通用户). Controls (once enforced) who can access the Admin
+  Dashboard and manage permissions — see Section 10. Currently
+  display-only; not yet enforced (Section 3).
+
+These two "role" concepts are unrelated. A Captain can be a Developer,
+Admin, or User; permission role never changes a user's tournament
+role, and tournament role never changes a user's permission role.
+
+## 6. Development Rules
+
+- Build one phase at a time.
+- Do not implement future phases unless requested.
+- Do not redesign completed pages or change existing functionality
+  without approval.
+- Keep the UI simple and clean; don't add features that weren't
+  requested.
+- Complete and test each phase before moving to the next.
+
+## 7. Architecture Principles
+
+These describe the overall development philosophy for this project —
+how to approach any phase or feature, not the details of a specific
+one.
+
+- **Build incrementally.** Grow the project one phase at a time rather
+  than building multiple features in parallel.
+- **Complete and approve one phase before starting the next.** Don't
+  begin a new phase — even a small one — until the current phase is
+  finished and signed off.
+- **Prefer extending existing UI over redesigning completed pages.**
+  When a new requirement touches a finished page, look for a way to
+  add to it using established patterns before considering a redesign.
+- **Design new systems to be easy to expand later.** Favor
+  structures — configs, lists, small reusable pieces — that let future
+  phases add to a system without reworking it. (The dashboard's tab
+  navigation, built so new tabs can be added without redesigning the
+  page, is the current example of this in practice.)
+- **Avoid implementing future features unless explicitly requested.**
+  Stay scoped to the current phase; don't get ahead of the roadmap.
+
+## 8. Login & Registration
+
+A single page with a Login/Register tab switcher — no separate pages
+or routes.
+
+**Login** asks for Username and Password only.
+
+**Registration** asks for, in this order:
+1. Avatar (optional — falls back to a default look if skipped)
+2. Invite Code (required)
+3. Display Name (required)
+4. Tournament Role — 队长 or 队员 (required)
+5. Username (required)
+6. Password (required)
+7. Confirm Password (required)
+
+**Validation:**
+- Username and Password: letters and numbers only, no spaces or
+  symbols, max 20 characters, no minimum length.
+- Display Name: Chinese characters, English letters, numbers, and
+  spaces allowed, max 20 characters.
+- Confirm Password follows the same character rule as Password but is
+  not yet checked for matching (Section 3).
+- Invite Code and Tournament Role are required but not validated
+  against real data yet (Section 3).
+
+### 8.1 Developer Account (formerly "Temporary Developer Login")
+
+As of Phase 3, this is a real database account, not a hardcoded
+credential check. `admin` / `111` is seeded into `accounts` +
+`credentials` by `supabase/schema.sql`, with `permission_role =
+'developer'`. It logs in through the exact same `login_account`
+database function as every other account; the only thing distinguishing
+it is its permission role. The old client-side hardcoded check has been
+deleted from `AuthPage.jsx` entirely.
+
+It appears as a normal row in the Registered Users table (Section 9.1),
+same as before.
+
+## 9. Admin Dashboard
+
+Reachable by logging in with any Admin or Developer account (Section
+8.1) — a "User"-role account that logs in is kept off this route.
+Visually consistent with Login/Registration: dark theme, neon teal
+glow, same component style throughout.
+
+The dashboard is organized into **tabs**, with only one section
+visible at a time and instant switching (no reload). This is built to
+scale — adding a future section (Tournament Management, Draft
+Settings, System Settings, Statistics, etc.) means adding one more tab
+without redesigning the page or its navigation. Current tabs:
+Registered Users and Invite Code Management.
+
+The header shows the currently logged-in account's avatar and Display
+Name in the top-right corner, plus a Logout button that returns to the
+Login page.
+
+### 9.1 Registered Users
+
+- A search box filters the table live by Display Name (not Username),
+  since admins are expected to recognize players by nickname rather
+  than login account.
+- Table columns: Username, Avatar, Display Name, Tournament Role
+  (队长 / 队员), Permission Role (开发者 / 管理员 / 普通用户).
+  - Avatars are square with slightly rounded corners; a user with no
+    avatar shows a small default placeholder icon instead.
+  - The Temporary Developer account (Section 8.1) appears here too,
+    with no Tournament Role and a Developer Permission Role.
+- Row actions:
+  - **Edit** — opens a modal to change Username, Display Name,
+    Password, and Tournament Role.
+  - **Delete** — removes the user, with a confirmation step. Hidden
+    entirely for any Developer-role row — see Section 10's Developer
+    Account Protection.
+  - **Promote to Admin** — shown on User-role rows; changes Permission
+    Role to Admin, behind a confirmation dialog (确认提升管理员).
+  - **Demote to User** — shown on Admin-role rows; changes Permission
+    Role back to User, behind a confirmation dialog (确认移除管理员).
+  - Promote/Demote only ever change Permission Role — they never
+    touch Tournament Role. Per Section 10, only a Developer can use
+    these; this is enforced both in the UI (hidden for Admins) and in
+    the database (the `promote_user`/`demote_user` functions reject
+    the call for any non-Developer session).
+
+### 9.2 Invite Code Management
+
+- Generating a code lets the admin set a maximum number of uses
+  (default `1`, any positive integer) and, optionally, an expiration:
+  never (default), 1/2/3 days from now, or a custom date and time.
+- Table columns: Invite Code, Usage (`used / max`), Expiration
+  (formatted date, "never expires," or an expired indicator), and
+  Actions.
+- **Codes are hidden by default**, shown as a masked placeholder with
+  a Show button per row — revealing a code lasts for the rest of the
+  current page session, with no way to re-hide it. This exists so
+  codes aren't accidentally exposed on stream.
+- Row actions: Copy (copies the real code regardless of whether it's
+  currently shown on screen) and Delete, with the same confirmation
+  pattern used for users.
+
+## 10. Permission System (Enforced)
+
+This is the Developer/Admin permission system, enforced server-side
+since Phase 3. Every database function that mutates data checks the
+caller's session and permission role before doing anything (Section
+15) — the UI restrictions in Section 9.1 mirror this but are not the
+actual enforcement point.
+
+- **Developer (开发者)** — highest permission level, full access to
+  the entire website: the Admin Dashboard and all current/future admin
+  features, tournament management, invite code management, viewing all
+  registered users, and managing permissions (promoting/demoting users,
+  changing any user's permission role).
+- **Admin (管理员)** — full access to the Admin Dashboard and all
+  tournament management features, with one restriction: an Admin
+  cannot manage permissions. Specifically, an Admin cannot promote a
+  user to Admin, demote an Admin, or change anyone's permission role.
+  Managing permissions is Developer-only.
+
+Tournament Role (队长/队员) remains completely separate from this
+system — see Section 5.
+
+**Developer Account Protection.** The Developer account is the
+project owner account and must never be removable from the website.
+`delete_user` rejects any attempt to delete an account whose
+`permission_role` is `developer`, regardless of who's calling it —
+this is checked in the database function itself, not just hidden in
+the UI, so it holds even against a direct RPC call or a modified
+frontend. The Admin Dashboard also hides the Delete button entirely
+for any Developer-role row, as a UI convenience on top of that
+enforcement. The only way to remove a Developer account is editing
+the database directly, outside the app.
+
+## 11. Roadmap
+
+In intended development order:
+
+1. Login & Registration — **done**
+2. Admin Dashboard — **done**
+3. Backend Foundation — **done** (see Section 15)
+4. Tournament Lobby — **done** (see Section 16)
+5. Draft System — **UI completed; Tournament Settings + Participants synced, live/real-time draft sync pending** (see Sections 23-25)
+6. Spectator Page
+
+**Phase 3 – Backend Foundation** is not about building backend
+infrastructure for the whole future website — it's scoped to
+converting everything already built in Phases 1–2 from frontend mock
+data into a real backend-powered system. It includes: database schema,
+Supabase setup, authentication, user registration, invite code
+validation, user management, the Developer/Admin permission system
+(Section 10), real-time synchronization, and persisting all Login,
+Registration, and Admin Dashboard data. When Phase 3 is complete,
+everything built in Phase 1 and Phase 2 should be fully functional
+against the real backend instead of sample data — including retiring
+the Temporary Developer Login (Section 8.1) in favor of real
+authentication and the Developer/Admin permission system.
+
+**From Phase 4 onward, every new feature builds directly on top of the
+Backend Foundation** established in Phase 3 — using the same database,
+authentication, permissions, and real-time synchronization from the
+start. Future phases should not introduce separate or parallel backend
+implementations; they extend what Phase 3 establishes.
+
+Only work on the currently approved phase. Do not skip ahead to a
+later phase in this list unless explicitly instructed, even if it
+seems like a natural next step.
+
+## 12. Design Guidelines
+
+- Dark theme with neon teal glow accents.
+- Modern gaming-style UI.
+- Simplified Chinese interface throughout.
+- Reuse the existing color palette and component style (cards, inputs,
+  buttons, tabs) for visual consistency in future phases rather than
+  inventing a new look.
+
+### Full Browser Layout Standard (permanent)
+
+This is a permanent project standard, effective from Phase 4 onward,
+and applies to all new pages and page redesigns unless explicitly
+instructed otherwise:
+
+- The project's primary target is a 1920×1080 desktop monitor —
+  approximately a 1920×953 viewport in Chrome maximized at 100%
+  zoom. Mobile responsive support is still required alongside this.
+- This standard applies to main application pages/screens — the
+  primary views a user navigates between. It does not apply to
+  dialogs, modals, settings windows, confirmation dialogs, or other
+  temporary popups, which may keep an appropriately fixed, narrower
+  width whenever that gives a better user experience.
+- Main pages must use the full browser window and make good use of
+  the available space. Layouts should naturally expand to fill the
+  browser width rather than leaving large empty margins on the left
+  and right. Do not constrain a main page's content to a fixed
+  maximum width just to keep it centered like a traditional
+  document-style webpage — width should stay fluid, with only small
+  edge padding.
+- Do not add a permanent sidebar to achieve this — navigation stays
+  in the top header. Use the freed-up horizontal space for wider
+  tables, more panels/cards per row, and denser information display
+  instead.
+
+## 13. Technical Requirements
+
+Applies across the whole project:
+
+* React + Vite
+* Tailwind CSS
+* Dark theme, neon teal glow design
+* Modern gaming-style UI
+* Simplified Chinese interface
+
+## 14. Maintaining This Document
+
+This document is the single source of truth for the project.
+
+- Update it whenever a phase or feature is completed.
+- Update it before handing the project to another developer or
+  starting a new chat, so it always reflects the latest project state.
+  Development may continue with a different developer or a new AI
+  conversation, and this document — not prior chat history — is what
+  the next person picks up from.
+- Record product decisions and architectural changes, not
+  implementation details already visible in the source code — the
+  repository itself is the reference for file/folder structure.
+- Describe the current state of the project, not the history of how
+  it got there — avoid changelog-style writing.
+- Keep it concise; consolidate rather than repeat information across
+  sections.
+- For installation, running, and build instructions, see `README.md`.
+
+## 15. Backend Architecture (Phase 3)
+
+The entire backend is one file: `supabase/schema.sql`. Run it once
+against a fresh Supabase project's SQL Editor and everything —
+tables, security, and the seeded Developer account — exists. It is
+idempotent and safe to re-run.
+
+**No Supabase Auth.** Per the product decision at the top of this
+project, accounts live in our own `accounts` table and are checked
+with bcrypt (`pgcrypto`'s `crypt()`), not `auth.users`.
+
+**Why a session token instead of a JWT.** Without Supabase Auth there
+is no JWT, so Postgres Row Level Security can't use `auth.uid()` the
+way it normally would. Instead, `login_account` / `register_account`
+issue a random `sessions.token`, which the client stores in
+`localStorage` and passes as an explicit argument to every privileged
+database function. Each of those functions confirms the session is
+alive (see Session Liveness, below), checks the account's
+`permission_role`, and only then does anything — so permission
+enforcement lives in the database, not just in hidden UI buttons.
+
+**Table exposure, by design:**
+- `accounts` — safe columns only (no password), publicly readable,
+  Realtime-enabled. This is what makes the Registered Users table
+  update live with no page refresh.
+- `credentials` — just `account_id` + `password_hash`. Zero RLS
+  policies, zero grants. Totally unreachable except from inside a
+  `SECURITY DEFINER` function.
+- `invite_codes` — also zero RLS policies. This one matters: if codes
+  were publicly readable (even just to look "hidden" in the UI),
+  anyone with the anon key could list and use them straight from
+  devtools, defeating the entire invite-only gate. Codes are only ever
+  returned to a caller that `list_invite_codes` has confirmed is
+  logged in as Admin/Developer.
+- `sessions` — locked the same way as `credentials`. Beyond `token` and
+  `expires_at`, it now also tracks `last_seen_at`, which is what the
+  heartbeat system below is built on.
+- `sync_events` — a tiny public, Realtime-enabled table with no
+  payload beyond a scope name (e.g. `{"scope": "invites"}`). Since
+  invite codes can't be broadcast directly without leaking them, every
+  invite mutation writes a row here instead; the dashboard listens for
+  that and re-fetches the list through the permission-checked
+  `list_invite_codes` function. This is what makes invite code
+  changes sync live across browsers without ever exposing a code
+  outside of an authorized fetch.
+
+**All writes to `accounts` and `invite_codes` go through functions**
+(`register_account`, `edit_user`, `delete_user`, `promote_user`,
+`demote_user`, `create_invite_code`, `delete_invite_code`) — direct
+`INSERT`/`UPDATE`/`DELETE` privileges are revoked from the anon/
+authenticated roles at the table level, so the only way to write is
+through a function that has already checked permissions.
+
+**Avatars** upload straight from the browser to a public `avatars`
+Storage bucket; the resulting public URL is stored in
+`accounts.avatar_url`. The bucket and its `storage.objects` policies
+are **not** created by `supabase/schema.sql` — `storage.buckets` and
+`storage.objects` are owned by Supabase's internal
+`supabase_storage_admin` role, so statements like `insert into
+storage.buckets` fail with "must be owner of table buckets" when run
+through the same SQL Editor session as the rest of this file. Creating
+the `avatars` bucket (Public) and its public SELECT/INSERT policies is
+a one-time setup step done through the Supabase Dashboard or
+Management API/CLI instead — see the comment in `schema.sql` Section 8
+for the exact steps. Everything in `public.*` in this document still
+applies to this migration as normal; only the `storage` schema is
+carved out.
+
+Frontend integration lives in `src/lib/`: `supabaseClient.js` (client
+singleton), `auth.js` (register/login/session/heartbeat), and
+`adminApi.js` (everything the Admin Dashboard calls, plus the two
+realtime subscriptions described above). `src/lib/sessionMonitor.js`
+and `src/components/DisconnectedModal.jsx` implement the heartbeat/
+presence system described next.
+
+### Session Liveness: Heartbeat & Presence
+
+This is a standing policy for the whole project, not just the Admin
+Dashboard: **a session is only considered alive while the client is
+actively proving it's still there.** Being logged in is treated as a
+live connection, not a durable flag — closing the tab, closing the
+browser, a crash, or losing connectivity all mean the session should
+end, without depending on the client getting a chance to say goodbye.
+
+**Server side.** `sessions.last_seen_at` tracks the last time a given
+session proved it was alive. `public._session_timeout()` is the single
+source of truth for how long a session may go without one — currently
+45 seconds. Every privileged database function funnels through
+`_current_session_account()`, which refuses the call and raises
+`invalid_session` if `last_seen_at` has gone stale (in addition to the
+existing `expires_at` hard cap), and refreshes `last_seen_at` on
+success — so any authenticated action doubles as a heartbeat, not just
+the dedicated one. This is enforced in the database itself, so it
+still works even if the browser crashes and never runs another line of
+JS. A `heartbeat(p_token)` RPC exists for the client to call on a
+regular interval purely to keep a session alive when the user isn't
+otherwise interacting with anything. `logout_session` still deletes
+the row outright for an immediate, explicit logout. Dead rows are also
+swept up periodically by an optional `pg_cron` job — pure hygiene,
+since the timeout check above already refuses stale sessions whether
+or not the row has been physically deleted yet, and the schema skips
+that job silently if `pg_cron` isn't enabled on the project.
+
+**Client side** (`src/lib/sessionMonitor.js`). While `account` is set,
+`App.jsx` runs a heartbeat loop: ping the server every 15 seconds
+(comfortably inside the 45-second server timeout). A successful `{ ok:
+true }` response keeps things quiet. A successful `{ ok: false }`
+response means the server has confirmed the session is genuinely gone
+(most commonly because heartbeats stopped for a while — the tab was
+closed and later reopened, or was suspended long enough to miss the
+window) — the app clears local state and returns to Login with "会话已过期，请重新登录".
+A thrown/network error is treated differently: it means "couldn't
+reach the server," not "session is invalid," so instead of logging the
+user out, the app shows the disconnect dialog (`DisconnectedModal.jsx`
+— "网络连接已断开 / 正在尝试重新连接…" with a 重新连接 button) and
+retries every 3 seconds in the background, plus immediately on the
+browser's `online` event and on a manual click of the button. As soon
+as a heartbeat succeeds again, the dialog closes on its own and the
+session resumes exactly where it left off, with no other interruption
+to the user. If the outage lasted long enough that the session expired
+server-side while disconnected, the next successful reconnect attempt
+simply reports `{ ok: false }` and the app falls through to the same
+expired-session redirect described above — a stale reconnect never
+misreports as success.
+
+Net effect: a closed tab/browser stops sending heartbeats and the
+session dies server-side within roughly a minute even though no
+client-side logout ever ran; a live tab that briefly loses connectivity
+gets a clear, honest "you're disconnected, we're retrying" state
+instead of silently-failing API calls or a false logout.
+
+### Single Active Session Per Account
+
+Only one session may be alive for a given account at a time.
+`login_account` checks `_has_active_session(account_id)` — the same
+"alive" definition used everywhere else (`expires_at` hard cap AND
+within `_session_timeout()` of `last_seen_at`) — after verifying the
+password but before creating a new session row, and rejects the login
+with `account_already_logged_in` if one is already alive. The
+frontend surfaces this as "该账号已登录。请先退出当前登录后再尝试。"
+via the same toast used for other login errors.
+
+This is checked *after* credentials are verified, on purpose: an
+incorrect-password guess must not leak whether an account happens to
+be logged in elsewhere. It's also checked against genuinely *alive*
+sessions only, not just any row in `sessions` — a session that's gone
+stale (heartbeat lapsed, tab closed, browser crashed) is not "active"
+by this definition, so it never blocks a legitimate re-login; it just
+means the previous session dies on its own via the existing timeout
+machinery above, same as always. This makes the two features
+consistent with each other rather than layering a second, separate
+notion of liveness on top.
+
+Enforced entirely in `login_account` itself, so it holds regardless of
+what the frontend does or doesn't check first.
+
+### Supabase Compatibility
+
+This project targets Supabase only, not generic PostgreSQL.
+
+- Do not assume PostgreSQL default schemas or `search_path`.
+- All new SQL and `SECURITY DEFINER` functions must be written to work
+  on a fresh Supabase project.
+- Extension functions (such as `pgcrypto`'s `crypt()` and
+  `gen_salt()`) must be accessible either by including the
+  `extensions` schema in the function `search_path` or by explicitly
+  schema-qualifying them.
+- Before considering any SQL complete, review it for Supabase
+  compatibility (extensions, RPC functions, RLS, permissions,
+  Storage, and Realtime).
+- `supabase/schema.sql` must never contain statements that modify the
+  `storage` schema (`storage.buckets`, `storage.objects`, or policies
+  on them) — `storage.*` objects are owned by Supabase's internal
+  `supabase_storage_admin` role, not by the role that runs this
+  migration, so such statements fail with "must be owner of table
+  buckets" (or similar) when run through the SQL Editor. Any Storage
+  setup (buckets, bucket policies) is a manual, one-time step done
+  through the Supabase Dashboard or Management API/CLI, documented
+  inline as a comment where it would otherwise have been created —
+  see `schema.sql` Section 8 and the Avatars note above. This
+  migration is scoped to the `public` schema only.
+
+## 16. Tournament Lobby (Phase 4)
+
+The Tournament Lobby is the landing page for logged-in "User"
+accounts, and a page Admin/Developer accounts can also reach (via a
+nav button on the Admin Dashboard) to monitor the tournament. It
+introduces two small public tables and reuses everything else —
+sessions, the heartbeat system, and the Realtime architecture — as-is.
+
+### Participation vs. presence are two separate tables
+
+- `public.tournament_participants` (`account_id`, `joined_at`) is the
+  tournament roster. A row is only ever inserted by `join_tournament`
+  and only ever deleted by `leave_tournament`, both of which require a
+  live session. Nothing else touches this table — not a disconnect,
+  not a heartbeat timeout, not a logout. This is the direct
+  implementation of the product decision that "a player's tournament
+  participation and online status are two separate concepts."
+- `public.presence` (`account_id`, `last_seen_at`) is a public-safe
+  mirror of liveness, deliberately separate from the locked
+  `public.sessions` table (which stays server-only, per Section 15).
+  It is upserted by `login_account`, `register_account`, `heartbeat`,
+  and — via `_current_session_account()` — every other privileged RPC
+  call, so any authenticated action keeps a player's presence fresh,
+  not just the dedicated heartbeat tick. It is deleted outright by
+  `logout_session`, so an intentional logout reads as Disconnected
+  immediately rather than waiting out the timeout.
+
+Both tables are public read (RLS `using (true)`), like `accounts`
+already is; all writes go through `SECURITY DEFINER` functions. Both
+are added to the `supabase_realtime` publication.
+
+### Online/Disconnected is a client-side judgement, not a server push
+
+Nothing proactively flips a row to "disconnected" when a player goes
+quiet — there's no cron job walking `presence` looking for stale rows.
+Instead, the client compares `last_seen_at` against the same
+`_session_timeout()` window (45s) used for session liveness, and
+recomputes that comparison locally on a short timer (`tournamentApi.js`
+exports `PRESENCE_TIMEOUT_MS` and `isOnline()`; `TournamentLobby.jsx`
+ticks a `now` state every 3s). A realtime `presence` update on a fresh
+heartbeat/login snaps a player back to Online immediately; the passage
+of time with no new update is what silently ages someone into
+Disconnected. This mirrors the reasoning in Section 15's Heartbeat &
+Presence architecture, just surfaced to the UI instead of gating
+access.
+
+### Data flow
+
+`tournamentApi.js` fetches `tournament_participants`, `accounts`, and
+`presence` as three flat queries and merges them client-side (rather
+than relying on PostgREST's nested-embedding inference), then
+subscribes to all three tables on one Realtime channel and refetches
+on any change — join, leave, a heartbeat's fresh `last_seen_at`, or an
+account edit (display name/avatar) all land in the lobby live, the
+same "any relevant change re-runs a plain `select`" pattern the Admin
+Dashboard already uses.
+
+### Navigation
+
+- `App.jsx` sends Admin/Developer accounts to `#admin` and every other
+  account to `#lobby`, both on fresh login and on session restore.
+- The Admin Dashboard header has a "锦标赛大厅" button that sets the
+  hash to `#lobby`; the Tournament Lobby header has a matching "管理后台"
+  button (visible only to Admin/Developer accounts) that sets it back
+  to `#admin`. Neither page was otherwise redesigned.
+
+### Confirmation dialogs (Logout, Leave Tournament, admin removal, Promote/Demote)
+
+Clicking Logout, Leave Tournament (退出比赛), an admin's 移除 action, or
+Promote/Demote in the Admin Dashboard never fires the underlying
+request directly — each opens a shared `src/components/ConfirmDialog.jsx`
+first (title + message + 取消 / confirm button), and only the confirm
+button calls the real API. This is a single click on the triggering
+button either way; the extra step is the confirmation itself, not a
+second click needed to register the first one.
+
+`ConfirmDialog` is visually modeled on AdminDashboard.jsx's existing
+local `ConfirmDeleteModal` (same overlay, panel, and icon treatment) but
+lives in its own file so it can be shared across AdminDashboard.jsx
+(logout, promote, demote) and TournamentLobby.jsx (logout, leave, admin
+removal) without duplicating that markup a third, fourth, fifth, and
+sixth time. It takes a `tone` prop — `danger` for destructive/impactful
+actions (leave tournament, admin removal, demote) and `neutral` for
+actions that aren't destructive (logout, promote) — and a `busy` prop
+that disables both buttons and swaps the confirm label to "处理中…"
+while the request is in flight.
+
+### Admin/Developer tournament removal
+
+`public.remove_participant(p_token, p_target_account_id)` is the
+admin-side twin of `leave_tournament`: same effect (deletes the
+`tournament_participants` row, nothing else), but callable against any
+account and gated by `_require_role(p_token, array['admin',
+'developer'])` instead of only ever touching the caller's own row. It
+does not touch `public.accounts` or `public.presence` — a
+force-removed player can rejoin immediately by clicking 参加比赛 again,
+exactly as if they'd left voluntarily. The 移除 button and its
+confirmation dialog only render when `account.permission_role` is
+`admin` or `developer`; regular Users never see the column. Because the
+underlying delete is the same table write `leave_tournament` makes, it
+flows through the same Realtime subscription and updates every open
+browser's participant list and stats without any additional wiring.
+
+### Roll Numbers
+
+`tournament_participants.roll_number` (nullable integer, default
+`null`) holds each participant's assigned number. `public
+.roll_tournament_numbers(p_token)`, gated by `_require_role(...,
+array['admin', 'developer'])`, assigns every row currently in
+`tournament_participants` a unique random integer from 1–100 in a
+single `UPDATE ... FROM` statement (a random permutation of `1..100`
+paired against a random ordering of participants) — the roll only
+ever reads that table, so offline-but-still-joined participants get a
+number exactly the same as online ones, since participation and
+presence are unrelated (see "Participation vs. presence" above). If
+more than 100 accounts have joined, the function raises
+`roll_range_too_small` rather than silently reusing numbers, since
+duplicates are never allowed. Running it again overwrites every
+`roll_number` unconditionally — there's no "only fill in the blanks"
+mode. A participant row created after a roll (a fresh join, or a
+rejoin after leaving) simply starts at `null` and stays that way until
+the next roll.
+
+No new table, RLS policy, or Realtime wiring was needed:
+`tournament_participants` was already public-read and already
+Realtime-enabled for the participant list itself, so the "抽签号"
+column populates live across every open browser through the exact
+same subscription `fetchLobby`/`subscribeLobby` already use. The
+"随机摇号" button in the Tournament Lobby header is admin/developer-only
+(same `isStaff` check as the 管理后台 button and the 移除 action) and
+is a plain one-click action with no confirmation dialog, since
+re-rolling is a repeatable, non-destructive-to-participation action
+(it never removes anyone from the tournament) rather than an
+irreversible one like Leave or Remove.
+
+Once any participant has a `roll_number`, `TournamentLobby.jsx` sorts
+the rendered list highest-number-first (participants still at `null`
+sort to the bottom); before the first roll ever runs, the list is left
+in its normal join-order. This is a purely client-side `useMemo` sort
+over the same data the fetch/Realtime path already produces — the
+`fetchLobby()` query itself is unchanged and still orders by
+`joined_at`, so nothing about how data is fetched or synced needed to
+change for the sort to work.
+
+### Clear Tournament Participants
+
+`public.clear_tournament(p_token)`, gated the same way as
+`roll_tournament_numbers`, deletes every row in
+`tournament_participants` in one statement. It is the batched
+equivalent of every joined player clicking 退出比赛 themselves — same
+table, same effect, so it needs no separate Realtime wiring either;
+the existing `tournament_participants` subscription reports the
+deletes exactly like it would for individual leaves, and
+`roll_number` disappears along with the rows rather than being
+"reset" as a separate step. `public.accounts`, `permission_role`, and
+`public.presence` are all untouched. The "清空参赛名单" button sits next
+to "随机摇号" in the header (same `isStaff` gate) and, being
+irreversible and affecting everyone at once, is gated behind
+`ConfirmDialog` (确认清空参赛名单 / 确定要移除所有已参加比赛的玩家吗？
+/ 取消 / 确认清空) the same way Leave Tournament and admin removal are.
+
+### Tournament Settings
+
+**This replaces the previously planned standalone "Tournament
+Configuration" phase.** That phase — a separate page or Admin
+Dashboard tab — has been cancelled; Tournament Settings is instead a
+dialog inside the existing Tournament Lobby. Originally this dialog
+covered only Save/load settings and remembering the last saved
+settings; it now also covers Draft Order Settings (see the subsection
+below) as an extension of the same dialog. It still does not touch
+actually drafting players, brackets, or teams — those remain out of
+scope until the Draft System phase; Draft Order Settings only decides
+what order the (not-yet-built) Draft System will eventually follow.
+
+`public.tournament_settings` is a singleton table: its primary key
+`id` is declared `boolean` with `check (id)`, so the only value it can
+ever hold is `true`. Combined with the primary key's uniqueness, this
+makes "there is only one active Tournament Settings record" a
+structural guarantee rather than an app-level convention — there is no
+`WHERE` clause or cleanup job relying on nobody accidentally inserting
+a second row; a second row is simply not representable. `id=true` is
+seeded once at the end of `supabase/schema.sql` (idempotent, `on
+conflict (id) do nothing`), so the table is never empty and the
+dialog always has something to load, even before an admin has ever
+saved anything.
+
+`save_tournament_settings(p_token, p_tournament_name, p_team_count,
+p_players_per_team, p_draft_order)` is gated by `_require_role(...,
+array['admin', 'developer'])`, validates every field (including
+`p_draft_order` — see Draft Order Settings below), then `insert ...
+on conflict (id) do update` the same row. "Save" is therefore always
+"replace the one active record" — there's no code path that could
+create a second configuration, and no notion of presets to choose
+between. Because every save updates the same row,
+`TournamentSettingsDialog.jsx` fetching that row on open is exactly
+"remember the last saved settings": whatever an admin saved today is
+what the dialog pre-fills tomorrow, with no extra history or
+versioning involved.
+
+`tournament_settings` is public-read like the rest of the Lobby's
+data, but deliberately **not** added to the Realtime publication —
+nothing in the app subscribes to it. The dialog fetches once when it
+opens and writes once on Save; two admins with the dialog open at the
+same time simply follow last-write-wins. If a future phase needs the
+tournament name or team count to update live elsewhere in the UI,
+adding the table to the publication is a one-line change — see how
+`tournament_participants` and `presence` were added for the pattern.
+
+### Draft Order Settings
+
+Part of the Tournament Settings dialog, not a separate feature or
+page. Captains are assigned manually by the admin and never appear in
+the draft order, so the number of rounds is always `players_per_team
+- 1`, and each round is a permutation of `1..team_count` (one entry
+per team, no duplicates, none missing).
+
+`tournament_settings.draft_order` is a `jsonb` column: an array of
+rounds, each round itself an array of team numbers, e.g. `[[1,2,...,
+8],[8,7,...,1],...]`. It's added the same idempotent way
+`tournament_participants.roll_number` was (`alter table ... add
+column if not exists`), and validated inside
+`save_tournament_settings` by sorting each round ascending and
+checking it's exactly `[1, 2, ..., team_count]` — a single array
+comparison that simultaneously proves every team number appears
+exactly once and none is missing or duplicated. This is the real
+enforcement point; `tournamentApi.js`'s `validateDraftRound` runs the
+identical check client-side purely so Save can be disabled with an
+inline message before even attempting the request, exactly the same
+relationship every other confirmation/validation in this project has
+to its database-side twin.
+
+**Default generation and regeneration.** `generateSnakeDraft(teamCount,
+playersPerTeam)` produces the default order: odd rounds ascending
+`1..N`, even rounds descending `N..1`. `TournamentSettingsDialog.jsx`
+generates this default whenever there's no saved `draft_order` to load
+(first-ever save) and regenerates it from scratch whenever the admin
+changes Number of Teams or Players Per Team to a genuinely different
+value during editing — tracked via a `shapeRef` so the dialog doesn't
+regenerate on every render, only on an actual shape change, and
+doesn't clobber a freshly-loaded custom order the instant the dialog
+opens. A shape change invalidates whatever was there before anyway
+(different team count or round count), so replacing it with a fresh
+Snake Draft default is strictly better than trying to patch a
+now-mismatched custom order. The system never forces Snake Draft to
+stay — it's only ever the starting template; the admin can retype any
+round into any permutation and it's saved exactly as edited.
+
+Regeneration happens **synchronously inside the same `onChange`
+handler** that updates `teamCount`/`playersPerTeam` (`handleTeamCount
+Change`/`handlePlayersPerTeamChange` call `maybeRegenerate` directly),
+not in a separate `useEffect` keyed on those values. An effect-based
+version was tried first and had a one-frame race: the effect only
+runs on the render *after* the input's `onChange` already committed
+the new team count, so for that one frame `teamCountNum` reflected the
+new value while `roundTexts` still held the old, now-mismatched
+rounds — exactly the window where `roundErrors` validated stale text
+against the new team count and every round flashed red with a message
+like "需要恰好 8 个号码" before self-correcting. Doing both state
+updates in the same event (same React batch) means there is no render
+where they're out of sync in the first place, which is why the fix is
+structural rather than a debounce or a "suppress errors during
+regeneration" flag layered on top.
+
+**Auto-formatting the input.** Round order is typed as
+space-separated numbers, no commas, and the admin isn't expected to
+press space themselves — `formatDraftRoundInput` in
+`tournamentApi.js` inserts it automatically as they type, using a
+small state machine that decides whether the digit just typed extends
+the number currently being typed or starts a new one. The default rule
+is to close out the current number as soon as it's a valid,
+not-yet-used team number (this is what turns `12345678` into
+`1 2 3 4 5 6 7 8` for an 8-team tournament); it only keeps extending
+when closing would be wrong — either the digit just typed is `0` (a
+team number can never start with `0`, so it must belong to the
+previous number instead) or the current number's value was already
+used earlier in the same round (forcing it to grow into a different,
+larger number) — which is what correctly turns `123456789101112` into
+`1 2 3 4 5 6 7 8 9 10 11 12` for a 12-team tournament. Documented
+directly in `tournamentApi.js`: a brand-new multi-digit number with no
+internal `0` and no earlier collision (e.g. typing `23` as the very
+first characters of a 30-team tournament's round) is genuinely
+ambiguous with no further context and may render as `2 3` — a manual
+space edit fixes it, and Save-time validation catches the result
+either way regardless of how the text got there.
+
+### Start Tournament (placeholder)
+
+The "开始比赛" button next to the other admin controls in the header is
+intentionally inert: its click handler only shows a toast
+("选秀系统将在下一阶段上线，敬请期待") and calls no RPC. It exists so the
+UI slot is in place before the Draft System phase actually implements
+what happens when a tournament starts. Do not read this button as an
+API contract or a hint at the Draft System's design — it's a marker,
+nothing more.
+
+## 17. Desktop UI Optimization (Phase 4)
+
+`TournamentLobby` and `AdminDashboard` are laid out as a desktop
+app frame rather than a centered webpage, targeting a 1920×1080
+monitor at 100% browser zoom (~1920×953 usable viewport) while still
+degrading gracefully to normal stacked/scrolling behavior on mobile.
+`AuthPage` is unaffected — it stays a single centered card by design
+(see the login/registration note elsewhere in this document).
+
+- No permanent sidebar was added. Navigation stays in the top
+  header, exactly as before; only the content below it was
+  reorganized into a wider, denser layout.
+- The outer shell is `min-h-screen ... flex flex-col lg:h-screen
+  lg:overflow-hidden`, with an inner `w-full` wrapper that has
+  **no max-width cap** — only small edge padding (`px-4 sm:px-5
+  lg:px-6`, i.e. 16–24px). The content genuinely expands to fill
+  the browser window on any monitor width, including ultrawide;
+  it does not stop at a fixed pixel ceiling. The `lg:` prefix on
+  the height classes is deliberate: at `lg:h-screen` the page becomes a
+  fixed-height app frame where the header, stat/join row, and (on
+  the admin side) tab bar are `shrink-0` and only the
+  participant/user/invite table area is `lg:flex-1 lg:min-h-0
+  overflow-y-auto` — that's the "only the content area should
+  scroll" requirement. Below `lg`, none of the height-constraining
+  classes apply, so mobile falls back to plain document flow and a
+  normal full-page scroll.
+- Table headers use `sticky top-0` on the `<th>` cells (not the
+  `<tr>`) so they stay pinned while the table body scrolls inside
+  its own container.
+- `TournamentLobby`: the three stat cards and the join/leave card
+  now share one row on large screens (`grid-cols-12`: stats take 7
+  columns, join/leave takes 5) instead of stacking full-width above
+  the table, so the same information fits in far less vertical
+  space.
+- `AdminDashboard`: each tab's header row now also shows compact
+  `StatChip` summaries (total/captain/player counts for 已注册用户;
+  total/active counts for 邀请码管理) next to the search box or
+  "生成邀请码" button, so the freed-up horizontal space surfaces
+  useful counts instead of staying empty. These are derived client-side
+  from `users`/`invites` via `useMemo` — no new RPCs. The 已注册用户
+  chips intentionally summarize `tournament_role` (队长/队员), not
+  `permission_role` — see Section 22.
+
+## 18. Gender Field (Phase 4 UI Enhancement)
+
+`accounts.gender` (`'male' | 'female'`, nullable at the table level)
+is required at registration and is display-only for now — it has no
+effect on permissions, matchmaking, drafting, or any other
+functionality. Treat it purely as a profile attribute unless a future
+phase explicitly says otherwise.
+
+- Registration: a `性别` field sits directly below `身份` on the
+  Registration form (男生 / 女生, same required-radio-button pattern
+  as 身份). `register_account()` takes a new required `p_gender`
+  param, validates it the same way `p_tournament_role` is validated,
+  and raises `invalid_gender` (mapped client-side to "请选择性别") if
+  missing or invalid.
+- Accounts created outside `register_account()` — currently just the
+  seeded `admin`/Developer account — have `gender = null`, the same
+  way that account already has `tournament_role = null`. Display code
+  must treat `null` as "unknown", not crash or assume a default.
+- Display: wherever player info is already shown as a table
+  (Admin Dashboard's 已注册用户 list, Tournament Lobby's participant
+  list), there's now a `性别` column showing only a small icon — blue
+  Mars symbol for 男生, pink Venus symbol for 女生, a muted dash for
+  unknown/null. No text label next to the icon; the icon alone is the
+  content. Any future Player Card should follow the same icon-only
+  convention. The icon is a small inline SVG (not the Unicode ♂/♀
+  glyphs) so it stays visually consistent with the rest of the
+  project's stroke-based icon set.
+- Gender is not editable from the Admin Dashboard's edit-user dialog
+  — only set once, at registration. Add that later only if a future
+  phase explicitly asks for it.
+
+## 19. Bug Fix: Registration Avatar Upload
+
+Symptom: selecting an avatar during registration always made
+registration fail with a generic "头像上传失败" message; leaving the
+avatar empty always worked.
+
+Two real problems, both fixed at the root rather than worked around:
+
+1. **Section 8 (Storage bucket) never actually created the `avatars`
+   bucket or its RLS policies** — it only left a comment saying to do
+   that manually via the Dashboard. If that manual step was never
+   done on a given project, `uploadAvatar()` in `src/lib/auth.js`
+   fails every single time at the Supabase Storage layer ("Bucket not
+   found", or a permission error if the bucket exists without an
+   INSERT policy) — regardless of anything on the client. Section 8
+   now attempts to auto-provision the bucket + public
+   read/insert policies on `storage.objects` itself, wrapped in an
+   exception handler so it's a harmless no-op (with a `NOTICE`) on any
+   project where the connecting role doesn't have enough privilege to
+   touch the `storage` schema — see that section for the fallback
+   manual steps, only needed if the NOTICE fires.
+2. **`uploadAvatar()` was routing storage errors through
+   `friendlyError()`**, which only knows the Postgres exception codes
+   raised by this project's own auth RPCs (`invalid_username`,
+   `invite_expired`, etc.). A storage error never matches any of
+   those, so it always fell back to the same generic message no
+   matter the real cause, which is exactly what made this bug hard to
+   diagnose. `uploadAvatar()` now throws the real
+   `error.message` from Supabase Storage (prefixed with `头像上传失败：`
+   for context), so a future upload failure is actually debuggable
+   from the toast instead of always looking identical.
+
+Registration behavior otherwise unchanged: no avatar selected still
+skips upload entirely and works exactly as before; a successful
+upload still gets linked to the new account via `p_avatar_url` on
+`register_account()`, same as originally designed.
+
+## 20. Bug Fix: Registration Created an Active Login Session
+
+Symptom: register a new account -> land back on the Login tab as
+intended -> immediately trying to log in with that same account fails
+with `account_already_logged_in` ("该账号已登录。请先退出当前登录后再尝试。"),
+until the session timeout (Section 15) expired on its own.
+
+Root cause: `register_account()` was doing more than registering. At
+the end of the function it also ran
+`insert into public.sessions (account_id) values (v_account.id)` and
+upserted a `public.presence` row, i.e. it logged the new account in
+and marked it online as a side effect of registering, even though the
+UI never treated registration as a login (`AuthPage.jsx` always calls
+`switchMode('login')` after a successful register, never
+`onLoggedIn`). That orphaned session then made `login_account()`'s
+`_has_active_session()` check (Section 15 -- Single Active Session Per
+Account) see the brand-new account as already logged in on the very
+next login attempt, since nothing had ever called `logout_session()`
+to close it.
+
+Fix, at the root: `register_account()` no longer touches
+`public.sessions` or `public.presence` at all -- it only inserts into
+`public.accounts` and `public.credentials` and returns
+`{ account }` (no `token`). `src/lib/auth.js`'s `register()` no longer
+calls `storeToken()` after registering, since there is no token to
+store. `login_account()` is unchanged and remains the only place a
+session/presence row is ever created for an account -- registration
+and login are now fully separate, matching the ask: a new account can
+log in immediately, and is not considered "online" until it actually
+does.
+
+## 21. Admin Dashboard: Edit User Improvements
+
+`EditUserModal` (in `AdminDashboard.jsx`) now also supports:
+
+- **Avatar editing**: the same picker UI as `AuthPage.jsx`'s
+  registration form (circular preview, camera-badge upload button),
+  pre-filled with the user's current avatar. It reuses
+  `uploadAvatar()` from `src/lib/auth.js` unchanged -- there is only
+  ever one avatar upload code path in the app. Choosing a new file
+  uploads it on submit, same timing as registration; leaving it
+  untouched sends `p_avatar_url = null` to `edit_user()`, which reads
+  as "don't touch the existing avatar" (`coalesce(p_avatar_url,
+  avatar_url)`), the same convention already used for the optional
+  password field.
+- **Gender editing**: a `GenderToggle` (男生/女生), same component
+  pattern as `RoleToggle`. `edit_user()` now takes a required
+  `p_gender` and validates it exactly like `register_account()` does.
+  Because both tables that display `GenderIcon` (已注册用户 and
+  参赛玩家) subscribe to realtime `accounts` changes already, an edit
+  here updates the icon everywhere immediately with no extra wiring.
+
+**Developer Account Protection** (security-relevant -- enforced at
+both layers, not just the UI):
+
+- Frontend: in the 已注册用户 table, the 编辑 button is hidden for any
+  row where `permission_role = 'developer'` unless the viewer
+  themselves is a Developer (`isDeveloper || u.permission_role !==
+  'developer'`). This mirrors how the 删除 button is already hidden
+  for Developer rows entirely.
+- Backend (the actual enforcement point): `edit_user()` now selects
+  the target account first and rejects with `cannot_edit_developer`
+  if the target's `permission_role` is `'developer'` and the acting
+  session's `permission_role` isn't -- regardless of what the UI
+  shows, so a crafted RPC call bypassing the hidden button is still
+  rejected. A Developer editing another Developer account is
+  unaffected. This is intentionally a different rule from
+  `delete_user()`'s Developer check (Section 10/16), which blocks
+  deleting a Developer account for *everyone*, including other
+  Developers -- editing a Developer account is allowed for Developers,
+  only Admins are blocked.
+
+## 22. Admin Dashboard: 已注册用户 Stats Now Show Tournament Role, Not Permission Role
+
+The three `StatChip`s above the 已注册用户 table were originally
+总用户/管理员/开发者 (`userCounts.total/admins/developers`, counting
+`permission_role`). Changed to 总用户/队长/队员
+(`userCounts.total/captains/players`, counting `tournament_role`) --
+this is a tournament management dashboard, so the at-a-glance summary
+should reflect tournament roles (队长/队员), not who has admin access.
+`permission_role` (开发者/管理员/普通用户) is untouched everywhere else
+-- `PermissionBadge` still shows it per-row in the same table, and it
+still fully controls what an account can do. This section is display
+scope only.
+
+Still derived client-side from the same realtime-subscribed `users`
+list via `useMemo`, so editing a user's 身份 (tournament role) --
+whether via `EditUserModal` or any future path -- recomputes these
+counts automatically with no extra wiring, exactly like before.
+
+## 23. Draft System UI Completed (Phase 5)
+
+Phase 5 – Draft System UI Completed. This phase brought in the
+finished DraftArena UI — built and animated externally, as its own
+self-contained module — and integrated it into the main project. Per
+Section 6/7's development rules, this replaces the earlier
+in-progress "Top Bar only" version (previously documented in this
+same section); this is now a full, working Draft Arena screen, not a
+placeholder shell. Real-time sync / backend integration is a separate
+future phase and is **not** part of this entry (see "What's still
+outside this phase" below).
+
+### What DraftArena.jsx now contains
+
+`src/components/DraftArena.jsx` was replaced wholesale with the
+completed implementation. Its drafting logic, UI, animations, and
+team-assignment behavior were preserved exactly as delivered — this
+integration only wired one navigation prop through (see "Integration
+changes" below). At a high level, the file now implements:
+
+- **Captain-assignment phase** — click a captain candidate, then click
+  an empty team card to assign them; a "card slide" flight animation
+  (Web Animations API, a ghost clone flown from source card to
+  destination slot) plays on every assignment.
+- **Snake-order teammate draft** — once all 8 captains are assigned
+  and the 4 round orders validate, "锁定并开始队员选秀" locks the
+  round order and starts a custom snake draft (`computeDraftMeta`
+  derives the pick sequence, active team, and round label from
+  `tournament.roundOrders`). Clicking a pool player commits the pick
+  to whichever team is on the clock, with the same flight animation.
+- **Undo** — a full history stack (`draftHistory`) snapshots team/pool
+  state before every pick; "撤销上一次选择" pops the last snapshot,
+  works across both the captain and teammate phases, and shows a
+  count badge.
+- **Live team grid** — all 8 `TeamCard`s (captain + 4 roster slots
+  each) re-render from `tournament.teams` in real time as picks land,
+  including an animated "选人中" indicator on the team currently on
+  the clock.
+- **Draft sequence strip** — a full pick-by-pick strip (`R{n}` + team
+  index chips) showing past/current/upcoming picks once the teammate
+  phase starts.
+- Its own self-contained visual system (`GlobalStyle`, the Orbitron
+  display font, `PanelFrame`/`PrimaryButton`/`PlayerStatCard`/etc.,
+  and the mint-toned player stat cards) — this is intentionally
+  separate from the rest of the app's Tailwind teal-glow dark theme
+  (Section 12/17); it was not restyled to match, per this phase's
+  "do not modify UI" instruction. It still fits inside the app's
+  overall dark shell visually since it renders its own full-bleed dark
+  radial background.
+
+### Integration changes (this is genuinely everything that changed)
+
+1. **Navigation wiring** — the default export (`DraftArenaPage`) now
+   accepts an `onExitToLobby` prop and passes it through as the inner
+   `DraftArena`'s `onBack` (previously a no-op `() => {}`, since the
+   file was built and tested as a standalone page). `App.jsx` already
+   passed a prop named `onExitToLobby` to `<DraftArena />` from the
+   earlier Top-Bar-only version, so no other file needed to change —
+   the existing `#draft` hash route (Section 16/22's routing pattern)
+   and the Tournament Lobby's "开始比赛" → `hash = 'draft'` wiring
+   both continue to work unmodified.
+2. Nothing else. The captain-assignment logic, snake-draft logic,
+   undo/history stack, flight animations, and every presentational
+   component are byte-for-byte what was delivered.
+
+Clicking the Draft Arena's own back button (labelled "← 返回选手管理"
+in the delivered UI — left as-is per "do not modify UI") now
+navigates back to the Tournament Lobby, same as the temporary dev
+button in the earlier version.
+
+### What's still outside this phase
+
+- **Real accounts / roster data.** `seedTournament()` still seeds an
+  empty `captainCandidates: []` and `pool: []` (8 team panels exist as
+  real structure, just with nothing assigned) — this was intentional
+  in the delivered file and is explicitly left for the next phase.
+- **Real-time data synchronization / backend integration** — picks,
+  undo, and captain assignment currently only exist in local React
+  state (`useState` in `DraftArenaPage`); nothing is persisted to
+  Supabase or shared between clients yet. This is the next planned
+  phase and was not started here.
+- The 4 stat values on every player card (胜率/冠军/擅长位置/天梯分)
+  remain deterministic placeholders derived from the player's id, not
+  real data — called out as such in the delivered file's own comments.
+
+## 24. Draft Arena: Tournament Settings Synchronization (Phase 5)
+
+The first synchronization work between the Tournament Lobby and the
+Draft Arena. Scope: only Tournament Settings (锦标赛设置) — Tournament
+Name, Number of Teams, Players per Team, Draft Order. Draft logic,
+captain draft, player draft, animations, team assignment, draft flow,
+and UI layout are unchanged (aside from adding the Tournament Name to
+the existing Top Bar, which did not change its height/layout). Real
+draft data / live real-time state sync is a separate, later phase and
+was not started here.
+
+### What was hardcoded before, and what replaced it
+
+`DraftArena.jsx` was originally built and delivered as a standalone
+page (Section 23) and assumed a fixed 8-team, 4-round, 5-player-per-
+team tournament throughout. Every one of those assumptions was
+replaced with values derived from `fetchTournamentSettings()`
+(Section 16):
+
+- `roundOrders: ["12345678", "87654321", "12345678", "87654321"]` in
+  `initialTournament()` → now passed in, built by the new
+  `buildRoundOrders(settings)` helper in `DraftArenaPage`.
+- `parseRoundOrder()`'s hardcoded `n <= 7` bound and
+  `computeDraftMeta()`'s two hardcoded `=== 8` checks (round-order
+  validity, all-captains-assigned) → both now take a `teamCount`
+  parameter instead.
+- `seedTournament()`'s `Array.from({ length: 8 }, ...)` teams and
+  `slots: [null, null, null, null]` (4 roster slots) → now
+  `seedTournament(teamCount, playersPerTeam, roundOrders)`, building
+  `teamCount` teams with `playersPerTeam - 1` roster slots each (the
+  captain fills the remaining seat — same relationship the Draft Order
+  Settings dialog already uses via `draftRoundCount()`).
+- The "加载中…" guard (`teams.length !== 8`) and the "全部8支战队"
+  heading → `teams.length === 0` (loading until settings resolve) and
+  `全部{teamCount}支战队`, both driven by `teams.length` at render
+  time rather than an assumed constant.
+
+`POSITIONS` (the 5 fixed Carry/Mid/Offlane/Soft Support/Hard Support
+role labels cycled onto roster slot badges) was intentionally left
+alone — it's game-role naming, not a Tournament Setting, and isn't
+part of what the Lobby's settings dialog configures.
+
+### Data flow
+
+`DraftArenaPage` (the default export) calls `fetchTournamentSettings()`
+in a `useEffect` on every mount — i.e. every time "开始比赛" is
+clicked and the Draft Arena page opens, it loads whatever was most
+recently saved in the Lobby's Tournament Settings dialog (Section 16).
+Draft Order specifically: it reuses the admin's actually-saved
+`draftOrder` when its round count matches `draftRoundCount
+(playersPerTeam)`, otherwise falls back to `generateSnakeDraft()` —
+the exact same "saved-or-default" logic already used by
+`TournamentSettingsDialog.jsx` — then converts it from that shared
+`[[1,2,...],[8,7,...]]` array-of-numbers shape into DraftArena's
+internal comma-separated round-order strings.
+
+Until settings resolve, `tournament.teams` starts empty and the
+existing "加载中…" state (now driven by `teams.length === 0` instead
+of `!== 8`) covers the brief loading window; if the fetch fails
+outright, a small local fallback (`teamCount: 8, playersPerTeam: 5`,
+matching `fetchTournamentSettings()`'s own defaults) is used so the
+page still renders instead of getting stuck.
+
+This is explicitly **fetch-on-open**, not live: if the Lobby's
+settings are changed while someone already has the Draft Arena open,
+they won't see the change until they leave and re-enter the page.
+Making it live/real-time (and syncing the actual draft state itself,
+not just settings) is the next planned phase and was intentionally
+not started here.
+
+### Tournament Name in the Top Bar
+
+Added inline on the existing phase-badge row in the Top Bar's center
+column (small muted text + a thin vertical divider, ahead of the
+"第一阶段 —— 队长分配" / "第二阶段 —— 队员选秀" pill) — this was the
+one part of the Top Bar's layout touched in this phase, and it adds no
+extra row/height, matching the existing muted-text visual language
+used elsewhere in the bar (e.g. the `text-white/40` sub-labels).
+
+## 25. Tournament Participant Synchronization (Phase 5)
+
+Scope: wire the Draft Arena's Captain Pool / Player Pool to real
+joined Tournament participants, add two temporary dev/testing buttons
+to the Tournament Lobby, and validate 开始比赛 against the current
+Tournament Settings. Draft logic, captain draft, player draft,
+animations, team assignment, and draft flow are all unchanged. Live
+draft-state synchronization between multiple users (picks, undo,
+animations) is a separate, later phase and was **not** started here.
+
+### Captain Pool / Player Pool now come from real joined participants
+
+`DraftArenaPage` (`DraftArena.jsx`) now calls `fetchLobby()` — the
+exact same `tournament_participants` + `accounts` query the Tournament
+Lobby itself renders from (Section 16) — alongside
+`fetchTournamentSettings()`, on every mount. The result is split by
+Tournament Role (`captain`/`player`) into `captainCandidates` and
+`pool`, each mapped to `{ id: accountId, name: displayName, avatarUrl
+}` via a small `toDraftPlayer()` helper. Only accounts with an actual
+`tournament_participants` row ever appear — by construction of
+`fetchLobby()` itself, nobody who hasn't joined the tournament can end
+up in either pool.
+
+This is the same "fetch real shared data on open" pattern already
+used for Tournament Settings (Section 24), deliberately not a literal
+prop hand-off through `App.jsx`/`TournamentLobby.jsx` — the practical
+result (accurate, correctly-sized real participant pools instead of
+the previous always-empty placeholder arrays) is identical, and it
+avoids adding any new coupling between the two pages' navigation.
+Like Tournament Settings, this is fetch-on-open, not live: someone who
+joins or leaves the tournament after the Draft Arena is already open
+won't be reflected until it's re-opened. Real-time draft-state
+synchronization (this and the actual pick/undo/animation state) is
+the next planned phase.
+
+### Temporary Testing Buttons (Tournament Lobby)
+
+Two Admin/Developer-only buttons, styled and positioned alongside the
+existing 随机摇号 / 清空参赛名单 controls:
+
+- **创建临时玩家** — calls the new `create_temp_participants(p_token,
+  p_captain_count, p_player_count)` RPC with counts computed live from
+  the current Tournament Settings (`requiredCaptains` = Number of
+  Teams, `requiredPlayers` = Number of Teams × (Players per Team − 1)
+  — the same formula the 开始比赛 validation below uses). The function
+  creates that many real `accounts` rows (real `credentials` too, with
+  a fixed dev password `temp123`, so they're usable for manual login
+  testing as well) — gender alternated male/female within each
+  captain/player group, `tournament_role` set accordingly — and
+  immediately joins every one of them to the tournament in the same
+  call. Bypasses the invite-code gate on purpose: this is a
+  developer/testing convenience, not a real registration path.
+- **移除临时玩家** — behind a confirmation dialog (same `ConfirmDialog`
+  pattern as 清空参赛名单), calls `remove_temp_participants(p_token)`,
+  which deletes every account this feature ever created and nothing
+  else.
+
+**Marking mechanism:** `accounts.is_temp` (boolean, default `false`,
+added the same idempotent way `roll_number`/`draft_order` were). Every
+account `create_temp_participants` creates has `is_temp = true`; every
+account created through `register_account` keeps the default `false`.
+`remove_temp_participants` is a single `delete from accounts where
+is_temp = true` — `credentials`, `tournament_participants`, and
+`presence` rows for those accounts are all removed automatically via
+their existing `on delete cascade` foreign keys, so no other table
+needs to be touched by hand. Both RPCs are gated by the same
+`_require_role(..., array['admin', 'developer'])` used throughout the
+Tournament Lobby's other admin actions. No new Realtime wiring was
+needed: created/removed accounts and their `tournament_participants`
+rows flow through the exact same subscriptions `fetchLobby`/
+`subscribeLobby` already use, so both buttons' effects sync live to
+every open browser like any other join/leave.
+
+### 开始比赛 validation
+
+Before navigating to the Draft Arena, `handleStartTournament` in
+`TournamentLobby.jsx` now checks the currently-joined roster against
+the currently-loaded Tournament Settings, computed the same way for
+both this and 创建临时玩家 above:
+
+- `requiredCaptains` = Number of Teams
+- `requiredPlayers` = Number of Teams × (Players per Team − 1)
+- `requiredTotal` = their sum
+
+All three must match exactly — `currentTotal === requiredTotal &&
+currentCaptains === requiredCaptains && currentPlayers ===
+requiredPlayers` — checking total separately from the captain/player
+split (rather than assuming total implies the split) also catches the
+edge case of a joined participant with no Tournament Role at all
+(possible today only for the seeded `admin` account, which has
+`tournament_role = null` and could technically click 参加比赛 — see
+Section 5/18). Any mismatch opens `StartValidationDialog` instead of
+navigating: a small blocking modal (its own component, not
+`ConfirmDialog`, since there's nothing to confirm — just one dismiss
+button) showing all three required-vs-current pairs plus a plain-
+language "需要修正" list (e.g. "还需要 3 名队员" / "队长人数超出 1
+人，请移除多余的队长"). Only when all three match exactly does
+开始比赛 proceed to `hash = 'draft'`, same as before.
+
+`TournamentLobby.jsx` now loads Tournament Settings itself
+(`fetchTournamentSettings()`, previously only `TournamentSettingsDialog`
+did) on mount and again whenever that dialog saves — needed so both
+创建临时玩家's counts and the 开始比赛 validation always reflect the
+latest saved settings, without adding `tournament_settings` to the
+Realtime publication (still deliberately not on it, per Section 16).
+
+## 26. Bug Fixes: 清空参赛名单 Failure & Draft Card Reveal Timing
+
+Two fixes, unrelated to each other, both scoped to exactly the bug
+reported.
+
+### 清空参赛名单 always failing
+
+Symptom: clicking 清空参赛名单 always showed the generic
+"清空参赛名单失败" toast.
+
+Investigation: `clear_tournament(p_token)` itself was verified
+correct by actually running the full, current `supabase/schema.sql`
+against a real local Postgres instance end-to-end (every `CREATE
+FUNCTION`, the full `GRANT`, all RLS policies) and then exercising the
+function directly — logging in as the seeded admin, joining
+participants, calling `clear_tournament` with that session, and
+confirming the participant count dropped to 0 with no error. The
+function, its grant, and every other statement in the file are
+correct as written; this ruled out a logic bug in `clear_tournament`
+or a mistake introduced by the Phase 5 additions (`is_temp`,
+`create_temp_participants`, `remove_temp_participants`) sharing the
+same file.
+
+Root cause: PostgREST (Supabase's REST/RPC layer) caches the database
+schema, and doesn't always notice DDL applied by pasting a large
+multi-statement file into the SQL Editor the way it does for changes
+applied through the Supabase CLI's migration flow (which triggers a
+reload automatically). This is a well-known class of bug where an RPC
+function is provably correct at the database level but still fails
+through the app with a generic error, because the layer between them
+is looking at a stale schema snapshot.
+
+Fix, at the root rather than a workaround: `supabase/schema.sql` now
+ends with `notify pgrst, 'reload schema';`, which is the documented
+way to force PostgREST to pick up whatever this file just changed.
+This isn't specific to `clear_tournament` — it protects every current
+and future function/table/column this file touches from the same
+class of bug after any future re-run, not just this one symptom.
+**Action needed:** re-run the updated `schema.sql` (idempotent, safe
+against the existing database). If any RPC still misbehaves
+immediately afterward, use Supabase Dashboard → Project Settings →
+Data API → "Reload schema" as a manual fallback (or restart the
+project) — the `NOTIFY` may not reach a PostgREST instance that isn't
+listening for any reason specific to a given project's setup.
+
+### Draft card appearing before the flight animation lands
+
+Symptom (Draft Arena, captain/teammate assignment): the assigned
+card briefly flashed inside the Team panel slot right after clicking,
+disappeared while the flying "card slide" animation was still in
+flight, then reappeared once it landed — instead of staying invisible
+in the panel for the entire flight and appearing exactly once, on
+landing.
+
+Root cause: the panel slot's wrapper `<div>` (`data-slot-key`) is a
+persistent DOM node across the assignment — React doesn't remount it,
+it just swaps its content (placeholder → real card) and its `opacity`
+(1 → 0) in the same commit as the assignment. That div had `transition:
+"opacity .15s ease"` on it. A same-commit style change on a node that
+already existed is exactly the situation a CSS transition animates:
+the browser interpolated `opacity` from 1 down to 0 over 150ms *of the
+new (real card) content*, i.e. a visible fade-out of the just-assigned
+card — the "briefly appears" the user saw — followed by the reverse
+150ms fade-in when the flight lands and the slot is revealed again.
+
+Fix: removed `transition: "opacity .15s ease"` from both the captain
+slot and the roster slot styles in `TeamCard` (`DraftArena.jsx`) —
+opacity now snaps instantly between 1 and 0, so the real card is never
+partially visible while hidden. The existing "landing" visual (the
+`dfSettle` scale-pop keyframe, added via the `df-settle` class exactly
+when the flight's `settle()` fires) still plays unchanged, so the
+reveal still reads as an intentional animated arrival — it just no
+longer double-exposes the card via an unrelated opacity fade first.
+Nothing about the flight itself (the ghost clone, the Web Animations
+API tween, `df-hit`, timing/duration) was touched, per "keep the
+current animation style, only fix the reveal timing."
+
+## 27. Follow-Up Fixes: clear_tournament WHERE Clause & Captain Slot Layout Stability
+
+Two more fixes, reported after Section 26's initial pass, both scoped
+to exactly what was reported.
+
+### clear_tournament: the actual root cause
+
+Section 26 fixed a suspected PostgREST schema-cache staleness issue
+for 清空参赛名单 (added `notify pgrst, 'reload schema';`) after
+verifying `clear_tournament`'s logic was correct by running it against
+a real local Postgres. That verification was accurate but incomplete:
+the local test Postgres instance didn't have the specific safety
+mechanism this Supabase project's live instance enforces, so the test
+couldn't have caught it. The real error, from the network response,
+was Postgres error `21000`: **"DELETE requires a WHERE clause."**
+
+Root cause: this Supabase project's database enforces "no bare
+DELETE/UPDATE" as a safety rule at the query-executor level — it
+applies regardless of whether the DELETE is issued directly or from
+inside a `SECURITY DEFINER` function, so `clear_tournament`'s
+`delete from public.tournament_participants;` (no `WHERE`, intentionally
+deleting every row) was rejected outright every time, regardless of
+who called it or with what permissions — which is exactly why it
+"always" failed.
+
+Fix, in the RPC itself (not the frontend, per the request): the
+statement is now `delete from public.tournament_participants where
+true;`. `where true` is the standard, explicit form of "match every
+row" — it satisfies the safety rule's requirement for a `WHERE` clause
+to be *present* while preserving the exact original behavior of
+deleting every current participant; it is not a narrower condition.
+Checked every other `delete from` in the file for the same
+bare-DELETE pattern — `clear_tournament` was the only one; every other
+DELETE (`logout_session`, `delete_user`, `leave_tournament`,
+`remove_participant`, `remove_temp_participants`, the pg_cron session
+cleanup) already has a real `WHERE` clause.
+
+Re-tested the same way as Section 26: ran the full, current
+`schema.sql` against a real local Postgres end-to-end, then called
+`clear_tournament` directly (logged in as the seeded admin, joined two
+test participants, called the function with that session) and
+confirmed the participant count dropped from 2 to 0 with no error.
+**Action needed:** re-run the updated `schema.sql` (idempotent, safe;
+already ends with the `NOTIFY` from Section 26 too).
+
+### Team panel reflowing during Captain assignment, but not Player assignment
+
+Symptom: assigning a Captain caused the Team panel to visibly
+shift/resize slightly during the flight animation; assigning a
+Player/teammate didn't.
+
+Root cause: in `TeamCard` (`DraftArena.jsx`), the roster (Player)
+slots always render the *same* persistent wrapper `<div
+data-slot-key=...>` regardless of state — only its inner content and
+opacity change. The captain slot didn't follow that pattern: it was a
+ternary between two structurally different top-level elements — a
+"→ 分配队长" dashed prompt box (shown while `canAssign` was true) versus
+a separate box for the assigned/empty state (only *this* one carried
+`data-slot-key` and the hide/reveal opacity logic). `canAssign`
+(`assignable && !team.captain`) flips to `false` for **every** team
+card at once the instant any captain is assigned — `assignable` comes
+from a single page-level `!!selectedCaptain` flag, and assigning a
+captain both fills `team.captain` and clears `selectedCaptain` in the
+same click handler. So on every single captain assignment, the prompt
+box was unmounted and a different element mounted in its place across
+every still-unassigned team card simultaneously — a real DOM
+structural change (not just a style/content update on a stable node),
+which is what was visibly reflowing the panel. Player slots never had
+an equivalent "prompt vs. assigned" element swap, which is why only
+Captain assignment showed the issue.
+
+Fix: merged the captain slot into one persistent wrapper `<div
+data-slot-key={cap:teamIdx}>`, matching the roster slot's existing
+pattern exactly — `canAssign` now only toggles that single element's
+inline `style` (background/border/box-shadow) and which children
+render inside it (prompt / assigned captain / "等待队长" placeholder),
+the same way the roster slot already toggles its own content without
+ever swapping which element exists. Every visual detail (colors,
+dashed vs. solid border, the "+" / "→ 分配队长" prompt, the assigned
+captain's avatar/name/badge, the "等待队长" placeholder) is pixel-for-
+pixel unchanged — only *how* those states are reached (update vs.
+remount) changed. Nothing about the flight animation, `dfSettle`,
+`hiddenKeys`, or any other part of the draft flow was touched.
+
+## 28. Follow-Up Fix: Captain Row Height (the actual cause of the Team Panel reflow)
+
+Section 27's DOM-remount fix for the captain slot was a real
+correctness fix (remounting a differently-shaped subtree on every
+assignment was genuinely wrong, and worth eliminating on its own) —
+but it turned out not to be the *whole* cause of the Team panel
+visibly growing/shifting when a Captain was assigned. Re-tested
+side-by-side (empty captain row vs. assigned captain row) and found
+the real culprit: **the assigned row was simply taller than the empty
+row**, due to sizing on `CaptainBadge`, not DOM structure.
+
+Root cause: the empty/prompt captain row's height is driven entirely
+by its fixed 34×34px icon box (the "?" placeholder or the "+" assign
+icon) — text next to it is a single short line, well under 34px, so
+it never affects the row's height. The *assigned* row's right side,
+by contrast, stacks two things vertically next to the (also 34px)
+`Avatar`: the captain's name, then (2px margin below it) the
+`CaptainBadge` pill. `CaptainBadge` was using `text-xs` (12px) with
+`py-1` (4px top/bottom) — combined with the name line above it, this
+stacked column came out taller than 34px, so the flex row (`items-
+center`, no fixed height) grew to fit it instead of the 34px avatar —
+which is exactly what pushed the roster slots below it downward and
+grew the panel.
+
+Fix, confined to just `CaptainBadge` and the adjacent name line's
+line-height (no other spacing/structure touched): shrunk the badge to
+`text-[9px] px-1.5 py-0.5 leading-none` (was `text-xs px-2.5 py-1`,
+no explicit `leading`), and added `leading-tight` to the captain name
+line so its line-height is predictable rather than the browser
+default. With these, the stacked "name + badge" column now comes out
+to roughly 14px (name) + 2px (margin) + 15px (badge, including its
+1px border) ≈ 31px — comfortably under the 34px `Avatar`, so the
+`Avatar` is once again the tallest element in the row in every state
+(empty, "→ 分配队长" prompt, and assigned), making the row — and so
+the whole Team panel — exactly the same height regardless of whether
+a Captain has been assigned. Draft logic, the flight animation, and
+the Team panel's own layout/sizing (`TEAM_CARD_W`, padding, gaps) were
+not touched — this was purely a matter of the badge/name being too
+tall for the row they sit in.
+
+## 29. Follow-Up Fix: Captain Row Now Uses a Fixed Reserved Height
+
+Section 28's fix (shrinking `CaptainBadge` / tightening the name's
+line-height so the assigned row's content came out just under 34px)
+worked, but it was a size-tuning approach: it made the two states
+match by carefully balancing content dimensions against each other,
+which is fragile — any future change to the badge, name, or avatar
+size could silently reintroduce the mismatch. Replaced it with a
+structural fix instead, per the request to stop tuning sizes and
+instead make the row *reserve* fixed space regardless of content.
+
+Change: added `CAPTAIN_SLOT_H = 46` (the row's own natural height —
+34px avatar/icon + 6px top/bottom padding from `p-1.5`) and applied it
+as an explicit `height` (with `boxSizing: "border-box"`, so the
+padding is included rather than added on top, and `overflow:
+"hidden"` as a guard against any future content ever being taller
+than the reserved space) directly on the captain slot's wrapper `div`
+— the same single persistent element from Section 27, still shared by
+all three states (empty, "→ 分配队长" assignable-prompt, assigned).
+Because this `height` is now explicit rather than derived from
+content, all three states are pinned to the exact same 46px box from
+the very first render, before any captain is ever assigned — not just
+"currently the same size" as a side effect of matching content
+dimensions. The assigned state's appearance is completely unchanged
+(46px is exactly what it already measured before this change, so
+nothing about it moved, resized, or was re-tuned) — only the *empty*
+and *prompt* states are now explicitly forced to reserve that same
+space rather than sizing to their own (already-smaller) content.
+
+This directly guarantees every part of what was asked: the Team panel
+can never change height when a Captain is assigned, the roster slots
+below it can never move, and there is zero vertical movement of the
+Team card at any point — because the row's size no longer depends on
+what's inside it at all.
+
+## 31. Follow-Up Fix: Player Avatar Rendering as a Circle in the Team Panel
+
+Reported: roster/player avatars inside the Team panel showed as
+circles, while Captain avatars correctly showed as squares with
+rounded corners, even though both use the exact same `Avatar`
+component (`DraftArena.jsx`) — the Captain slot renders it at
+`size={34}`, the roster/player slot at `size={20}`.
+
+Root cause: `Avatar` used a **fixed** `borderRadius: "10px"`,
+independent of `size`. On the Captain's 34px box, a 10px radius is
+~29% of the box — a modest, clearly-square-with-rounded-corners look.
+On the roster/player slot's smaller 20px box, that same flat 10px
+radius is exactly **50%** of the box — which CSS renders as a full
+circle, not "rounded corners." Same component, same styling code;
+only the `size` prop differed, and the radius wasn't scaling with it.
+
+Fix, scoped to just the `Avatar` component's two `borderRadius`
+values: replaced the fixed `"10px"` with `Math.round(size * (10/34))`
+— the exact ratio the Captain avatar already uses at its current size,
+so `size={34}` still computes to precisely `10px` (pixel-for-pixel
+identical to before — the Captain avatar's "already correct" style
+was left completely untouched, per the request), while `size={20}`
+now computes to `6px` (30% of the box — a proper rounded square, not
+a circle). 6px on a ~20-36px avatar also happens to match the
+Tournament Lobby's own avatar convention (`rounded-md` = 6px) almost
+exactly, so this brings the Team panel's player avatars in line with
+the rest of the project's avatar styling, not just internally
+consistent with the Captain avatar. Avatar size, border, glow,
+background, and every other part of `Avatar` — plus the Team panel's
+layout/spacing and everything about the draft/animation logic — were
+left untouched.
+
+
+## 30. Follow-Up Fix: Top Bar/Header Now Uses a Fixed Height
+
+Reported after Section 29: the Team panel was now stable, but the top
+bar/header itself still changed height right around the first Captain
+assignment.
+
+Investigation — comparing the header's left column (the two stacked
+buttons) before vs. after the first assignment, per the request:
+before any pick, "↩ 撤销上一次选择" is disabled and shows no count
+badge; after the first pick, `draftHistory.length > 0`, so the button
+becomes enabled *and* an inline count badge (`{draftHistory.length}`)
+appears next to its label. That badge had no explicit `leading`, so
+its line-height came from the browser's default ("normal", font-metric
+-dependent) rather than a value guaranteed to be shorter than the
+button's own `text-xs` line-height (16px) — meaning it was plausible,
+depending on font metrics, for the badge's appearance to be the thing
+that (barely) grows the button, and therefore the header. This matches
+what was suspected.
+
+More broadly, though, the header's overall height was never fixed in
+the first place — it was fully auto/content-derived (the button
+column, the center text column with phase-dependent line counts, and
+the progress-bar row all just summed to whatever their content
+required), so *any* future content difference between states (not
+just this specific badge) could in principle move it again.
+
+Fix, matching the same approach as Sections 27-29 (reserve fixed
+space rather than tune content to match): added `HEADER_H = 160` and
+applied it as an explicit `height` (with `boxSizing: "border-box"` and
+`overflow: "hidden"`) directly on the header's own `PanelFrame`
+instance via its `style` prop — `PanelFrame` is a shared component
+used by two other panels elsewhere on this page, so this was applied
+as a per-instance style override, not a change to the component
+itself, and those other panels are unaffected. `HEADER_H` was sized
+generously for the tallest realistic content across *every* draft
+phase (including the teammate-phase round-label line that doesn't
+exist during the captain phase, and allowing room for a wrapped
+2-line subtitle), so the header cannot need to grow for any state the
+draft actually produces. Also added `leading-none` to the undo-count
+badge specifically — a zero-visual-change fix (only affects line-
+height, not font-size/padding/appearance) that removes the original
+font-metric ambiguity outright, on top of the container-level fix.
+
+Together these mean the header is pinned to the same 160px from the
+very first render, through every phase of the draft, regardless of
+whether a Captain has been assigned, how many picks are in the undo
+history, or which phase-specific text is showing.
+
+## 32. DraftArena Layout Refactor: Full Browser Layout Standard (Phase 5)
+
+Pure layout refactor. The Draft Arena page now follows the same Full
+Browser Layout Standard (Section 12) already used by the Admin
+Dashboard and Tournament Lobby. Draft logic, draft order, animations,
+synchronization, the database, team-assignment logic, and every other
+piece of existing functionality are untouched — this only changes how
+the page's own containers are arranged and sized.
+
+**What was wrong before.** `DraftArena`'s root element was
+`max-w-[1700px] mx-auto px-4 py-6` — a fixed-max-width, centered,
+plain-document-flow column, unlike every other main page. As more
+teams/candidates/pool players rendered, the whole browser page grew
+taller and the *browser itself* became the scrolling area, which is
+exactly what Section 12's standard forbids for main pages.
+
+**What changed.** Both `DraftArenaPage` (the outer shell,
+`DraftArena.jsx`'s default export) and `DraftArena` (the inner
+component) now follow the identical pattern already established for
+`TournamentLobby`/`AdminDashboard` in Section 17:
+
+- The outer shell is `min-h-screen w-full ... flex flex-col
+  lg:h-screen lg:overflow-hidden`, same as the other two pages.
+- The inner content wrapper dropped `max-w-[1700px] mx-auto` entirely
+  in favor of `w-full` with only edge padding (`px-4 sm:px-5
+  lg:px-6`) — the page now genuinely fills the browser width on any
+  monitor, including ultrawide, instead of stopping at a fixed pixel
+  ceiling.
+- The header `PanelFrame` (already a fixed `HEADER_H = 160`px per
+  Section 30) is `shrink-0`, exactly like the header/stat rows on the
+  other two pages.
+- The team grid and the candidate/draft pool — previously two
+  full-width sections stacked vertically, each contributing to page
+  height — now sit in a `flex flex-col` stack that shares one
+  `flex-1 lg:min-h-0` region: team panels stay on top, the
+  candidate/draft pool stays below, in the same order as the original
+  design. The team-panel area uses `lg:basis-2/5 lg:shrink lg:min-h-0
+  overflow-y-auto` (so it takes up to ~40% of the available height and
+  scrolls internally if there are enough teams to need it) and the
+  pool panel below it takes the rest via `flex-1 lg:min-h-0`.
+- Each section scrolls **internally** — the team grid's wrapper and
+  the pool panel's card list are both `overflow-y-auto` inside a
+  `lg:min-h-0` flex child — instead of the browser window scrolling.
+  This replaces the old pool-only `max-h-[80vh] overflow-y-auto`
+  (viewport-relative, and only applied to the teammate-phase pool)
+  with the same "fill remaining flex space, scroll within it" pattern
+  used everywhere else, applied consistently to the team grid and to
+  both pool states (captain-candidate pool and teammate draft pool).
+- The `全部{teamCount}支战队` heading above the team grid was removed
+  at the user's request — the team panels themselves already make the
+  team count obvious. The "点击一张空战队卡分配给…" hint that used to
+  sit next to that heading during the captain phase is kept, just
+  without the heading it used to follow.
+- Below the `lg` breakpoint, none of the height-constraining classes
+  apply (same convention as Section 17), so mobile falls back to a
+  normal stacked column with ordinary full-page scroll.
+- No sidebar was added — navigation (the "← 返回选手管理" back button)
+  stays exactly where it was, inside the existing fixed-height header,
+  per the standard's "navigation stays in the top header" rule.
+
+**Revision note.** An earlier pass of this same refactor placed the
+candidate/draft pool in a side column to the right of the team grid.
+That was reverted per feedback — the pool belongs below the team
+panels, matching the original design's vertical order, not beside it.
+The side-by-side version is no longer in the codebase; the bullets
+above describe the current (stacked) layout only.
+
+**What did not change.** `TeamCard`, `PlayerStatCard`,
+`DraftSequenceStrip`, `PanelFrame`, `Avatar`/`SquareAvatar`, the card-
+slide flight animation, the undo/history stack, `computeDraftMeta`,
+`seedTournament`, and every prop/handler these components take are
+byte-for-byte the same as before this phase — only the outer
+container `div`s these pieces render inside were rearranged. The
+Draft Arena's own self-contained visual system (Orbitron font, mint
+player cards, the dark radial background) is likewise unchanged, per
+the standing "do not restyle to match the rest of the app" note in
+Section 23.
+
+## 33. DraftArena: Removed Captain-Assignment Hint, Fixed Glow Clipping (Phase 5)
+
+Two small follow-up UI fixes on top of Section 32, both purely
+cosmetic — no draft logic, animation, or functionality touched.
+
+**Removed the captain-assignment hint text.** During the captain
+phase, once a captain candidate was selected, the team-panel section
+showed a line above the grid: `—— 点击一张空战队卡分配给"<name>"`.
+Per feedback this was removed outright (not just hidden) — the empty
+team slots already render an obvious `+ → 分配队长` affordance with a
+green dashed border, so the extra instruction was redundant. Nothing
+else about the captain-selection flow (`handleCaptainClick`,
+`handleTeamSlotClick`, the `canAssign`/`assignable` props feeding
+`TeamCard`'s own green glow) changed.
+
+**Fixed the team-panel highlight glow being clipped.** `TeamCard`
+draws its active/assignable highlight as a `box-shadow` on an
+absolutely-positioned `inset-0` overlay (e.g. `0 0 0 2px ${TEAL}, 0 0
+26px ${TEAL}99` when active), and the active card additionally scales
+up slightly (`scale-[1.03]`). Box-shadow blur paints outside the
+element's own box — roughly 30px beyond the card edge once the ring,
+blur radius, and scale are combined — and CSS clips that kind of
+overflow-paint at the *padding edge* of the nearest ancestor whose
+`overflow` isn't `visible`.
+
+The team-panel section's scroll container (`lg:min-h-0
+overflow-y-auto`, added in Section 32 so the grid scrolls internally
+instead of growing the page) had no padding of its own — it was flush
+against the card row on every side. That's what clipped the glow: the
+active card's shadow had nowhere to bleed into before hitting the
+scroll container's own edge, on whichever side(s) a highlighted card
+happened to sit near.
+
+The fix only touches that one wrapper: it now carries `p-8` (32px on
+every side), which is comfortably more than the glow's ~30px reach, so
+the box-shadow always has room inside the container's padding box
+before the clip boundary. The row-to-row gap inside the flex-wrap grid
+was also widened (`gap-x-6 gap-y-8`, up from `gap-3`) so that if teams
+ever wrap to a second row, one row's glow doesn't run into the next
+row's cards. Nothing about `TeamCard`'s own glow styling, the 2px ring
+color/width, the 26px blur radius, or the active-card scale was
+reduced or altered — the fix is entirely "give the container more
+room," as requested, not "make the glow smaller." The container's
+`lg:basis-2/5 lg:shrink lg:min-h-0` sizing behavior from Section 32 is
+otherwise unchanged; the extra padding is simply absorbed by the
+flex-column layout (the pool panel below it, being `flex-1`, shrinks
+to make room), so the page still doesn't grow taller and still doesn't
+scroll at the browser level.
+
+**Correction: the `p-8`/wider-gap fix above was too broad.** It was
+applied to the team-panel container unconditionally, i.e. in both the
+captain phase and the Player Draft (teammate) phase. That was a
+regression: the captain phase never had a clipping problem in the
+first place — `isActive` is never true during the captain phase (there
+is no "current picker" yet), so the only glow that can appear there is
+the smaller 18px `canAssign` glow on empty slots, which the original
+Section 32 spacing (`pr-1`, `gap-3`) already had room for. Giving the
+captain-phase grid an extra 32px of padding it didn't need shrank the
+`队长候选池` panel below it, which made that panel start scrolling
+internally even though its contents fit comfortably before — visible,
+unwanted internal scrolling where there had been none.
+
+The fix is now scoped to only the phase that actually has the
+clipping problem: the team-panel container's padding and grid gap are
+conditional on `draftPhase`. Captain phase keeps the exact Section 32
+spacing (`pr-1` / `gap-3` — no forced extra room, so the 队长候选池
+panel gets its original share of height back and doesn't scroll unless
+it genuinely needs to). The Player Draft (teammate) phase keeps the
+`p-8` / `gap-x-6 gap-y-8` treatment, since that's the only phase where
+`isActive`'s larger 26px glow actually occurs and needs the clearance.
+Nothing else from this section's original writeup changed — the glow
+itself, `TeamCard`, and the captain-pool panel's own markup are all
+still untouched.
+
+## 34. DraftArena: Real Fix — the Forced `flex-basis` Was the Bug (Phase 5)
+
+Sections 32 and 33 both treated the team-panel section's height as
+something to patch around (extra padding, then phase-conditional
+padding). That was patching a symptom. This section replaces those
+patches with a fix to the actual layout bug.
+
+**The bug.** Since Section 32, the team-panel scroll container carried
+`lg:basis-2/5`. A flex-basis is not a cap or a hint — it's the box's
+main-axis size before flex-grow/shrink adjustments, and with
+`flex-grow` left at its default `0`, the box always renders at exactly
+that basis (40% of the flex column's height) regardless of how much
+content is actually inside it, as long as there's enough room overall.
+That single class explains everything reported:
+
+- **Captain phase, empty space below the team panels:** one row of
+  team cards is far shorter than 40% of the available height, but the
+  box was forced to 40% anyway, leaving dead space below the row.
+- **Player Draft phase, a scrollbar on a single row that obviously
+  fit:** the fixed 40% box, once Section 33 added `p-8` padding on top
+  of it, could end up shorter than (card row + padding) in the
+  specific layouts where the header + `DraftSequenceStrip` already
+  consumed a lot of the vertical budget — so the box's *forced* size,
+  not the actual content, is what didn't fit, and `overflow-y-auto`
+  dutifully scrolled a box that never needed to be that cramped in the
+  first place. The scrollbar was correct given the (wrong) box size —
+  it just proved the box size was wrong.
+- **The glow still clipping despite the padding fix:** same root
+  cause — the forced-size box could still end up smaller than
+  (content + the padding meant to protect the glow), so the padding
+  itself could get squeezed away.
+
+**The fix.** `lg:basis-2/5` is removed. The container now has no
+explicit flex-basis at all, so its basis defaults to `auto` — i.e. its
+own content's natural height (the card row, plus the padding around
+it). With `lg:shrink` and `lg:min-h-0` still set:
+- If that natural height fits in the space left after the header (and,
+  in the Player Draft phase, the sequence strip), the box renders at
+  exactly that height — no forced stretch, no dead space, and nothing
+  for `overflow-y-auto` to scroll, so no scrollbar appears. This holds
+  in **both** phases now, so the earlier phase-conditional padding
+  from Section 33 was removed — `p-8` and `gap-x-6 gap-y-8` are applied
+  unconditionally, and they no longer cause the Section-33 regression,
+  because the box is no longer force-stretched to a fixed proportion
+  that the padding could then overflow.
+- If the actual content (many rows of teams) genuinely doesn't fit in
+  the remaining space, flex-shrink reduces the box and
+  `overflow-y-auto` scrolls it — exactly the "only scroll when content
+  really doesn't fit" rule asked for.
+- A `lg:max-h-[55%]` cap was added purely as a backstop for that
+  many-rows case, so an unusually large number of teams can't shrink
+  the 候选池/待选选手 panel below it down to nothing. It has no effect
+  in the common case (one row) since the content is already far under
+  55% of the available height — it only ever engages as a ceiling, not
+  a floor, so it doesn't reintroduce the empty-space bug.
+
+**Candidate-pool glow.** The captain-candidate and teammate-pool list
+containers (`队长候选池` / `待选选手`) had the same category of bug at
+a smaller scale: their scrollable inner `<div>` had no padding of its
+own (`pr-1` only), so a selected `PlayerStatCard`'s glow (`0 0 0 3px
+rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35)…`, plus a `scale
+(1.035)`) had nowhere to bleed into before hitting that div's edge.
+Unlike the team-panel section, this container was already correctly
+sized (`flex-1 lg:min-h-0` inside an already-bounded `PanelFrame` —
+no forced basis here, so no wasted-space bug), so the fix is just the
+padding: `pr-1` → `p-6` (24px), comfortably past the glow's ~21px
+reach. Because this box's size was already governed by `flex-1` off a
+bounded parent (not content), adding this padding doesn't grow the
+panel or introduce a new scrollbar in the common case — it only ever
+shrinks the visible list area by 24px per edge, which is well inside
+the room already available. Applied identically to both the
+captain-phase and teammate-phase pool panels for consistency, even
+though the reported clipping was specifically on the captain pool's
+selected-card glow.
+
+**Unchanged.** `TeamCard`, `PlayerStatCard`, their glow colors/blur
+radii/ring widths, the active-card and selected-card scale transforms,
+`DraftSequenceStrip`, the snake-draft/captain-assignment logic, and
+every other piece of Draft Arena functionality are untouched — this
+section is exclusively about how three container `<div>`s size
+themselves.
+
+## 35. DraftArena: Real Root Cause of Sibling-Card Growth + Team-Panel Spacing Rebalance (Phase 5)
+
+Two more fixes, both root-caused rather than patched.
+
+**Sibling Captain-Pool cards growing when one is selected.** This
+looked like a `transform`/scale bug but wasn't. `PlayerStatCard`
+changed its border **width** on selection — `2px` unselected, `3px`
+selected — not just its color. Card grids in this file are plain
+`flex flex-wrap` rows, and the CSS default for the cross-axis in a
+flex row is `align-items: stretch`: every item in the same row is
+stretched to match the tallest item in that row. A 1px-per-edge
+border increase is a real box-model change (unlike `transform`, which
+is paint-only and never affects layout), so the selected card became
+2px taller than its neighbors, and `stretch` then grew *every other
+card in that row* by those same 2px to match — the exact "all the
+remaining cards get slightly bigger" behavior reported, and a
+measurable one, not just an optical illusion.
+
+Verified in isolation before and after (same markup/CSS, headless
+Chromium, `getBoundingClientRect()`):
+- Baseline (both cards `2px` border): sibling height `40px`.
+- Bug reproduced (selected `3px`, sibling `2px`, default `stretch`):
+  sibling height `42px` — grown by exactly the border delta.
+- Fixed (constant `2px` border on both, `items-start` on the row):
+  sibling height back to `40px`, unchanged; the selected card's own
+  visual footprint still grows via its existing `transform:
+  scale(1.035)` — the actual "enlarge" animation is untouched.
+
+The fix: `PlayerStatCard`'s border width no longer changes on
+selection — it's always `2px`; only the border *color*, `box-shadow`
+(the green ring/glow), and `transform` (the scale) differ when
+`selected`, and all three of those are paint-only properties that
+never influence any sibling's box size. `items-start` was also added
+to all three card-grid rows (team panels, captain pool, teammate pool)
+as a structural guard, so a future per-card size difference of any
+kind — a badge, a longer name wrapping, anything — can never again
+stretch neighboring cards via this same mechanism.
+
+**Team-panel spacing.** The team-panel section's padding and the
+`gap-4` between it, the sequence strip, and the pool panel below it
+were stacking on top of each other (e.g. a 16px inter-section gap plus
+a 32px anti-clip padding, in the same direction, adding up to 48px of
+visual space that read as "too much empty space" even though only
+part of it was doing anything). Two changes:
+
+- The shared `gap-4` between the sequence strip / team-panel / pool
+  rows was removed; the sequence strip keeps its own `mb-4` (so that
+  specific, previously-fine gap is unchanged), and nothing separates
+  the team-panel section from the pool panel below except the
+  team-panel's own bottom padding — which was already there to protect
+  the glow, so it's no longer *also* stacked under a redundant gap.
+  That reclaimed space goes to the pool panel below it, per the
+  request, since the pool panel is `flex-1` and simply gets whatever
+  height opens up.
+- The team-panel's own padding is now phase-aware instead of one
+  fixed value, because the two phases can only ever paint different
+  glows here: the Captain phase never sets any card "active" (no
+  picker has started), so the *only* glow `TeamCard` can show there is
+  the smaller `canAssign` ring (`2px` ring + `18px` blur ≈ 20px reach)
+  — `p-6` (24px) covers that with a few px to spare, at close to the
+  project's normal `px-5/py-5` density (Section 17's Lobby reference).
+  The Player Draft phase's current-picker glow is bigger (`2px` ring +
+  `26px` blur ≈ 28px reach), so it keeps `p-8` (32px). This isn't a
+  return to the Section 33 phase-conditional patch that caused a
+  regression — that patch broke things because the section's *size*
+  was still forced to a fixed `flex-basis` back then; Section 34
+  already fixed that (the section sizes to its own content), so
+  varying the padding by phase now is safe and doesn't reintroduce the
+  earlier bug. Card-to-card gaps inside the row were also tightened
+  (`gap-x-6 gap-y-8` → `gap-x-4 gap-y-6`), closer to the project's
+  usual `gap-4`-ish card spacing, while still leaving room between
+  wrapped rows for the glow.
+- The candidate/draft pool's own inner scroll padding was bumped from
+  `p-6` to `p-8` (24px → 32px). The previously-reported clipping there
+  had already been addressed with `p-6`, but the selected card's true
+  reach — `3px` ring + `18px` blur + the `scale(1.035)` reach on a
+  130px-wide card — comes out close enough to 24px that it could still
+  clip by a pixel or two depending on the browser's blur/AA rounding.
+  `p-8` gives a real margin instead of sitting right at the edge of
+  the estimate.
+
+**Unchanged.** The glow's color, blur radius, ring width, and the
+selected/active scale transforms are exactly what they were. The
+`lg:max-h-[55%]`/content-based sizing behavior from Section 34 is
+untouched — this section only adjusts padding values and removes a
+redundant gap; no draft logic, animation, or synchronization code was
+touched.
+
+
+
+
+
+
+
+
+
+## 36. DraftArena: Full Layout Inspection, Then Four Confirmed Fixes (Phase 5)
+
+Before touching any more spacing values, this pass started with a full,
+empirical inspection of the whole Draft Arena page — every flex
+container, every fixed/max height, every overflow and scroll container,
+every margin, every glow, every transform, and the flying-card
+animation — checked by actually rendering the component (with mock
+data standing in for the real Supabase-backed `fetchTournamentSettings`
+/`fetchLobby`) in a headless browser at multiple viewport sizes, plus a
+16-team/80-player stress test to surface anything that only shows up at
+scale. That inspection surfaced several findings; per direction, only
+four of them were actually fixed here. The rest (mobile header
+clipping, the ambient `PanelFrame` glow's tight margins, `PlayerStat
+Card`'s dead `hover:scale` class, `DraftSequenceStrip`'s `overflow-x-
+auto` being inert since its row wraps instead of scrolling) were
+deliberately left alone — noted for the record, not acted on, since
+they're pre-existing/cosmetic rather than the confirmed user-facing
+issues below.
+
+**Fix 1 — duplicate margin.** `DraftSequenceStrip`'s own `PanelFrame`
+already carries `mb-4`; Section 35 additionally wrapped it in a `<div
+className="shrink-0 mb-4">`, stacking a second 16px margin on top of
+the first. Only the Player Draft phase renders the sequence strip, so
+this only inflated spacing there, which is part of why the two phases
+looked inconsistent. Fixed by dropping the wrapper's `mb-4` and keeping
+the component's own. Measured before/after in a real render: the gap
+between the sequence strip and the first team-card row went from 60px
+to 44px — consistent with removing exactly one redundant 16px margin.
+
+**Fix 2 — spacing consistency between phases.** Section 35 gave the
+team-panel container `p-6` in the Captain phase and `p-8` in the Player
+Draft phase, reasoning each phase can only ever paint a different max
+glow size (Captain's `canAssign` glow tops out around 20px of reach;
+Player Draft's active-picker glow around 28px). That reasoning was
+locally correct but produced a visible, measurable mismatch between
+the two phases, which is now the higher priority. Both now use a
+single `p-8` (32px) — safe for the bigger glow, and with plenty of
+margin for the smaller one too. Measured: Captain phase's team-grid →
+pool-heading gap is now 53px, Player Draft's is 49px — both close to
+each other and both close to the Tournament Lobby's own equivalent gap
+(measured directly off a real render of `TournamentLobby`: 46px,
+action-row → "参赛玩家" table heading), instead of one phase sitting
+noticeably taller than the other.
+
+**Fix 3 — the active team wasn't kept in view.** There was no
+`scrollIntoView`/`scrollTo` anywhere in the file. Confirmed directly:
+once the team-panel section is genuinely in its scrolling state (which
+happens on perfectly ordinary 1440×900/1366×768 laptop widths with
+just 8 teams — 190px cards don't all fit in one row below 1920px), the
+current picker's team could sit scrolled completely out of view with
+nothing bringing it back when its turn began. Fixed with a `useEffect`
+keyed on `activeTeamIdx` that calls `scrollIntoView` on the
+now-active team's `[data-team-panel]` element. Two details matter
+here:
+- `block: "nearest"` on `scrollIntoView` alone only guarantees the
+  card's own layout *box* is visible — it says nothing about the glow,
+  which is a `box-shadow` painted outside that box. Measured this
+  concretely: with `block: "nearest"` (and even with `block:
+  "center"`, tried as an alternative), the card could still land close
+  enough to the container's edge that the active glow's ~28px reach
+  would clip. The fix that actually guarantees the right amount of
+  room is CSS `scroll-margin` — `TeamCard` now carries `scroll-m-8`
+  (32px, matching the container's own anti-clip padding from Fix 2),
+  which `scrollIntoView` respects natively, so the auto-scroll always
+  leaves the same clearance around the card that its container's
+  resting-state padding already guarantees.
+- The effect only calls `scrollIntoView` on the team card's own
+  element, which only scrolls within its nearest actually-scrollable
+  ancestor (the team-panel's `overflow-y-auto` container) — it cannot
+  affect the browser's own scroll position, since nothing above that
+  container is scrollable on desktop per the Full Browser Layout
+  Standard.
+
+Verified with a real scroll-and-pick sequence (not just a fresh page
+load, which wouldn't have exercised this at all): manually scrolled the
+team-panel to its bottom, made a pick that advances `activeTeamIdx` to
+a team back in row 1, and confirmed the container automatically
+scrolled back to show it, landing with the same clearance as the
+natural resting position.
+
+**Fix 4 — the flying-card animation could land off-screen.** This
+turned out to be a direct consequence of Fix 3, not a separate bug: the
+ghost element itself is safely `document.body`-appended (confirmed via
+source — it's outside every scroll container, so it was never at risk
+of being clipped), but `runFlight()` computes its landing coordinate
+from `destEl.getBoundingClientRect()` at the moment the flight starts.
+The destination for any Player Draft pick is always whichever team was
+active when the user clicked a candidate — the same team Fix 3 now
+keeps in view as soon as its turn begins. So keeping the active team
+scrolled into view (Fix 3) means the flight's destination is already
+visible by the time a pick can land on it; no separate change to the
+animation code was needed or made.
+
+**Unchanged.** `PanelFrame`, `PlayerStatCard`, `DraftSequenceStrip`'s
+own internals, the glow colors/blur radii/ring widths, the active/
+selected scale transforms, the flying-card ghost element and its
+timing, and all draft/snake-order logic are exactly what they were —
+this section only added one `useEffect`, one `scroll-m-8` class, and
+adjusted the two spacing values already covered above.
+
+## 37. DraftArena: Header Redesign — Approved V3-2 Concept (Phase 5)
+
+Replaced the top bar's UI with a new design, approved after a round of
+throwaway HTML previews explored separately from the real codebase (5
+initial concepts, 5 refinements of the chosen one, then a final polish
+pass). Only the header's internal markup/styling changed — its slot in
+the page (`HEADER_H = 160`, `shrink-0`, `overflow: hidden`), and every
+piece of data/behavior it displays, are exactly what they were.
+
+**Layout.** The header is now three columns filling its full width
+edge-to-edge (hairline `rgba(0,245,212,0.16)` dividers between them,
+no more centered block with dead space on either side):
+- **Nav column** (left): back button and undo button, restyled as a
+  matched pair of compact ghost pills instead of one large button
+  stacked over one small chip.
+- **Masthead** (center, flexible): tournament name on its own line,
+  then the phase pill + current-turn headline on one row, then a
+  single meta line underneath.
+- **Progress + action** (right): one progress ring plus the
+  "进入最终对阵" button.
+
+**Typography/color swap (the actual ask).** The tournament name is
+now teal with a glow (`color: TEAL`, matching text-shadow) instead of
+a small dim white label — it reads as the event's identity now. The
+current-turn headline is the reverse: still `GlowHeading` (white text,
+teal glow — this component already matched "DraftArena's existing
+glow style" without changes) but bumped from `text-xl` to `text-3xl`
+so it's unambiguously the largest, most prominent text in the header,
+per "it should feel like the primary focus."
+
+**Progress: two bars → one ring, same two numbers.** The old header
+always rendered two linear bars at once — captain-assignment % and
+draft-pick % — even though only one of them is ever actually moving at
+a given time (the other sits pinned at 0% or 100% depending on phase).
+The new ring shows whichever one is live: `headerProgressPct` is
+`(8-captainCandidates.length)/8*100` during the Captain phase (green,
+matching that phase's existing color convention) and
+`pickIndex/customSnakeOrder.length*100` during Player Draft (teal) —
+the exact same two formulas the old bars used, just not both painted
+at once. No progress information that was visible before is gone.
+
+**Buttons.** `PrimaryButton` (only ever used in this header) is no
+longer called from here — its large `px-6 py-3` uppercase styling
+didn't fit the new compact language, so the back button and the
+final-bracket button are now hand-styled to match the nav/CTA pills
+the approved design specified. `PrimaryButton` itself is left defined
+but unused, in case anything else in this file starts using it later;
+removing it wasn't necessary for this change. The undo button keeps
+its exact original amber/gold theming (`#fbbf24`, distinct from the
+teal used everywhere else in the new header) and its disabled/count-
+badge logic completely unchanged — that color is a meaningful existing
+signal (undo reads as a different *kind* of action from navigation),
+not something the approved redesign asked to touch.
+
+**Verified, not just built.** Rendered the real component end-to-end
+in the same headless-browser harness used for earlier phases (mock
+`fetchTournamentSettings`/`fetchLobby`, 8 teams): header height stays
+exactly 160px in both phases; selecting a captain updates the
+headline/subtext live; finishing the Captain phase and making Player
+Draft picks correctly flips the ring from green→teal and advances its
+percentage (0% → 3% after one pick of 32); the undo button's count
+badge and enabled state track `draftHistory.length` correctly; and
+clicking undo actually reverts the active-team headline back to the
+previous state (`临时队长2 的选人回合` → `临时队长1 的选人回合`),
+confirming `undoLastPick()` is wired to the same handler as before.
+
+**Unchanged.** Everything below the header — the sequence strip, team
+panels, candidate/draft pools, the auto-scroll-to-active-team effect,
+the flying-card animation, and all snake-draft/captain-assignment
+logic — was not touched.
+
+## 38. Final Matchups Stage (Phase 5) — Manual Pairing / Random Roll / Reset / End Tournament
+
+The Draft Arena now has a real third stage, reached via the existing
+"进入最终对阵" button (previously wired to a no-op). Five throwaway UI
+concepts were previewed first (Tournament Bracket, Esports Match Card,
+Arena Board, Tournament Control Center, Premium Championship);
+**Concept 1 — Tournament Bracket** was chosen and is what got built.
+The workflow itself went through a design correction mid-build (see
+below) before landing on its final shape — **a blank canvas the admin
+fills in themselves**, matching the "admin is always in control"
+principle already established everywhere else in this project (the
+admin starts the draft, manages invites, controls the tournament,
+starts each next stage).
+
+**Team naming.** Every team is labeled `{captain.name} 战队` (`LordYun
+战队`, `Alice 战队`...) everywhere on this stage — never a generic
+`1号战队`. See `teamLabel()` in DraftArena.jsx.
+
+**The workflow, exactly as specified.** The moment 进入最终对阵 is
+clicked, the stage is **completely blank** — zero matchups, nothing
+auto-generated. From there the admin has two tools, freely mixable in
+any order:
+- **Manual Pairing.** Pick exactly two "remaining" teams (teams not
+  currently in any matchup) from the 剩余战队 pool and press 🔒
+  锁定此对阵. That pairing is created **already locked** — a manually
+  created matchup only ever exists in the locked state, since the
+  entire point of creating one by hand is "this is now permanently
+  fixed." Any number of these can be created before ever touching
+  Random Roll.
+- **Random Roll.** Randomly pairs up whatever teams are still
+  "remaining" — i.e. not currently in *any* matchup, locked or
+  unlocked — into new matchups. Every locked matchup (manual or a
+  previously-locked roll result) is left completely untouched, both in
+  content and position; pressing Random Roll again only reshuffles
+  teams that are still unlocked.
+- Every matchup, manual or rolled, can be **locked/unlocked** (🔒/🔓 on
+  its VS node) or **removed outright** (✕ 解除, dissolving it and
+  returning both teams to the 剩余战队 pool immediately, without
+  waiting for a re-roll).
+- **Reset** wipes every matchup — manual or rolled, locked or not —
+  back to the exact same blank canvas the stage started on.
+
+**Why this needed a real database table, not just more React state.**
+Everything drafted before this stage (captain assignments, roster
+picks) is still local-only React state, exactly as documented in
+Section 907's comment ("live updates while the page is already open is
+a later phase") — that part of the Draft System is unchanged by this
+work. But Manual Pairing / Random Roll / Reset / End Tournament are
+explicitly required to be "synchronized in real time for every
+connected user," and End Tournament has to actually clear the joined
+roster server-side. Both are impossible from client state alone, so
+this stage introduces its own persisted, Realtime-enabled table:
+`public.tournament_matches` (`supabase/schema.sql`, Section 1 + Section
+6b) — a singleton row (same `id boolean primary key` trick as
+`tournament_settings`), holding:
+- `teams`: a snapshot of the finished draft's teams, captain identity
+  only (`idx`, `captainAccountId`, `captainName`, `captainAvatarUrl`)
+  — full rosters are never needed here, only captain-vs-captain
+  matchups are ever shown.
+- `matchups`: a JSON array that **only ever contains matchups that
+  actually exist** — not a fixed set of slots. Each entry is `{"a":
+  <team idx>, "b": <team idx or null for a bye>, "locked": bool}`. A
+  team not yet in any entry simply doesn't appear anywhere in the
+  array; that's exactly what "remaining team" means client- and
+  server-side alike.
+
+**The six actions, all Admin/Developer-gated RPCs (`_require_role`,
+same pattern as `roll_tournament_numbers`/`clear_tournament`):**
+- `enter_final_matchups(p_teams)` — called once, when 进入最终对阵 is
+  clicked. Snapshots the local `tournament.teams` into the singleton
+  with `matchups` set to `'[]'::jsonb` — nothing generated.
+- `create_manual_matchup(p_team_a, p_team_b)` — Manual Pairing.
+  Validates both indices exist in the `teams` snapshot, are distinct,
+  and neither already appears in any existing matchup entry (locked or
+  not); appends `{"a", "b", "locked": true}`.
+- `remove_tournament_matchup(p_match_index)` — dissolves one matchup by
+  array position (`matchups - p_match_index`, Postgres's jsonb "delete
+  array element" operator); both teams are immediately back in the
+  remaining pool.
+- `roll_tournament_matchups()` — collects every team currently sitting
+  in a *locked* entry into a protected set, keeps those entries
+  unchanged, discards every unlocked entry (its teams flow back into
+  the free pool), shuffles the resulting free pool, and appends fresh
+  unlocked entries pairing them up (a lone leftover team on an odd
+  count gets `"b": null`, rendered as 轮空/bye).
+- `lock_tournament_matchup(p_match_index, p_locked)` — flips one
+  entry's `locked` flag by array position. Unlocking doesn't dissolve
+  the pairing immediately (that's what `remove_tournament_matchup` is
+  for) — it just makes that entry eligible to be swept up by the next
+  Random Roll.
+- `reset_tournament_matchups()` — sets `matchups` back to `'[]'::jsonb`
+  — the exact state right after 进入最终对阵, per the requirement.
+- `end_tournament()` — deletes the `tournament_matches` row *and*
+  clears `tournament_participants` (same effect as the existing
+  `clear_tournament()`, batched into one call): every joined player's
+  status is gone, every drafted team is gone (both the local draft
+  state and the server snapshot), every matchup/lock/manual pairing is
+  gone. Nobody carries into the next tournament — rejoining always
+  requires a fresh "参加比赛" click. `tournament_settings` is
+  deliberately left alone (same as `clear_tournament()` already leaves
+  it alone) — a "brand new tournament" reuses whatever team-count/
+  players-per-team/draft-order was last configured, it doesn't forget
+  it.
+
+**Real-time sync, end to end.** `tournament_matches` is added to the
+`supabase_realtime` publication and is public-read (RLS: no secrets in
+it — captain names/avatars are already public via `accounts`). Client
+side, `DraftArenaPage` now:
+1. Fetches `tournament_matches` once on mount (`fetchFinalMatchups()`)
+   — so a client opening the page *after* someone else already
+   proceeded lands straight on the Final Matchups stage instead of a
+   fresh empty draft board.
+2. Subscribes to it for the rest of the page's life
+   (`subscribeFinalMatchups()`), regardless of which stage this client
+   is currently on. An INSERT/UPDATE sets `finalMatches` and flips
+   local `stage` to `'final'` — this is what makes Manual Pairing/
+   Random Roll/Lock/Remove/Reset appear identically and instantly for
+   every connected client, not just the one that clicked the button. A
+   DELETE (End Tournament) clears local state and calls
+   `onExitToLobby()` immediately, so *every* connected client on the
+   Draft Arena — mid-draft or already on the Final Matchups stage — is
+   sent back to the Tournament Lobby, per the requirement. (Clients
+   already sitting in the Lobby already see the participant list clear
+   live, via the pre-existing `subscribeLobby()`/`tournament_participants`
+   Realtime path — untouched.)
+3. `onProceed` (the header's 进入最终对阵 button) now calls
+   `enterFinalMatchups()` with the current local team list instead of
+   being a no-op; the Realtime subscription above (which fires for the
+   caller too) is what actually flips the stage once the write lands,
+   so success/failure only ever has one code path.
+
+**New UI: `FinalMatchupsStage`** (DraftArena.jsx). Same page shell,
+same header language (`PanelFrame`, `GlowHeading`, `TEAL`/`TEAL_DIM`/
+`TEAL_SOFT`, the teal glow) as the rest of the Draft Arena — this is
+explicitly the same page's next stage, not a new screen. A 手动配对
+panel lists every "remaining" team as a selectable `RemainingTeamChip`
+(captain `Avatar` + `{name} 战队`); selecting two and pressing 锁定此
+对阵 calls `createManualMatchup`. Below it, 已生成对阵 renders each
+existing matchup as a bracket-style pair via `MatchPair`: two
+`MatchTeamSlot`s (amber-tinted and glowing when locked) beside a `VS`
+node that doubles as the lock toggle, plus a small ✕ 解除 button to
+dissolve it outright. A bottom action bar — visible only to
+Admin/Developer accounts (`isStaff`, computed from the `account` prop
+now threaded through `App.jsx` → `DraftArenaPage`) — holds 🎲 随机排位
+(disabled once there are no remaining teams left to roll), 🔄 重置, and
+🏁 结束锦标赛; regular accounts see the same bracket read-only, live,
+with no controls. Reset and End Tournament both go through the
+project's existing `ConfirmDialog` (same component the Tournament
+Lobby already uses for 退出比赛/清空参赛名单/etc.) before calling their
+RPC, since both are irreversible.
+
+**Design correction, mid-build.** The first working version of this
+stage seeded a default sequential pairing (Team 1 vs Team 2, Team 3 vs
+Team 4...) the moment 进入最终对阵 was clicked, so Random Roll's job
+was only ever "reshuffle whatever isn't locked," and locking meant
+toggling a flag on an already-existing pair. That shipped, built, and
+worked — but didn't match the intended product behavior: a genuinely
+blank canvas where the admin explicitly chooses, for every team, either
+"pair these two by hand" or "let the system randomize them," with
+nothing ever appearing on screen unprompted. The schema, all six RPCs,
+and `FinalMatchupsStage` were reworked to the shape described above
+before this was considered done — `matchups` starting (and, after
+Reset, returning to) `'[]'::jsonb` instead of a pre-filled array, and
+`create_manual_matchup`/`remove_tournament_matchup` added as new,
+previously-nonexistent operations.
+
+**Known limitation, carried over from Section 907, not newly
+introduced here:** the drafting itself (captain assignment, snake-order
+picks) is still local-only state per client. If two Admin/Developer
+accounts ran *separate* drafts concurrently before this stage existed,
+that was already an unaddressed edge case; this phase doesn't change
+it — `enter_final_matchups()` simply snapshots whichever local team
+list calls it first (or most recently, since it's an upsert). The
+Final Matchups stage itself, once entered, has no such limitation — it
+has no local-only state at all, by design.
+
+## 39. Final Matchups Stage — Visual Rebuild: "冠军海报版" (Championship
+Poster)
+
+The Final Matchups stage's UI (Section 38) has been torn out and rebuilt
+from scratch against an approved reference design ("01 冠军海报版" — a
+cinematic, dark black/gold movie-poster-style championship reveal
+screen), per an explicit instruction to stop restyling the previous
+teal card-grid and instead reproduce the reference's visual structure
+directly. **Nothing behind the UI changed** — this is a pure
+presentation-layer rebuild of `FinalMatchupsStage` and its child
+components inside `DraftArena.jsx`; `tournamentApi.js`, the
+`tournament_matches` schema/RPCs, the Realtime subscriptions, and
+`DraftArenaPage`'s stage-switching logic (Section 38) are all untouched.
+
+**Removed.** The old `MatchTeamSlot`, `MatchPair`, and
+`RemainingTeamChip` components, and the teal/`PanelFrame`-based
+`FinalMatchupsStage` markup they composed, are gone entirely — not
+restyled in place.
+
+**Rebuilt, following the reference's Concept 1 structure.** New
+components, all local to `DraftArena.jsx`:
+- `CastPortrait` — a circular captain portrait in the poster's cast
+  row (one per team), lit gold with a glow once that team is placed in
+  a matchup, dim otherwise. Purely presentational.
+- `FinaleSlot` / `FinaleCard` — the poster's central "champion lineup":
+  every existing matchup renders as a large gold-framed card with
+  corner-bracket ornament, big Cinzel-serif captain names either side
+  of an Orbitron "VS", and a `MATCH 0N` tag. Staff-only inline controls
+  (🔒/🔓 lock toggle, ✕ 解除 remove) sit in the card's header — same
+  `lockTournamentMatchup`/`removeTournamentMatchup` calls as before,
+  just relocated into the new card instead of a separate bracket
+  column. A `null` slot (odd team count) renders as a dashed "轮空"
+  bye, matching Section 38's existing bye handling.
+- `CastingChip` — the Manual Pairing pool's selectable team chip,
+  gold-restyled but functionally identical (up to two selections,
+  oldest replaced on a third pick, same `createManualMatchup` call on
+  confirm).
+
+**Page structure, top to bottom:** a slim gold-hairline strip (back
+button + live counts + inline error — deliberately minimal chrome so
+it doesn't compete with the poster below); the poster itself
+(ornamental title "最终对阵", tournament name as its subtitle, a
+top-right status badge that reads `ROUND 1 · PREMIERE` /
+`已生成 N 组 · 待配对 M` / `TOURNAMENT READY` depending on state, the
+cast row, then the FinaleCard grid or an idle placeholder line when no
+matchups exist yet); and, staff-only, the Manual Pairing pool followed
+by the action strip (🎞️ 随机生成剩余对阵 / 🔄 重置 / 🏁 结束锦标赛—
+same `rollTournamentMatchups`/`resetTournamentMatchups`/`endTournament`
+calls and the same `ConfirmDialog` guards on the latter two as before).
+Regular accounts see the identical poster and FinaleCard grid, live,
+with no controls — same read-only behavior as Section 38, just in the
+new visual language.
+
+**Typography/theme additions.** `Cinzel` (600/700/900) was added
+alongside the existing `Orbitron` import in `GlobalStyle()`, exposed as
+a new `.font-poster` class, plus two small animations scoped to this
+stage: `.poster-rays` (a slow 40s conic-gradient rotation behind the
+poster's title, matching the reference's `h1-rays`) and
+`.poster-row-in` (a brief staggered fade/slide-up applied to each
+`FinaleCard` as it renders, so a freshly-generated grid doesn't just
+pop in instantly). New color constants `GOLD`/`GOLD_DIM`/`GOLD_SOFT`/
+`GOLD_LINE` replace the teal palette for everything in this stage only
+— the rest of the Draft Arena (captain/teammate phases) keeps its
+existing `TEAL` theme unchanged.
+
+**Random Roll's cinematic countdown/flicker sequence was deliberately
+not built in this pass** — per the request, that animation is a
+follow-up once the base visual design is confirmed correct. Roll
+currently just calls `rollTournamentMatchups()` and lets the resulting
+grid re-render with the staggered `.poster-row-in` entrance described
+above; no countdown/flicker/flash scaffolding from the reference's
+`runRollSequence()` demo was ported in.
+
+**Verified.** Rendered `FinalMatchupsStage` in isolation (temporarily
+exported, mock team/matchup data, restored to unexported after)
+end-to-end in a headless browser at desktop and mobile widths, across
+three states: idle (no matchups — idle placeholder, all-dim cast row,
+`ROUND 1 · PREMIERE` badge), partially paired (mixed locked/unlocked
+cards, Manual Pairing pool still visible), and fully paired
+(`TOURNAMENT READY` badge, Manual Pairing pool correctly hidden, Roll
+button correctly disabled since no remaining teams exist). Also
+verified the non-staff read-only view renders the identical poster and
+FinaleCard grid with every admin control (lock/remove buttons, Manual
+Pairing pool, action strip) correctly absent. `npx vite build` succeeds
+cleanly with no new warnings.
+
+## 40. Final Matchups Stage — Strict Reference Reproduction + Random Roll
+Animation
+
+Section 39's rebuild was itself a reinterpretation of "01 冠军海报版"
+rather than a reproduction of it (a full-grid "champion lineup" instead
+of the reference's single fixed-height feature slot that cycles between
+an idle placeholder, a single-match spotlight, and a compact finale
+grid). This section replaces that with a structural port of the
+reference's actual Concept 1 markup -- same element positions,
+proportions, and CSS values, not a similar-looking redesign -- and adds
+the Random Roll cinematic animation the brief asked for, played inside
+that same structure without altering it.
+
+**Layout, ported 1:1 from the reference's `.h1`/`.pv-*` classes** (values
+taken directly from its CSS, not re-derived): a `max-width:1300px`
+centered canvas; the poster (`.h1`) sized `clamp(520px, 60vh, 640px)`
+with the reference's exact triple-gradient background and 40s
+`conic-gradient` ray rotation; `.h1-title` (ornament dots → 40px Cinzel
+900 title → tracking-widest subtitle, `padding-top:38`); `.h1-badge`
+pinned `top:20/right:20`, reading exactly `ROUND 1 · PREMIERE` or
+`TOURNAMENT READY` per the reference's own binary logic (adapted from
+its fixed-slot model to this app's dynamic team count: `TOURNAMENT
+READY` once every team is in a matchup, `ROUND 1 · PREMIERE`
+otherwise); `.h1-cast` portraits at `56px` with no name caption
+(the previous version's captions under each portrait, which the
+reference doesn't have, are gone); and, most importantly, `.h1-feature`
+-- a **fixed `240px`-tall slot** (`FEATURE_H` in code) that is the one
+and only place any match content ever renders, exactly matching the
+reference's fixed-height single "feature" area rather than the
+free-scrolling multi-card grid Section 39 introduced. Below the poster:
+`.pv-filmstrip` (click a match thumbnail to spotlight it big inside
+`.h1-feature`), `.pv-casting` (Manual Pairing pool, staff-only), and
+`.pv-actions` (staff-only action bar) -- all ported with the reference's
+own spacing/sizing, not reinvented.
+
+**What renders inside the fixed `.h1-feature` slot**, in priority order:
+the Random Roll animation (see below) if one is playing; a manually
+filmstrip-picked match, shown big via `FeaturePair` (the reference's
+`.h1-fp-frame` -- corner brackets, two 28px Cinzel names either side of
+an Orbitron "VS", `MATCH 0N` tag underneath); the finale grid
+(`.h1-finale-grid` -- compact numbered rows, 2 columns on `sm:` and up,
+1 column below it to avoid the horizontal overflow a fixed 2-column grid
+caused on narrow viewports) once every team is placed; a single
+`FeaturePair` spotlight when exactly one matchup exists; the same
+compact grid mid-progress when more than one exists but teams remain
+unplaced; or the reference's idle placeholder line when no matchups
+exist yet. This priority list is a deliberate, minimal adaptation of the
+reference's own idle → pair → finale state machine to a dynamic team
+count (the reference hardcodes 8 teams / 4 fixed slots; this app's
+roster size is whatever the Tournament Settings say) -- not a new
+design of its own.
+
+**Admin controls, added as minimal overlays rather than layout changes.**
+The reference is a non-functional demo with no need for lock/unlock/
+remove; since real functionality had to stay connected, small gold icon
+buttons (🔒/🔓, ✕) were added as a floating cluster anchored to
+`FeaturePair`'s top-right corner (outside its centered name/VS/tag
+composition) and as trailing icons at the end of each `FinaleRow` --
+both additions sit outside/after the reference's own layout rather than
+reshaping it, and neither changes size or position based on data.
+
+**Random Roll animation**, ported from the reference's own
+`runRollSequence()` and slowed 1.5x throughout per the brief ("~50%
+slower than the previous fast version"): countdown 3→2→1 (`750ms` hold
+each in the reference → `1125ms` here), then 7 flicker frames cycling
+random real team names for suspense (`150ms` interval → `225ms`), then
+one reveal per freshly-rolled slot (`1200ms` hold → `1800ms`). The
+flicker phase is purely decorative -- it never touches tournament
+state. The reveal phase shows the *actual* result: `handleRoll()` calls
+the real `rollTournamentMatchups()` RPC in parallel with the countdown/
+flicker beats, then reveals straight from that RPC's own returned
+`{teams, matchups}` (no fabricated pairing, and no dependency on
+Realtime's own copy of the same event arriving back -- the RPC's direct
+return value is already the authoritative result). Because
+`roll_tournament_matchups()` always keeps locked matches untouched and
+appends fresh unlocked ones after them (see `## 39`'s reading of
+`schema.sql`), "every currently-unlocked entry in the RPC's result" is
+always exactly this roll's freshly-assigned slots, in order -- no diffing
+against the pre-roll array is needed. The whole sequence plays inside
+the fixed `240px` `.h1-feature` slot described above; nothing about the
+page's height, the poster's height, or any other element's position
+changes when the animation starts, runs, or ends. A `rollTokenRef`
+guard discards any still-running sequence if Reset is clicked or the
+component unmounts mid-roll.
+
+**Verified.** Rebuilt a throwaway mock of `rollTournamentMatchups`/
+`lockTournamentMatchup`/`removeTournamentMatchup`/
+`resetTournamentMatchups`/`createManualMatchup` (test-harness-only, never
+touching the real `tournamentApi.js`) to drive `FinalMatchupsStage` in
+isolation in a headless browser, and confirmed: idle / single-match /
+partial / fully-placed states all match the reference's structure;
+clicking Random Roll plays countdown → flicker → sequential reveal →
+settles into the finale grid with zero layout shift at any point;
+non-staff accounts see the identical poster with every admin control
+correctly absent; the finale grid's 2-column layout correctly collapses
+to 1 column on a 420px-wide mobile viewport (fixing a real horizontal-
+overflow bug the first pass at this fix caught). `npx vite build`
+succeeds cleanly.
+
+## 41. Random Roll Animation — Strict Reproduction of the Reference's Own
+`runRollSequence()`
+
+Section 40's Random Roll animation was, on inspection, a different
+animation *inspired by* "01 冠军海报版" rather than a reproduction of it:
+different countdown feel, a blur/key-remount "flicker" of its own
+invention instead of the reference's plain opacity-toggle blink, timings
+scaled 1.5x instead of the reference's own numbers, and no `h1-flash`
+white-flash effect at all. This section replaces it with a move-for-move
+port of the reference's actual `runRollSequence()` (search that name in
+the provided HTML) and its variant-1 hooks — same effects, same easing,
+same numbers, not re-tuned or re-imagined.
+
+**Timings, copied verbatim, not scaled:**
+`for (const n of [3,2,1]) { countdown(n); wait(750); }` → 750ms between
+each countdown beat (was 1125ms); 7 flicker frames at `wait(150)` each
+(was 225ms); `wait(1200)` after each reveal (was 1800ms). The countdown
+number itself uses the reference's own `h1Count` keyframe unchanged
+(`scale(2.6)→scale(.6)`, opacity `0→1` at 30%→`0` at 100%, `1s
+cubic-bezier(.2,.8,.3,1)`).
+
+**Flicker phase, rebuilt to match the reference's actual mechanism.**
+The reference doesn't animate a blurred name swap — it just writes
+random text directly into the name nodes and toggles their opacity
+between `1` and `.25` on every 150ms tick
+(`nameA.style.opacity = nameA.style.opacity==='1' ? '.25':'1'`), with no
+CSS transition, so it reads as an instant strobe rather than a fade.
+`FeaturePair` now has an explicit `mode="flicker"` that renders inline
+`opacity` driven by a `blinkOn` boolean toggled each frame — no
+animation class, no key-remount, matching the reference's instant
+toggle. The tag during this phase reads `MATCH 0N · ANALYZING`, exactly
+the reference's `` `MATCH ${idx+1} · ANALYZING` `` string.
+
+**Reveal phase.** Real names (from `rollTournamentMatchups()`'s own
+returned result — never fabricated) fade in using the reference's own
+`h1NameIn` keyframe (`letter-spacing .5em→.03em`, `blur(8px)→blur(0)`,
+opacity `0→1`, `.8s ease`), retriggered via a `key` change exactly like
+the reference's `cutTo()` removing and re-adding the `'in'` class. The
+tag drops the `· ANALYZING` suffix once revealed, matching the
+reference.
+
+**`.h1-flash` — the reference's full-canvas white flash on every reveal
+and on the finale entrance — was entirely missing before; it's now
+ported as `position:absolute; inset:0` over the *whole poster* (not just
+the feature slot, matching the reference's own `.h1-flash{inset:0}`
+placement, which sits at the `.h1` level), retriggered by bumping a
+`flashNonce` that remounts the div via `key`. **Bug caught during
+verification and fixed**: the very first implementation of this overlay
+forgot the reference's base `opacity:0` on `.h1-flash` (only the `.go`
+animation class was ported, not the element's resting state), so the
+white radial gradient sat fully visible over the whole poster the entire
+time instead of only flashing briefly. Screenshotting the animation
+step-by-step caught this immediately; the fix was adding `opacity: 0` to
+the div's base inline style so only the retriggered `h1-flash-go`
+animation (`opacity .8→0` over `.8s`) ever makes it visible.
+
+**Finale entrance.** `h1FinaleIn` (`scale(.92)→scale(1)`, opacity
+`0→1`, `1s ease`) plays on the finale grid via a `finaleNonce`-keyed
+remount exactly once, right as the roll sequence's `allDone()`
+equivalent fires (not on every unrelated re-render) — matching the
+reference's `finaleEl.classList.add('show')` triggering `.h1-finale.show`
+only at that moment. Each finale row's own entrance (`h1FrIn`,
+translateY 6px + fade, `.5s ease`) is staggered at `i*180ms`, the
+reference's own delay, corrected from the previous pass's `i*120ms`.
+
+**Progressive cast/filmstrip lighting, newly matched to the reference.**
+The reference's `reveal()` hook calls `renderAll()` (which re-renders the
+cast row and filmstrip) and `cutTo()` (which re-renders the filmstrip
+again) *inside the per-slot loop*, so portraits light up and filmstrip
+frames fill in one at a time as each slot resolves — not all at once.
+Since this app's `matchups` prop is driven by Realtime rather than a
+local model, using it directly during a roll would make everything jump
+at once whenever the DB update lands, usually well before the animation
+finishes stepping through each slot. A `rollFinal` (the RPC's real
+result, captured once resolved) + `revealedIdx` (which of its slots have
+had their reveal() moment fire so far) pair now drives `displayMatchups`
+during an active roll, so the cast row and filmstrip only reflect a slot
+once its own reveal step has actually played — the filmstrip shows the
+reference's own `未生成` placeholder text for not-yet-revealed slots in
+the meantime, exactly matching `renderFilmstrip()`'s behavior for an
+empty `model.matches[i]`. Badge text (`ROUND 1 · PREMIERE` /
+`TOURNAMENT READY`) is frozen on its pre-roll reading for the whole
+sequence for the same reason, flipping only once the roll fully
+completes.
+
+**Everything else is unchanged from `## 40`**: the static layout, the
+admin lock/unlock/remove overlays, the manual-pairing pool, the action
+bar, and all six RPC-backed behaviors. The one deliberate, necessary
+departure from the reference (stated in the brief as something to keep)
+is *where the pairing data comes from*: the reference's demo invents its
+own shuffle client-side per slot; here `rollTournamentMatchups()` is
+called once for the whole free pool (matching how the real RPC works,
+per `## 39`'s reading of `schema.sql`), and its actual returned pairing
+is what every reveal step shows — the flicker text is decorative only.
+
+**Verified.** Re-ran the same throwaway-mock test harness as `## 40`
+(never touching the real `tournamentApi.js`), stepping through the roll
+animation frame-by-frame with scripted wait times matched to the exact
+750/150/1200ms beats and taking a screenshot at each step: countdown
+(the 130px number scaling/fading centered over the whole poster),
+mid-flicker (dimmed random names + `· ANALYZING` tag + `未生成`
+filmstrip placeholders for not-yet-revealed slots), reveal (real names,
+tag without the suffix, that slot's filmstrip frame populated, its
+teams' portraits lit), and the final finale-grid settle
+(`TOURNAMENT READY`, every portrait lit, every filmstrip frame
+populated, Roll button re-enabled) — confirmed the poster's height and
+every other element's position stayed pixel-identical across all of it.
+Also re-confirmed mobile width (no overflow) and the non-staff read-only
+view. `npx vite build` succeeds cleanly.
+
+
