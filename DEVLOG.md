@@ -276,12 +276,14 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
   lobby, draft pools, and Final Matchups poster; falls back to the old
   numbered pattern only past the end of a list (larger tournaments).
   `avatar_url` is likewise never left null for a temp account — each
-  gets a small original "badge icon" SVG generated in-database by
-  `_temp_avatar_svg()` (one of 10 gradient-shaded, drop-shadowed themed
-  icons — mountain/river/dragon/space/flame/tree/crystal/moon/compass/
-  wave — each in one of 4 hue-rotated colorways), embedded directly as a
-  `data:image/svg+xml;base64,` URI — no network call, no external image
-  host, nothing that can go offline or rot later.
+  gets a small original "badge icon" SVG (one of 10 gradient-shaded
+  themed icons — mountain/river/dragon/space/flame/tree/crystal/moon/
+  compass/wave — each in one of 4 precomputed colorways, all 40 fully
+  baked ahead of time by `_temp_avatar_svg()`, no runtime SVG filters),
+  embedded directly as a `data:image/svg+xml;base64,` URI — no network
+  call, no external image host, nothing that can go offline or rot
+  later. See Section 11.5 for why "baked, no filters" matters here
+  specifically (a real animation-lag regression, found and fixed).
 - **开始比赛** validates the joined roster against Tournament Settings
   exactly (`requiredCaptains` = team count, `requiredPlayers` = team
   count × (players per team − 1), `requiredTotal` = their sum, all
@@ -849,6 +851,77 @@ Renders automatically everywhere `avatarUrl` already does (Tournament
 Lobby, Admin Dashboard, Draft Arena pools/cards, Final Matchups poster)
 — no frontend component changed, since `avatar_url` was already a plain
 image URL/URI column read the same way for every account.
+
+### 11.5 Fixed: Draft Arena "Card Slide" animation lag after 11.4
+
+After 11.4 shipped, the assignment "Card Slide" animation (`DraftArena.jsx`,
+the `runFlight()`/`beginFlight()` pair — the flying name-chip that
+travels from the pool to a team slot every time a captain or player is
+assigned) got noticeably laggy. Root-caused to two independent,
+compounding issues, both confirmed (not guessed) before fixing:
+
+1. **The 11.4 avatar SVGs were far heavier than they needed to be.**
+   Every one of the 10 badge-icon themes shared one `<defs>` block
+   containing all 10 themes' gradients (~6KB) regardless of which theme
+   was actually shown, plus a `feDropShadow` filter (Gaussian blur) for
+   the icon's shadow and a `feColorMatrix type="hueRotate"` filter for
+   its colorway — both recomputed by the browser on every repaint.
+   Measured: ~7-8KB average `avatar_url` length, with two expensive
+   filter primitives baked into every single generated image.
+2. **`runFlight()` animated the flying clone's `left`/`top` CSS
+   properties directly** (via the Web Animations API). Animating
+   `left`/`top` forces the browser to re-run layout and repaint on
+   every single frame — as opposed to animating `transform`, which the
+   browser can composite on the GPU without touching layout at all.
+   This was already the case before 11.4 (the `.df-ghost` CSS rule even
+   had `will-change: left, top`, which doesn't grant the same
+   composited-layer fast path `transform`/`opacity` get), but went
+   unnoticed while avatars were `null` (a single plain-text letter has
+   nothing expensive to repaint); it became very visible once every
+   flying chip carried a real, filter-heavy image that had to be
+   re-rasterized on every one of those forced repaints.
+
+**Fix, part 1 — cut avatar cost at the source** (`_temp_avatar_svg()`
+in `supabase/schema.sql`): the 10 themes × 4 colorways (40 total) are
+now fully precomputed ahead of time into 40 complete, self-contained
+`<svg>` strings, each embedding only its own theme's 2-4 gradients (no
+shared bloat) and containing **zero `<filter>` elements**:
+- The 4 colorways are no longer a live `feColorMatrix` filter — the
+  exact same hue-rotation math (`feColorMatrix type="hueRotate"`'s own
+  matrix formula) was applied once, in Python, directly to each theme's
+  literal hex colors, producing 4 static, pre-rotated color sets per
+  theme. Visually identical result, zero runtime filter cost.
+- The drop shadow is no longer `feDropShadow` (Gaussian blur) — each
+  shadowed shape now has a flat, unblurred duplicate of itself
+  underneath (`<g transform="translate(4,6)" opacity="0.22">`), which
+  costs nothing extra to paint.
+- Net effect: average `avatar_url` length dropped from ~7-8KB to
+  ~1.8KB (verified: `avg(length(avatar_url))::int` = 1794, max 2106,
+  across a real `create_temp_participants(8, 32)` run), and
+  `avatar_url ~ 'feDropShadow|feColorMatrix|feGaussianBlur'` is `false`
+  for all 40 rows.
+- `v_svgs[((p_seed-1) % 40) + 1]` is a plain array lookup — no
+  computation happens per call anymore either.
+
+**Fix, part 2 — stop forcing layout on every frame**
+(`DraftArena.jsx`, `runFlight()`): the flying clone's `left`/`top` are
+now set **once**, to its starting position, and never animated; the
+actual motion is a `transform: translate(dx, dy)` Web Animations
+keyframe (`dx`/`dy` = the same start→destination delta the old
+`left`/`top` keyframes covered — identical path, duration, easing,
+`fill: "forwards"`, and the `onfinish`/`oncancel`/`setTimeout(700)`
+safety-net that fixed the earlier "stuck ghost" bug). `.df-ghost`'s
+`will-change` was updated from `left, top` to `transform, opacity` to
+match. Purely a rendering-technique change — the animation's visual
+path, timing, and the draft/assignment logic that triggers it are
+unchanged.
+
+Both fixes were verified end-to-end before considering this done: the
+avatar function was re-tested the same way as 11.4 (real local
+PostgreSQL, real `create_temp_participants()` call, decoded + rasterized
+all 40 outputs to confirm they still render correctly with the new,
+lighter markup), and the frontend was rebuilt (`npm run build`) clean
+after the `runFlight()` change.
 
 
 ## 12. Maintaining This Document

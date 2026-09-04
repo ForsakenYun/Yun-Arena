@@ -363,7 +363,7 @@ function GlobalStyle() {
         padding: 4px 10px 4px 4px; border-radius: 10px;
         background: rgba(10,20,20,0.95); border: 1px solid ${TEAL};
         box-shadow: 0 0 16px rgba(0,245,212,0.5);
-        pointer-events: none; will-change: left, top;
+        pointer-events: none; will-change: transform, opacity;
       }
       .df-ghost-avatar {
         border-radius: 8px; background: ${TEAL}; flex-shrink: 0; overflow: hidden;
@@ -500,6 +500,12 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
     const chipW = dstRect.width, chipH = dstRect.height;
     const startLeft = srcRect.left + srcRect.width / 2 - chipW / 2;
     const startTop = srcRect.top + srcRect.height / 2 - chipH / 2;
+    // left/top are set ONCE (not animated) to place the clone at its
+    // start position; the actual motion is a `transform: translate()`
+    // keyframe below, which the browser can composite on the GPU without
+    // re-running layout on every frame -- unlike animating left/top
+    // directly, which forces a full reflow + repaint each frame
+    // regardless of how simple or complex the avatar image is.
     Object.assign(clone.style, { left: `${startLeft}px`, top: `${startTop}px`, width: `${chipW}px`, height: `${chipH}px` });
     document.body.appendChild(clone);
 
@@ -525,10 +531,11 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
     // `finish` always fires for the full declared duration even when the
     // source and destination happen to share a coordinate, which was the
     // root cause of the earlier "stuck ghost" bug.
+    const dx = dstRect.left - startLeft, dy = dstRect.top - startTop;
     const anim = clone.animate(
       [
-        { left: `${startLeft}px`, top: `${startTop}px`, opacity: 1 },
-        { left: `${dstRect.left}px`, top: `${dstRect.top}px`, opacity: 0.95 },
+        { transform: "translate(0px, 0px)", opacity: 1 },
+        { transform: `translate(${dx}px, ${dy}px)`, opacity: 0.95 },
       ],
       { duration: 550, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }
     );
