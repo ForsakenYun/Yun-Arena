@@ -448,6 +448,26 @@ Realtime-enabled) via `sync_draft_state()` — this is what feeds the
 Spectator Page's live view (Section 9). A failed/slow write here can
 never block or alter the admin's own drafting experience.
 
+**Watch out — this broadcast is debounced (200ms) on purpose, and needs
+to stay that way:** its payload includes the full Undo stack
+(`draftHistory` — every entry itself a deep-cloned snapshot of `teams`/
+`pool`) plus the current `teams`/`pool`/`captainCandidates` again, so
+`JSON.stringify`-ing it gets measurably more expensive the deeper into
+a draft this runs (measured: ~12ms for a realistic full 8×5 draft's
+worth of history, ~3MB serialized — cheap once, but a rapid click burst
+that recomputes it **on every single click** adds up fast: a 20-click
+burst measured at ~220ms of blocking main-thread work undebounced vs.
+~11ms debounced). This was a real, measured cause of lag when
+spam-clicking Undo (and to a lesser extent, rapid picks) late in a
+draft. The debounce means a rapid burst only pays this cost once, right
+after it settles — since the broadcast was already fire-and-forget/
+eventually-consistent by design, this doesn't change what eventually
+gets persisted, just skips the redundant mid-burst recomputation. A
+matching "flush on unmount" effect exists alongside it specifically so
+navigating away *during* the debounce window still persists the latest
+state instead of silently dropping it — keep both effects together if
+this code is ever touched again.
+
 **Resuming a paused draft:** `DraftArenaPage`'s mount effect checks for
 an existing `tournament_draft_state` row first and, if one exists,
 seeds both `tournament` and the Undo stack from it instead of starting
