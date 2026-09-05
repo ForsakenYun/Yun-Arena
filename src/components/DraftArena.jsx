@@ -580,6 +580,14 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const prevTournamentRef = useRef(null);
 
   useLayoutEffect(() => {
+    // Only the isStaff=false (Spectator Page) diff effect below ever reads
+    // this map -- for isStaff=true (the admin's own Draft Arena) nothing
+    // consumes it, so skip the scan entirely rather than pay a real,
+    // forced-layout DOM query on every single render for no reason. This
+    // matters more than it looks: a cost that's invisible on one click
+    // compounds directly with how many renders happen in a short window --
+    // exactly what rapid/spam clicking produces.
+    if (isStaff) return;
     // Merge into the existing map -- do NOT replace it wholesale. A card
     // that just got picked/assigned is already gone from the DOM by the
     // time this runs on that same commit, so it would never appear in a
