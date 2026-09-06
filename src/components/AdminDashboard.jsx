@@ -902,9 +902,9 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
   }
 
   const nav = [
-    { key: 'lobby', icon: 'flag', label: '锦标赛大厅' },
-    { key: 'admin', icon: 'shield', label: '管理后台' },
-    { key: 'spectate', icon: 'eye', label: '观赛' },
+    { key: 'lobby', icon: 'lobby', label: '锦标赛大厅' },
+    { key: 'admin', icon: 'admin', label: '管理后台' },
+    { key: 'spectate', icon: 'spectate', label: '观赛' },
   ]
   function handleNavigate(key) {
     if (key === 'lobby') return onOpenLobby?.()
