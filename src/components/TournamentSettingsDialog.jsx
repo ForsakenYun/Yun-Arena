@@ -142,8 +142,8 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
-      <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-panel border border-teal/15 shadow-teal-glow rounded-2xl px-6 py-6">
-        <h3 className="font-display text-base font-semibold tracking-wide text-ink-primary mb-5 shrink-0">锦标赛设置</h3>
+      <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-panel/95 backdrop-blur-md border border-accent/20 shadow-accent-glow rounded-2xl px-6 py-6">
+        <h3 className="font-display text-base font-semibold tracking-wide text-gradient mb-5 shrink-0">锦标赛设置</h3>
 
         {loading ? (
           <p className="text-xs text-ink-muted py-8 text-center">加载中…</p>
@@ -159,7 +159,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                   maxLength={60}
                   required
                   placeholder="请输入锦标赛名称"
-                  className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint focus:outline-none focus:border-teal/50 transition"
+                  className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -172,7 +172,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                     value={teamCount}
                     onChange={(e) => handleTeamCountChange(e.target.value)}
                     required
-                    className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-teal/50 transition"
+                    className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
                   />
                 </div>
                 <div>
@@ -184,13 +184,13 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                     value={playersPerTeam}
                     onChange={(e) => handlePlayersPerTeamChange(e.target.value)}
                     required
-                    className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-teal/50 transition"
+                    className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
                   />
                 </div>
               </div>
 
               <div className="border-t border-panel-line pt-4">
-                <h4 className="text-sm font-medium text-ink-primary mb-1">选秀顺序设置</h4>
+                <h4 className="eyebrow text-accent2 mb-1.5">选秀顺序设置</h4>
                 {teamCountValid && playersPerTeamValid ? (
                   <p className="text-xs text-ink-muted mb-3">
                     队长由管理员手动指定，不参与选秀。共 {rounds} 轮，每轮 {teamCountNum} 支队伍，共选 {totalDrafted} 名球员。默认按蛇形顺序排列，可自由编辑，用空格分隔队伍编号。
@@ -214,7 +214,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                           value={text}
                           onChange={(e) => handleRoundChange(index, e.target.value)}
                           className={`w-full bg-panel-alt border rounded-lg px-3 py-2.5 text-sm text-ink-primary tabular-nums focus:outline-none transition ${
-                            roundErrors[index] ? 'border-danger/50 focus:border-danger' : 'border-panel-line focus:border-teal/50'
+                            roundErrors[index] ? 'border-danger/50 focus:border-danger' : 'border-panel-line focus:border-accent2/60'
                           }`}
                         />
                         {roundErrors[index] && <p className="text-xs text-danger mt-1">{roundErrors[index]}</p>}
@@ -239,7 +239,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
               <button
                 type="submit"
                 disabled={!canSave}
-                className="flex-1 bg-teal text-void font-semibold tracking-wide text-sm py-2.5 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+                className="btn-primary flex-1 text-sm py-2.5"
               >
                 {saving ? '保存中…' : '保存'}
               </button>

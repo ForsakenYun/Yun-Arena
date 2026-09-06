@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { login, register, uploadAvatar } from '../lib/auth.js'
+import AppBackground from './AppBackground.jsx'
 
 /* ---------- inline icons (no external icon package needed) ---------- */
 const Icon = {
@@ -55,7 +56,7 @@ function Field({ icon, ...props }) {
       <IconCmp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />
       <input
         {...props}
-        className="w-full bg-panel-alt border border-panel-line rounded-lg pl-10 pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-teal focus:shadow-teal-glow"
+        className="w-full bg-panel-alt/70 border border-panel-line rounded-lg pl-10 pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:shadow-accent-glow focus:bg-panel-alt"
       />
     </div>
   )
@@ -69,13 +70,13 @@ function PasswordField({ icon, visible, onToggle, ...props }) {
       <input
         {...props}
         type={visible ? 'text' : 'password'}
-        className="w-full bg-panel-alt border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-teal focus:shadow-teal-glow"
+        className="w-full bg-panel-alt/70 border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:shadow-accent-glow focus:bg-panel-alt"
       />
       <button
         type="button"
         onClick={onToggle}
         tabIndex={-1}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-teal transition"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-accent2 transition"
         aria-label={visible ? '隐藏密码' : '显示密码'}
       >
         {visible ? <Icon.eyeOff className="w-4 h-4" /> : <Icon.eye className="w-4 h-4" />}
@@ -192,36 +193,47 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
   }
 
   return (
-    <div className="min-h-screen w-full bg-void text-ink-primary font-body flex items-center justify-center px-6 py-10">
+    <div className="min-h-screen w-full text-ink-primary font-body flex items-center justify-center px-6 py-10">
+      <AppBackground />
       <div className="w-full max-w-sm">
-        <div className="bg-panel border border-teal/15 rounded-2xl shadow-teal-glow px-7 py-8 sm:px-8 sm:py-9">
-          {/* tab switcher */}
-          <div className="flex bg-panel-alt border border-panel-line rounded-full p-1 mb-7">
-            <button
-              type="button"
-              onClick={() => switchMode('login')}
-              className={`flex-1 py-2 rounded-full text-sm font-medium tracking-wide transition ${
-                mode === 'login'
-                  ? 'bg-teal/10 text-teal border border-teal/40'
-                  : 'text-ink-muted hover:text-ink-primary'
-              }`}
-            >
-              登录
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode('register')}
-              className={`flex-1 py-2 rounded-full text-sm font-medium tracking-wide transition ${
-                mode === 'register'
-                  ? 'bg-teal/10 text-teal border border-teal/40'
-                  : 'text-ink-muted hover:text-ink-primary'
-              }`}
-            >
-              注册
-            </button>
-          </div>
+        {/* brand mark */}
+        <div className="flex flex-col items-center gap-2.5 mb-7">
+          <span className="w-14 h-14 rounded-2xl bg-accent-gradient flex items-center justify-center shadow-accent-glow-lg rotate-3">
+            <span className="font-display font-black text-void text-xl -rotate-3">秀</span>
+          </span>
+          <h1 className="font-display text-2xl font-bold tracking-[0.15em] text-gradient">选秀台</h1>
+          <p className="eyebrow">DRAFT STAGE · ARENA</p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="accent-frame shadow-accent-glow">
+          <div className="bg-panel/90 backdrop-blur-md rounded-[calc(1rem-1px)] px-7 py-8 sm:px-8 sm:py-9">
+            {/* tab switcher */}
+            <div className="relative grid grid-cols-2 bg-panel-alt border border-panel-line rounded-full p-1 mb-7">
+              <div
+                className="absolute inset-y-1 w-[calc(50%-4px)] rounded-full bg-accent-gradient shadow-accent-glow transition-transform duration-300 ease-out"
+                style={{ transform: mode === 'login' ? 'translateX(0%)' : 'translateX(calc(100% + 8px))' }}
+              />
+              <button
+                type="button"
+                onClick={() => switchMode('login')}
+                className={`relative z-10 py-2 rounded-full text-sm font-heading font-semibold tracking-wide transition ${
+                  mode === 'login' ? 'text-void' : 'text-ink-muted hover:text-ink-primary'
+                }`}
+              >
+                登录
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('register')}
+                className={`relative z-10 py-2 rounded-full text-sm font-heading font-semibold tracking-wide transition ${
+                  mode === 'register' ? 'text-void' : 'text-ink-muted hover:text-ink-primary'
+                }`}
+              >
+                注册
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'login' ? (
               <>
                 <div className="space-y-1.5">
@@ -244,14 +256,14 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
               <>
                 <div className="flex flex-col items-center gap-2 pb-1">
                   <label className="relative cursor-pointer group">
-                    <div className="w-20 h-20 rounded-lg bg-panel-alt border border-panel-line overflow-hidden flex items-center justify-center transition group-hover:border-teal">
+                    <div className="w-20 h-20 rounded-xl bg-panel-alt border border-panel-line overflow-hidden flex items-center justify-center transition group-hover:border-accent2/60 group-hover:shadow-accent-glow">
                       {avatarPreview ? (
                         <img src={avatarPreview} alt="头像预览" className="w-full h-full object-cover" />
                       ) : (
                         <Icon.user className="w-8 h-8 text-ink-muted" />
                       )}
                     </div>
-                    <span className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-teal flex items-center justify-center border-2 border-panel">
+                    <span className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-accent-gradient flex items-center justify-center border-2 border-panel shadow-accent-glow">
                       <Icon.camera className="w-3 h-3 text-void" />
                     </span>
                     <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
@@ -290,7 +302,7 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
                         key={opt.value}
                         className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
                           role === opt.value
-                            ? 'bg-teal/10 border-teal text-teal shadow-teal-glow'
+                            ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
                             : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
                         }`}
                       >
@@ -320,7 +332,7 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
                         key={opt.value}
                         className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
                           gender === opt.value
-                            ? 'bg-teal/10 border-teal text-teal shadow-teal-glow'
+                            ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
                             : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
                         }`}
                       >
@@ -388,7 +400,7 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full mt-2 bg-teal text-void font-semibold tracking-wide text-sm py-3 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+              className="btn-primary w-full mt-2 text-sm py-3"
             >
               {submitting ? '请稍候…' : mode === 'login' ? '登录' : '立即注册'}
             </button>
@@ -398,26 +410,27 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
             {mode === 'login' ? (
               <>
                 还没有账号？
-                <button onClick={() => switchMode('register')} className="text-teal hover:underline ml-1">
+                <button onClick={() => switchMode('register')} className="text-accent2 hover:underline ml-1">
                   立即注册
                 </button>
               </>
             ) : (
               <>
                 已有账号？
-                <button onClick={() => switchMode('login')} className="text-teal hover:underline ml-1">
+                <button onClick={() => switchMode('login')} className="text-accent2 hover:underline ml-1">
                   返回登录
                 </button>
               </>
             )}
           </p>
+          </div>
         </div>
       </div>
 
       {/* toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-20 bg-panel-alt border border-teal/40 shadow-teal-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-teal" />
+        <div className="fixed bottom-6 right-6 z-20 bg-panel-alt/95 backdrop-blur border border-accent2/40 shadow-accent-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent2 animate-pulseGlow" />
           {toast}
         </div>
       )}

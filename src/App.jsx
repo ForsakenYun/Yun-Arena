@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import AuthPage from './components/AuthPage.jsx'
+import AppBackground from './components/AppBackground.jsx'
 import AdminDashboard from './components/AdminDashboard.jsx'
 import TournamentLobby from './components/TournamentLobby.jsx'
 import DraftArena from './components/DraftArena.jsx'
@@ -106,7 +107,11 @@ export default function App() {
   }
 
   if (checkingSession) {
-    return <div className="min-h-screen w-full bg-void" />
+    return (
+      <div className="min-h-screen w-full bg-void">
+        <AppBackground />
+      </div>
+    )
   }
 
   const isStaff = account && (account.permission_role === 'admin' || account.permission_role === 'developer')

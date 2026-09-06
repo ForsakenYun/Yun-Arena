@@ -14,6 +14,7 @@ import {
 } from '../lib/tournamentApi.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import TournamentSettingsDialog from './TournamentSettingsDialog.jsx'
+import AppBackground from './AppBackground.jsx'
 
 /* ---------- inline icons (kept consistent with AuthPage.jsx / AdminDashboard.jsx) ---------- */
 const Icon = {
@@ -179,7 +180,7 @@ function RoleBadge({ role }) {
   return (
     <span
       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
-        isCaptain ? 'bg-teal/10 text-teal border-teal/40' : 'bg-panel-alt text-ink-muted border-panel-line'
+        isCaptain ? 'bg-gold/10 text-gold border-gold/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
       {ROLE_LABEL[role]}
@@ -191,10 +192,10 @@ function StatusBadge({ online }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${
-        online ? 'bg-teal/10 text-teal border-teal/40' : 'bg-panel-alt text-ink-muted border-panel-line'
+        online ? 'bg-success/10 text-success border-success/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
-      <span>{online ? '🟢' : '🔴'}</span>
+      <span className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-ink-faint'}`} />
       {online ? '在线' : '离线'}
     </span>
   )
@@ -203,13 +204,15 @@ function StatusBadge({ online }) {
 function StatCard({ icon, label, value }) {
   const IconCmp = Icon[icon]
   return (
-    <div className="bg-panel border border-teal/15 rounded-2xl shadow-teal-glow px-5 py-5 flex items-center gap-4">
-      <span className="w-11 h-11 rounded-xl bg-teal/10 border border-teal/40 flex items-center justify-center shrink-0">
-        <IconCmp className="w-5 h-5 text-teal" />
-      </span>
-      <div className="leading-tight">
-        <p className="text-2xl font-display font-semibold text-ink-primary">{value}</p>
-        <p className="text-xs text-ink-muted mt-0.5">{label}</p>
+    <div className="accent-frame shadow-accent-glow">
+      <div className="bg-panel/90 backdrop-blur-sm rounded-[calc(1rem-1px)] px-5 py-5 flex items-center gap-4">
+        <span className="w-11 h-11 rounded-xl bg-accent-gradient flex items-center justify-center shrink-0 shadow-accent-glow">
+          <IconCmp className="w-5 h-5 text-void" />
+        </span>
+        <div className="leading-tight">
+          <p className="text-2xl font-display font-bold text-ink-primary tabular-nums">{value}</p>
+          <p className="text-xs text-ink-muted mt-0.5">{label}</p>
+        </div>
       </div>
     </div>
   )
@@ -227,7 +230,7 @@ function StartValidationRow({ label, current, required }) {
     <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-panel-alt border border-panel-line">
       <span className="text-xs text-ink-muted">{label}</span>
       <span className="text-sm font-semibold tabular-nums">
-        <span className={ok ? 'text-teal' : 'text-danger'}>{current}</span>
+        <span className={ok ? 'text-success' : 'text-danger'}>{current}</span>
         <span className="text-ink-faint"> / {required}</span>
       </span>
     </div>
@@ -249,7 +252,7 @@ function StartValidationDialog({ result, onClose }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-panel border border-danger/25 shadow-[0_0_20px_rgba(255,84,112,0.15)] rounded-2xl px-6 py-6">
+      <div className="relative w-full max-w-md bg-panel/95 backdrop-blur-md border border-danger/25 shadow-[0_0_28px_rgba(255,77,109,0.18)] rounded-2xl px-6 py-6">
         <div className="flex items-start gap-3 mb-5">
           <span className="w-9 h-9 rounded-full border flex items-center justify-center shrink-0 bg-danger/10 border-danger/30 text-danger">
             <Icon.alert className="w-4.5 h-4.5" />
@@ -570,17 +573,18 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
   }
 
   return (
-    <div className="min-h-screen w-full bg-void text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
+    <div className="min-h-screen w-full text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
+      <AppBackground />
       <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-5">
         {/* header */}
         <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
           <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-teal/10 border border-teal/40 flex items-center justify-center shadow-teal-glow">
-              <Icon.flag className="w-5 h-5 text-teal" />
+            <span className="w-11 h-11 rounded-xl bg-accent-gradient flex items-center justify-center shadow-accent-glow-lg rotate-3 shrink-0">
+              <Icon.flag className="w-5 h-5 text-void -rotate-3" />
             </span>
             <div>
-              <h1 className="font-display text-xl font-semibold tracking-wide text-ink-primary">锦标赛大厅</h1>
-              <p className="text-xs text-ink-muted">选秀台 · 锦标赛参赛</p>
+              <h1 className="font-display text-xl font-bold tracking-wide text-gradient">锦标赛大厅</h1>
+              <p className="eyebrow">DRAFT STAGE · TOURNAMENT LOBBY</p>
             </div>
           </div>
 
@@ -591,7 +595,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
             <button
               type="button"
               onClick={() => (window.location.hash = 'spectate')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
+              className="btn-ghost px-4 py-2.5 text-sm"
             >
               <Icon.eye className="w-4 h-4" />
               观赛
@@ -600,13 +604,13 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
               <button
                 type="button"
                 onClick={onOpenAdmin}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
+                className="btn-ghost px-4 py-2.5 text-sm"
               >
                 <Icon.dashboard className="w-4 h-4" />
                 管理后台
               </button>
             )}
-            <div className="flex items-center gap-3 bg-panel border border-teal/15 rounded-xl pl-2.5 pr-2 py-2">
+            <div className="flex items-center gap-3 bg-panel/80 backdrop-blur-sm border border-panel-line rounded-xl pl-2.5 pr-2 py-2">
               <Avatar src={account.avatar_url} alt={`${account.display_name} 的头像`} size="w-8 h-8" />
               <div className="leading-tight">
                 <p className="text-xs text-ink-muted">当前登录</p>
@@ -633,7 +637,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
           </div>
 
           {/* join / leave */}
-          <section className="lg:col-span-5 bg-panel border border-teal/15 rounded-2xl shadow-teal-glow px-5 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <section className="lg:col-span-5 glass-panel border-accent/20 shadow-accent-glow px-5 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary mb-1">
                 {joined ? '你已加入锦标赛' : '尚未加入锦标赛'}
@@ -648,7 +652,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
               <button
                 type="button"
                 onClick={handleLeave}
-                className="inline-flex items-center justify-center gap-2 shrink-0 bg-danger text-void font-semibold tracking-wide text-sm px-6 py-3 rounded-lg transition hover:brightness-110 active:scale-[0.99]"
+                className="btn-danger shrink-0 bg-danger/10 px-6 py-3 text-sm"
               >
                 <Icon.door className="w-4 h-4" />
                 退出比赛
@@ -658,7 +662,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
                 type="button"
                 onClick={handleJoin}
                 disabled={busy}
-                className="inline-flex items-center justify-center gap-2 shrink-0 bg-teal text-void font-semibold tracking-wide text-sm px-6 py-3 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+                className="btn-primary shrink-0 px-6 py-3 text-sm"
               >
                 <Icon.flag className="w-4 h-4" />
                 {busy ? '处理中…' : '参加比赛'}
@@ -673,7 +677,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
             <button
               type="button"
               onClick={() => setShowSettings(true)}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
+              className="btn-ghost px-4 py-2.5 text-sm"
             >
               <Icon.gear className="w-4 h-4" />
               锦标赛设置
@@ -682,7 +686,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
               type="button"
               onClick={handleRoll}
               disabled={rolling}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition disabled:opacity-60 disabled:pointer-events-none"
+              className="btn-ghost px-4 py-2.5 text-sm"
             >
               <Icon.dice className="w-4 h-4" />
               {rolling ? '摇号中…' : '随机摇号'}
@@ -690,7 +694,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
             <button
               type="button"
               onClick={handleClear}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-danger/40 text-danger text-sm font-medium tracking-wide hover:bg-danger/10 transition"
+              className="btn-danger px-4 py-2.5 text-sm"
             >
               <Icon.sweep className="w-4 h-4" />
               清空参赛名单
@@ -699,7 +703,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
               type="button"
               onClick={handleCreateTempPlayers}
               disabled={creatingTemp || !settings}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition disabled:opacity-60 disabled:pointer-events-none"
+              className="btn-ghost px-4 py-2.5 text-sm"
               title="开发测试用：根据当前锦标赛设置自动生成并加入临时队长与队员"
             >
               <Icon.userPlus className="w-4 h-4" />
@@ -708,7 +712,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
             <button
               type="button"
               onClick={handleRemoveTempPlayers}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-danger/40 text-danger text-sm font-medium tracking-wide hover:bg-danger/10 transition"
+              className="btn-danger px-4 py-2.5 text-sm"
               title="开发测试用：移除所有由“创建临时玩家”生成的测试用户"
             >
               <Icon.userMinus className="w-4 h-4" />
@@ -717,7 +721,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
             <button
               type="button"
               onClick={handleStartTournament}
-              className="inline-flex items-center gap-2 bg-teal text-void font-semibold tracking-wide text-sm px-4 py-2.5 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99]"
+              className="btn-primary ml-auto px-5 py-2.5 text-sm"
             >
               <Icon.play className="w-4 h-4" />
               开始比赛
@@ -726,10 +730,10 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
         )}
 
         {/* participant list — fills remaining height on desktop; only this area scrolls */}
-        <section className="bg-panel border border-teal/15 rounded-2xl shadow-teal-glow flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
+        <section className="glass-panel border-accent/20 shadow-accent-glow flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
           <div className="px-5 pt-6 pb-4 sm:px-6 shrink-0 flex items-center justify-between gap-3">
             <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary">参赛玩家</h2>
-            <span className="text-xs text-ink-muted">{participants.length} 人参赛</span>
+            <span className="text-xs text-ink-muted font-mono">{participants.length} 人参赛</span>
           </div>
 
           <div className="flex-1 lg:min-h-0 overflow-y-auto px-5 pb-6 sm:px-6">
@@ -749,20 +753,20 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
                 </thead>
                 <tbody>
                   {sortedParticipants.map((p) => (
-                    <tr key={p.accountId} className="border-t border-panel-line hover:bg-panel-alt/60 transition">
+                    <tr key={p.accountId} className="border-t border-panel-line hover:bg-accent/5 transition">
                       <td className="px-4 py-3">
                         <Avatar src={p.avatarUrl} alt={`${p.displayName} 的头像`} />
                       </td>
                       <td className="px-4 py-3 text-ink-primary">
                         {p.displayName}
-                        {p.accountId === account.id && <span className="ml-2 text-[11px] text-teal">（我）</span>}
+                        {p.accountId === account.id && <span className="ml-2 text-[11px] text-accent2">（我）</span>}
                       </td>
                       <td className="px-4 py-3">
                         <GenderIcon gender={p.gender} />
                       </td>
                       <td className="px-4 py-3">
                         {p.rollNumber != null ? (
-                          <span className="inline-flex items-center justify-center min-w-[2.25rem] px-2 py-1 rounded-lg bg-teal/10 border border-teal/40 text-teal text-xs font-semibold tabular-nums">
+                          <span className="inline-flex items-center justify-center min-w-[2.25rem] px-2 py-1 rounded-lg bg-accent-gradient text-void text-xs font-bold font-mono shadow-accent-glow">
                             {p.rollNumber}
                           </span>
                         ) : (
@@ -772,7 +776,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
                       <td className="px-4 py-3">
                         <RoleBadge role={p.tournamentRole} />
                       </td>
-                      <td className="px-4 py-3 text-ink-muted">{formatDateTime(p.joinedAt)}</td>
+                      <td className="px-4 py-3 text-ink-muted font-mono text-xs">{formatDateTime(p.joinedAt)}</td>
                       <td className="px-4 py-3">
                         <StatusBadge online={isOnline(p.lastSeenAt, now)} />
                       </td>
@@ -806,8 +810,8 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
 
       {/* toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt border border-teal/40 shadow-teal-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-teal" />
+        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt/95 backdrop-blur border border-accent2/40 shadow-accent-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent2 animate-pulseGlow" />
           {toast}
         </div>
       )}

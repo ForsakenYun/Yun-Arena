@@ -7,6 +7,7 @@ import {
   subscribeFinalMatchups,
 } from '../lib/tournamentApi.js'
 import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
+import AppBackground from './AppBackground.jsx'
 
 /* ════════════════════════════════════════════════════════════════════════
    SPECTATOR PAGE (Phase 6) — a read-only window onto the live tournament,
@@ -33,7 +34,7 @@ import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
          a spectator's click can never diverge local state from the live
          broadcast this page renders.
    Only a thin identity/exit strip (this file's own header) is unique to
-   this page, in the main app's Tailwind teal theme (Section 3).
+   this page, in the main app's Tailwind accent theme (Section 3).
 
    View, switched purely by what's currently in the database (never by
    anything this page writes):
@@ -65,15 +66,15 @@ const Icon = {
 function WaitingSpectatorView() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
-      <span className="w-14 h-14 rounded-2xl bg-teal/10 border border-teal/30 flex items-center justify-center shadow-teal-glow">
-        <Icon.eye className="w-7 h-7 text-teal" />
+      <span className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center shadow-accent-glow">
+        <Icon.eye className="w-7 h-7 text-accent" />
       </span>
       <h2 className="font-display text-lg font-semibold text-ink-primary">选秀尚未开始</h2>
       <p className="text-sm text-ink-muted max-w-sm">
         请等待管理员开始选秀，队长分配、队员选秀与最终对阵将在开始后自动在此实时更新。
       </p>
       <span className="inline-flex items-center gap-1.5 text-xs text-ink-faint mt-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-teal animate-pulseGlow" />
+        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulseGlow" />
         实时等待中…
       </span>
     </div>
@@ -176,7 +177,8 @@ export default function SpectatorPage({ onExitToLobby }) {
   }, [draftState])
 
   return (
-    <div className="min-h-screen w-full bg-void text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
+    <div className="min-h-screen w-full text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
+      <AppBackground variant={stage === 'final' ? 'gold' : 'default'} />
       {/* Orbitron font/scrollbar styling used by the reused DraftArena/
           FinalMatchupsStage bodies below, so they render pixel-identical
           to the admin's own Draft Arena (same .font-display, etc.). */}
@@ -192,16 +194,11 @@ export default function SpectatorPage({ onExitToLobby }) {
             position/style -- via showBackButton/backLabel below -- so
             reusing the admin's own markup guarantees a pixel-perfect
             match to their respective admin pages, rather than sitting in
-            a separate row above with a different (Draft-Arena-teal)
+            a separate row above with a different (Draft-Arena-accent)
             style than what Final Matchups actually uses. */}
         {stage !== 'drafting' && stage !== 'final' && (
           <header className="flex items-center shrink-0">
-            <button
-              type="button"
-              onClick={onExitToLobby}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
-              style={{ background: "rgba(0,245,212,0.05)", borderColor: "rgba(0,245,212,0.28)", color: "#7df3e1" }}
-            >
+            <button type="button" onClick={onExitToLobby} className="btn-ghost px-3.5 py-2 text-xs">
               ← 返回锦标赛大厅
             </button>
           </header>
