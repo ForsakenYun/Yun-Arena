@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ConfirmDialog from './ConfirmDialog.jsx'
-import AppBackground from './AppBackground.jsx'
+import AppShell from './AppShell.jsx'
+import { TileRow } from './ui.jsx'
 import { uploadAvatar } from '../lib/auth.js'
 import {
   fetchUsers,
@@ -315,6 +316,33 @@ function StatChip({ label, value }) {
       <span className="text-sm font-display font-bold text-accent2 tabular-nums leading-none">{value}</span>
       <span className="text-[11px] text-ink-muted leading-none">{label}</span>
     </div>
+  )
+}
+
+function RailStat({ icon, label, value }) {
+  const IconCmp = Icon[icon]
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-lg bg-panel-alt/60 border border-panel-line py-2.5">
+      <IconCmp className="w-3.5 h-3.5 text-accent2" />
+      <span className="text-sm font-display font-bold text-ink-primary leading-none tabular-nums">{value}</span>
+      <span className="text-[9px] text-ink-muted leading-none">{label}</span>
+    </div>
+  )
+}
+
+function IconAction({ icon, title, onClick, tone = 'default' }) {
+  const IconCmp = Icon[icon]
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`w-8 h-8 flex items-center justify-center rounded-lg border border-panel-line transition ${
+        tone === 'danger' ? 'text-ink-muted hover:text-danger hover:border-danger/40' : 'text-ink-muted hover:text-accent2 hover:border-accent2/40'
+      }`}
+    >
+      <IconCmp className="w-3.5 h-3.5" />
+    </button>
   )
 }
 
@@ -873,67 +901,66 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
     showToast(`已复制邀请码 ${code}`)
   }
 
+  const nav = [
+    { key: 'lobby', icon: 'flag', label: '锦标赛大厅' },
+    { key: 'admin', icon: 'shield', label: '管理后台' },
+    { key: 'spectate', icon: 'eye', label: '观赛' },
+  ]
+  function handleNavigate(key) {
+    if (key === 'lobby') return onOpenLobby?.()
+    window.location.hash = key
+  }
+
   return (
-    <div className="min-h-screen w-full text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
-      <AppBackground />
-      <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-5">
-        {/* header */}
-        <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="w-11 h-11 rounded-xl bg-accent-gradient flex items-center justify-center shadow-accent-glow-lg -rotate-3 shrink-0">
-              <Icon.shield className="w-5 h-5 text-void rotate-3" />
-            </span>
-            <div>
-              <h1 className="font-display text-xl font-bold tracking-wide text-gradient">管理后台</h1>
-              <p className="eyebrow">DRAFT STAGE · CONTROL CENTER</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onOpenLobby}
-              className="btn-ghost px-4 py-2.5 text-sm"
-            >
-              <Icon.flag className="w-4 h-4" />
-              锦标赛大厅
-            </button>
-            <div className="flex items-center gap-3 bg-panel/80 backdrop-blur-sm border border-panel-line rounded-xl pl-2.5 pr-2 py-2">
-              <Avatar
-                src={account.avatar_url}
-                alt={`${account.display_name} 的头像`}
-                size="w-8 h-8"
-              />
-              <div className="leading-tight">
-                <p className="text-xs text-ink-muted">当前登录</p>
-                <p className="text-sm text-ink-primary font-medium">{account.display_name}</p>
-              </div>
+    <AppShell
+      account={account}
+      section="admin"
+      nav={nav}
+      onNavigate={handleNavigate}
+      onLogout={() => setConfirmingLogout(true)}
+    >
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
+        {/* ═══ SIDEBAR: console section switcher ═══ */}
+        <aside className="lg:w-[220px] shrink-0 flex flex-col gap-1.5">
+          <p className="eyebrow px-2 mb-1">控制台</p>
+          {DASHBOARD_TABS.map((tab) => {
+            const TabIcon = Icon[tab.icon]
+            const isActive = activeTab === tab.id
+            const count = tab.id === 'users' ? userCounts.total : inviteCounts.total
+            return (
               <button
+                key={tab.id}
                 type="button"
-                onClick={() => setConfirmingLogout(true)}
-                className="inline-flex items-center gap-1.5 ml-2 pl-3 border-l border-panel-line text-xs text-ink-muted hover:text-danger transition"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-heading font-semibold tracking-wide transition ${
+                  isActive
+                    ? 'bg-accent-gradient text-void shadow-accent-glow'
+                    : 'text-ink-muted hover:text-ink-primary hover:bg-panel-alt'
+                }`}
               >
-                <Icon.logout className="w-4 h-4" />
-                退出登录
+                <TabIcon className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left">{tab.label}</span>
+                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isActive ? 'bg-void/20' : 'bg-panel-alt text-ink-faint'}`}>{count}</span>
               </button>
+            )
+          })}
+
+          <div className="hidden lg:block mt-4 pt-4 border-t border-panel-line">
+            <p className="eyebrow px-2 mb-2">概览</p>
+            <div className="grid grid-cols-2 gap-2 px-1">
+              <RailStat icon="user" label="队长" value={userCounts.captains} />
+              <RailStat icon="user" label="队员" value={userCounts.players} />
             </div>
           </div>
-        </header>
+        </aside>
 
-        {/* tab navigation */}
-        <div className="shrink-0">
-          <TabNav tabs={DASHBOARD_TABS} activeTab={activeTab} onChange={setActiveTab} />
-        </div>
-
-        {/* registered users */}
+        {/* ═══ MAIN: active console section ═══ */}
         {activeTab === 'users' && (
-        <section className="glass-panel border-accent/20 shadow-accent-glow flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 px-5 pt-6 pb-4 sm:px-6 shrink-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary shrink-0">已注册用户</h2>
-              <StatChip label="总用户" value={userCounts.total} />
-              <StatChip label="队长" value={userCounts.captains} />
-              <StatChip label="队员" value={userCounts.players} />
+        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
+            <div>
+              <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">已注册用户</h1>
+              <p className="text-xs text-ink-muted mt-0.5">共 {userCounts.total} 人 · {userCounts.captains} 队长 · {userCounts.players} 队员</p>
             </div>
             <div className="w-full lg:w-64 shrink-0">
               <Field
@@ -946,105 +973,52 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
             </div>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-y-auto px-5 pb-6 sm:px-6">
-            <div className="rounded-xl border border-panel-line overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-panel-alt text-ink-muted text-xs uppercase tracking-wide">
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">用户名</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">头像</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">昵称</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">性别</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">身份</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">角色</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-right font-medium px-4 py-3">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredUsers.map((u) => (
-                    <tr key={u.id} className="border-t border-panel-line hover:bg-accent/5 transition">
-                      <td className="px-4 py-3 text-ink-primary font-mono text-xs">{u.username}</td>
-                      <td className="px-4 py-3">
-                        <Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />
-                      </td>
-                      <td className="px-4 py-3 text-ink-primary">{u.display_name}</td>
-                      <td className="px-4 py-3">
-                        <GenderIcon gender={u.gender} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <RoleBadge role={u.tournament_role} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <PermissionBadge role={u.permission_role} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2 flex-wrap">
-                          {isDeveloper && u.permission_role === 'user' && (
-                            <button
-                              type="button"
-                              onClick={() => handlePromote(u)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-accent2 hover:border-accent2/40 transition"
-                            >
-                              <Icon.promote className="w-3.5 h-3.5" />
-                              提升为管理员
-                            </button>
-                          )}
-                          {isDeveloper && u.permission_role === 'admin' && (
-                            <button
-                              type="button"
-                              onClick={() => handleDemote(u)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
-                            >
-                              <Icon.demote className="w-3.5 h-3.5" />
-                              降级为普通用户
-                            </button>
-                          )}
-                          {(isDeveloper || u.permission_role !== 'developer') && (
-                            <button
-                              type="button"
-                              onClick={() => setEditingUser(u)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-accent2 hover:border-accent2/40 transition"
-                            >
-                              <Icon.edit className="w-3.5 h-3.5" />
-                              编辑
-                            </button>
-                          )}
-                          {u.permission_role !== 'developer' && (
-                            <button
-                              type="button"
-                              onClick={() => setDeletingUser(u)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
-                            >
-                              <Icon.trash className="w-3.5 h-3.5" />
-                              删除
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredUsers.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-ink-faint text-xs">
-                        未找到匹配的用户
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <div className="flex-1 lg:min-h-0 overflow-y-auto px-3 py-2">
+            {filteredUsers.length === 0 && (
+              <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">未找到匹配的用户</div>
+            )}
+            {filteredUsers.map((u) => (
+              <TileRow
+                key={u.id}
+                leading={<Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />}
+                title={u.display_name}
+                subtitle={<span className="font-mono">{u.username}</span>}
+                badges={
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    <GenderIcon gender={u.gender} />
+                    <RoleBadge role={u.tournament_role} />
+                    <PermissionBadge role={u.permission_role} />
+                  </span>
+                }
+                trailing={
+                  <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                    {isDeveloper && u.permission_role === 'user' && (
+                      <IconAction icon="promote" title="提升为管理员" onClick={() => handlePromote(u)} />
+                    )}
+                    {isDeveloper && u.permission_role === 'admin' && (
+                      <IconAction icon="demote" title="降级为普通用户" tone="danger" onClick={() => handleDemote(u)} />
+                    )}
+                    {(isDeveloper || u.permission_role !== 'developer') && (
+                      <IconAction icon="edit" title="编辑" onClick={() => setEditingUser(u)} />
+                    )}
+                    {u.permission_role !== 'developer' && (
+                      <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingUser(u)} />
+                    )}
+                  </div>
+                }
+              />
+            ))}
           </div>
         </section>
         )}
 
         {/* invite code management */}
         {activeTab === 'invites' && (
-        <section className="glass-panel border-accent/20 shadow-accent-glow flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 px-5 pt-6 pb-4 sm:px-6 shrink-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary shrink-0">邀请码管理</h2>
-              <StatChip label="总数" value={inviteCounts.total} />
-              <StatChip label="有效" value={inviteCounts.active} />
+        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
+            <div>
+              <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">邀请码管理</h1>
+              <p className="text-xs text-ink-muted mt-0.5">共 {inviteCounts.total} 个 · {inviteCounts.active} 个有效</p>
             </div>
             <button
               type="button"
@@ -1056,75 +1030,40 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
             </button>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-y-auto px-5 pb-6 sm:px-6">
-            <div className="rounded-xl border border-panel-line overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-panel-alt text-ink-muted text-xs uppercase tracking-wide">
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">邀请码</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">使用情况</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">过期时间</th>
-                    <th className="sticky top-0 z-10 bg-panel-alt text-right font-medium px-4 py-3">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invites.map((inv) => {
-                    const expired = isExpired(inv.expires_at)
-                    return (
-                      <tr key={inv.id} className="border-t border-panel-line hover:bg-accent/5 transition">
-                        <td className="px-4 py-3">
-                          <InviteCodeCell
-                            code={inv.code}
-                            revealed={revealedInvites.has(inv.id)}
-                            onReveal={() => revealInvite(inv.id)}
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-ink-primary font-mono">
-                          {inv.used_count} / {inv.max_uses}
-                        </td>
-                        <td className="px-4 py-3">
-                          {inv.expires_at ? (
-                            <span className={expired ? 'text-danger' : 'text-ink-primary'}>
-                              {formatExpiry(inv.expires_at)}
-                              {expired && <span className="ml-1.5 text-[11px]">（已过期）</span>}
-                            </span>
-                          ) : (
-                            <span className="text-ink-muted">永不过期</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => copyInvite(inv.code)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-accent2 hover:border-accent2/40 transition"
-                            >
-                              <Icon.copy className="w-3.5 h-3.5" />
-                              复制
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeletingInvite(inv)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
-                            >
-                              <Icon.trash className="w-3.5 h-3.5" />
-                              删除
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {invites.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-ink-faint text-xs">
-                        暂无邀请码，点击右上角生成
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <div className="flex-1 lg:min-h-0 overflow-y-auto px-3 py-2">
+            {invites.length === 0 && (
+              <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">暂无邀请码，点击右上角生成</div>
+            )}
+            {invites.map((inv) => {
+              const expired = isExpired(inv.expires_at)
+              return (
+                <TileRow
+                  key={inv.id}
+                  leading={
+                    <span className="w-9 h-9 rounded-lg bg-panel-alt border border-panel-line flex items-center justify-center shrink-0">
+                      <Icon.ticket className="w-4 h-4 text-accent2" />
+                    </span>
+                  }
+                  title={<InviteCodeCell code={inv.code} revealed={revealedInvites.has(inv.id)} onReveal={() => revealInvite(inv.id)} />}
+                  subtitle={
+                    <span className="flex items-center gap-3">
+                      <span className="font-mono">{inv.used_count} / {inv.max_uses} 次</span>
+                      {inv.expires_at ? (
+                        <span className={expired ? 'text-danger' : ''}>{formatExpiry(inv.expires_at)}{expired && ' （已过期）'}</span>
+                      ) : (
+                        <span>永不过期</span>
+                      )}
+                    </span>
+                  }
+                  trailing={
+                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                      <IconAction icon="copy" title="复制" onClick={() => copyInvite(inv.code)} />
+                      <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingInvite(inv)} />
+                    </div>
+                  }
+                />
+              )
+            })}
           </div>
         </section>
         )}
@@ -1196,6 +1135,6 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
           {toast}
         </div>
       )}
-    </div>
+    </AppShell>
   )
 }

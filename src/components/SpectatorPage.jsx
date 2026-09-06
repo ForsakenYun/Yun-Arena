@@ -7,7 +7,7 @@ import {
   subscribeFinalMatchups,
 } from '../lib/tournamentApi.js'
 import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
-import AppBackground from './AppBackground.jsx'
+import AppShell from './AppShell.jsx'
 
 /* ════════════════════════════════════════════════════════════════════════
    SPECTATOR PAGE (Phase 6) — a read-only window onto the live tournament,
@@ -177,61 +177,39 @@ export default function SpectatorPage({ onExitToLobby }) {
   }, [draftState])
 
   return (
-    <div className="min-h-screen w-full text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
-      <AppBackground variant={stage === 'final' ? 'gold' : 'default'} />
+    <AppShell
+      account={null}
+      viewerMode
+      backAction={onExitToLobby}
+      backLabel="返回锦标赛大厅"
+      title={tournamentName ? `${tournamentName} · 观赛` : '观赛'}
+      bgVariant={stage === 'final' ? 'gold' : 'default'}
+    >
       {/* Orbitron font/scrollbar styling used by the reused DraftArena/
           FinalMatchupsStage bodies below, so they render pixel-identical
           to the admin's own Draft Arena (same .font-display, etc.). */}
       <GlobalStyle />
-      <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-5">
-        {/* header -- no admin actions of any kind; a single compact back
-            button, styled/positioned like the admin Draft Arena's own
-            back button (top-left, small ghost button), instead of a full
-            title bar, so the main Spectator UI gets the space back.
-            Suppressed during the 'drafting' and 'final' stages: those two
-            reused components (DraftArena / FinalMatchupsStage) each
-            render this exact same button themselves, in their own exact
-            position/style -- via showBackButton/backLabel below -- so
-            reusing the admin's own markup guarantees a pixel-perfect
-            match to their respective admin pages, rather than sitting in
-            a separate row above with a different (Draft-Arena-accent)
-            style than what Final Matchups actually uses. */}
-        {stage !== 'drafting' && stage !== 'final' && (
-          <header className="flex items-center shrink-0">
-            <button type="button" onClick={onExitToLobby} className="btn-ghost px-3.5 py-2 text-xs">
-              ← 返回锦标赛大厅
-            </button>
-          </header>
-        )}
-
-        {initialLoading ? (
-          <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">加载中…</div>
-        ) : stage === 'final' && finalMatches ? (
-          <FinalMatchupsStage
-            tournamentName={tournamentName}
-            teams={finalMatches.teams}
-            matchups={finalMatches.matchups}
-            isStaff={false}
-            onBack={onExitToLobby}
-            showBackButton={true}
-            backLabel="← 返回锦标赛大厅"
-          />
-        ) : stage === 'drafting' && draftArenaTournament ? (
-          <DraftArena
-            tournament={draftArenaTournament}
-            setTournament={noop}
-            onBack={onExitToLobby}
-            onProceed={noop}
-            tournamentName={tournamentName}
-            isStaff={false}
-            externalSelectedCaptainId={draftState?.selectedCaptainId ?? null}
-            showBackButton={true}
-            backLabel="← 返回锦标赛大厅"
-          />
-        ) : (
-          <WaitingSpectatorView />
-        )}
-      </div>
-    </div>
+      {initialLoading ? (
+        <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">加载中…</div>
+      ) : stage === 'final' && finalMatches ? (
+        <FinalMatchupsStage
+          tournamentName={tournamentName}
+          teams={finalMatches.teams}
+          matchups={finalMatches.matchups}
+          isStaff={false}
+        />
+      ) : stage === 'drafting' && draftArenaTournament ? (
+        <DraftArena
+          tournament={draftArenaTournament}
+          setTournament={noop}
+          onProceed={noop}
+          tournamentName={tournamentName}
+          isStaff={false}
+          externalSelectedCaptainId={draftState?.selectedCaptainId ?? null}
+        />
+      ) : (
+        <WaitingSpectatorView />
+      )}
+    </AppShell>
   )
 }

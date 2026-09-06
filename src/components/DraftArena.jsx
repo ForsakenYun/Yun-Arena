@@ -6,7 +6,7 @@ import {
   createManualMatchup, removeTournamentMatchup, syncDraftState, fetchDraftState,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
-import AppBackground from "./AppBackground.jsx";
+import AppShell from "./AppShell.jsx";
 
 /* ════════════════════════════════════════════════════════════════════════
    CONSTANTS & THEME (unchanged from Dashboard.jsx)
@@ -165,78 +165,83 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
   const displayName = useCaptainName && team.captain ? `${team.captain.name}的战队` : `${teamIdx + 1}号战队`;
   const canAssign = assignable && !team.captain;
   const captainHidden = !!hiddenKeys && hiddenKeys.has(`cap:${teamIdx}`);
+  const filled = team.slots.filter(Boolean).length + (team.captain ? 1 : 0);
+  const total = team.slots.length + 1;
   return (
-    <PanelFrame
-      className={`p-3 flex-shrink-0 scroll-m-8 transition-all duration-300 ${isActive ? "scale-[1.03]" : ""} ${canAssign ? "cursor-pointer hover:brightness-125" : ""}`}
-      style={{ width: TEAM_CARD_W }}
+    <div
       data-team-panel={teamIdx}
-      onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}>
-      <div className="absolute inset-0 rounded-2xl pointer-events-none"
-        style={{ boxShadow: isActive ? `0 0 0 2px ${TEAL}, 0 0 26px ${TEAL}99` : canAssign ? `0 0 0 2px #22c55e, 0 0 18px #22c55e66` : "none", transition: "box-shadow 0.3s" }} />
-      <div className="relative mb-2">
-        <div className="text-center px-6">
-          <span className="text-[11px] font-black tracking-widest truncate inline-block max-w-full" style={{ color: TEAL, textShadow: `0 0 8px ${TEAL}99`, textTransform: useCaptainName ? "none" : "uppercase" }}>{displayName}</span>
-        </div>
-        {isActive && <span className="absolute top-1/2 right-0 -translate-y-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full animate-pulse flex-shrink-0" style={{ background: "linear-gradient(135deg, #7C5CFF, #22E5FF)", color: "#06070F" }}>选人中</span>}
+      onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}
+      className={`relative rounded-xl border px-3 py-3 transition-all duration-300 ${canAssign ? "cursor-pointer" : ""}`}
+      style={{
+        background: isActive ? "linear-gradient(160deg, rgba(34,229,255,0.12), rgba(14,16,32,0.96))" : "linear-gradient(160deg, rgba(22,26,51,0.85), rgba(14,16,32,0.9))",
+        borderColor: isActive ? TEAL : canAssign ? "#22c55e" : "rgba(43,49,89,0.7)",
+        borderStyle: canAssign ? "dashed" : "solid",
+        boxShadow: isActive ? `0 0 0 1px ${TEAL}55, 0 0 22px ${TEAL}33` : canAssign ? "0 0 14px rgba(34,197,94,0.2)" : "none",
+      }}>
+      {/* header row: name + fill progress + live indicator, all on one line */}
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0"
+          style={{ background: isActive ? TEAL : "rgba(255,255,255,0.06)", color: isActive ? "#06070F" : "rgba(255,255,255,0.4)" }}>
+          {teamIdx + 1}
+        </span>
+        <span className="text-[11px] font-bold tracking-wide truncate flex-1" style={{ color: isActive ? TEAL : "rgba(255,255,255,0.85)" }}>{displayName}</span>
+        {isActive && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 animate-pulse" style={{ background: "linear-gradient(135deg,#7C5CFF,#22E5FF)", color: "#06070F" }}>选人中</span>}
+        <span className="text-[9px] font-mono text-white/30 shrink-0">{filled}/{total}</span>
       </div>
-      <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg w-full"
+
+      {/* captain slot */}
+      <div className="flex items-center gap-2 mb-1.5 px-2 rounded-lg w-full"
         data-slot-key={`cap:${teamIdx}`}
         style={{
-          height: CAPTAIN_SLOT_H,
-          boxSizing: "border-box",
-          overflow: "hidden",
-          opacity: captainHidden ? 0 : 1,
-          background: canAssign ? "rgba(34,197,94,0.08)" : "rgba(0,0,0,0.4)",
-          borderWidth: 1,
-          borderStyle: canAssign ? "dashed" : "solid",
-          borderColor: canAssign ? "#22c55e" : "rgba(255,255,255,0.05)",
-          boxShadow: canAssign ? "0 0 12px rgba(34,197,94,0.35)" : "none",
+          height: CAPTAIN_SLOT_H, boxSizing: "border-box", overflow: "hidden", opacity: captainHidden ? 0 : 1,
+          background: canAssign ? "rgba(34,197,94,0.08)" : "rgba(0,0,0,0.3)",
+          border: canAssign ? "1px dashed #22c55e" : "1px solid rgba(255,255,255,0.04)",
         }}>
         {canAssign ? (
           <>
-            <div className="w-[34px] h-[34px] rounded-lg border border-dashed flex items-center justify-center text-sm flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
-            <span className="text-[11px] font-bold italic" style={{ color: "#22c55e" }}>→ 分配队长</span>
+            <div className="w-[26px] h-[26px] rounded-md border border-dashed flex items-center justify-center text-xs flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
+            <span className="text-[10px] font-bold italic" style={{ color: "#22c55e" }}>点击分配队长</span>
           </>
         ) : team.captain ? (
           <>
-            <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={34} glow />
+            <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={26} glow />
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
-              <div className="mt-0.5"><CaptainBadge /></div>
+              <div className="text-[10.5px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
             </div>
+            <CaptainBadge />
           </>
         ) : (
           <div className="flex items-center gap-2 w-full">
-            <div className="w-[34px] h-[34px] rounded-lg border border-dashed border-white/15 flex items-center justify-center text-white/20 text-xs flex-shrink-0">?</div>
-            <span className="text-[11px] italic text-white/25">等待队长</span>
+            <div className="w-[26px] h-[26px] rounded-md border border-dashed border-white/15 flex items-center justify-center text-white/20 text-[10px] flex-shrink-0">?</div>
+            <span className="text-[10px] italic text-white/25">等待队长</span>
           </div>
         )}
       </div>
+
+      {/* player slots -- compact single-line rows, each a real flight target */}
       <div className="space-y-1">
         {team.slots.map((slot, i) => {
           const slotKey = `slot:${teamIdx}:${i}`;
           const slotHidden = !!hiddenKeys && hiddenKeys.has(slotKey);
           return (
             <div key={i} data-slot-key={slotKey}
-              className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] ${slot ? "bg-black/30" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
+              className={`flex items-center gap-1.5 px-1.5 py-1 rounded-md border text-[10px] ${slot ? "bg-black/25" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
               style={{ ...(slot ? { borderColor: TEAL_DIM } : {}), opacity: slotHidden ? 0 : 1 }}>
-              <span className="w-6 h-5 flex items-center justify-center rounded text-[9px] font-bold flex-shrink-0"
+              <span className="w-4 h-4 flex items-center justify-center rounded text-[8px] font-bold flex-shrink-0"
                 style={{ background: slot ? `${TEAL}22` : "transparent", color: slot ? TEAL : "#3a4a4a", border: `1px solid ${slot ? TEAL+"55" : "#1c2b2e"}` }}>
                 {POSITIONS[i % 5]?.id ?? "?"}
               </span>
               {slot ? (
                 <>
-                  <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={20} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold text-white text-[10px]">{slot.name}</div>
-                  </div>
+                  <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={17} />
+                  <div className="min-w-0 flex-1 truncate font-semibold text-white text-[10px]">{slot.name}</div>
                 </>
               ) : <span className="italic">空位</span>}
             </div>
           );
         })}
       </div>
-    </PanelFrame>
+    </div>
   );
 }
 
@@ -317,32 +322,42 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
   const stats = placeholderStats(player.id);
   return (
     <button onClick={onClick} disabled={disabled} type="button" data-card-id={player.id}
-      className={`relative flex-shrink-0 text-left rounded-2xl transition-all duration-200 ${disabled ? "" : "hover:scale-[1.03]"}`}
+      className={`relative text-left rounded-xl transition-all duration-200 w-full ${disabled ? "" : "hover:-translate-y-0.5"}`}
       style={{
-        width: PLAYER_CARD_W, padding: PLAYER_CARD_PAD,
+        padding: PLAYER_CARD_PAD,
         background: PLAYER_CARD_BG, border: `2px solid ${selected ? "#22c55e" : PLAYER_CARD_BORDER}`,
-        boxShadow: selected ? "0 0 0 3px rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35), 0 4px 14px rgba(0,0,0,0.35)" : "0 0 0 1px rgba(124,92,255,0.08), 0 8px 20px rgba(4,3,15,0.45)",
-        transform: selected ? "scale(1.035)" : "scale(1)",
-        transitionTimingFunction: "cubic-bezier(.2,.8,.2,1)",
+        boxShadow: selected ? "0 0 0 3px rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35)" : "0 0 0 1px rgba(124,92,255,0.08), 0 6px 16px rgba(4,3,15,0.4)",
         opacity: disabled ? 0.35 : 1, cursor: disabled ? "not-allowed" : "pointer",
       }}>
       {badge && (
         <span className="absolute z-10 font-black rounded-full"
-          style={{ top: 8, right: 8, background: "#22c55e", color: "#04150a", fontSize: 9, padding: "2px 7px", boxShadow: "0 2px 6px rgba(0,0,0,0.35)" }}>
+          style={{ top: 6, right: 6, background: "#22c55e", color: "#04150a", fontSize: 8, padding: "2px 6px" }}>
           {badge}
         </span>
       )}
-      <SquareAvatar avatarId={player.avatarId ?? DEFAULT_AVATAR_ID} avatarUrl={player.avatarUrl} size={PLAYER_CARD_AVATAR} />
-      <div className="text-center font-black truncate" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_NAME_FONT, marginTop: PLAYER_CARD_GAP }}>{player.name}</div>
-      <div className="rounded-xl" style={{ background: PLAYER_CARD_STAT_BG, border: `1px solid ${PLAYER_CARD_STAT_BORDER}`, padding: PLAYER_CARD_STAT_PAD, marginTop: PLAYER_CARD_GAP }}>
-        <div className="grid grid-cols-2" style={{ rowGap: PLAYER_CARD_GAP, columnGap: PLAYER_CARD_PAD * 0.4 }}>
-          <StatPill label="胜率" value={`${stats.winRate}%`} color={STAT_PILL_COLORS.winRate} />
-          <StatPill label="冠军" value={stats.champion} color={STAT_PILL_COLORS.champion} />
-          <StatPill label="擅长位置" value={stats.position} color={STAT_PILL_COLORS.position} />
-          <StatPill label="天梯分" value={stats.rating} color={STAT_PILL_COLORS.rating} />
-        </div>
+      {/* header row: avatar + name side-by-side, not stacked -- shorter
+          card, better information density in a grid at 1920px */}
+      <div className="flex items-center gap-2.5" style={{ marginBottom: PLAYER_CARD_GAP }}>
+        <SquareAvatar avatarId={player.avatarId ?? DEFAULT_AVATAR_ID} avatarUrl={player.avatarUrl} size={PLAYER_CARD_AVATAR} />
+        <div className="min-w-0 flex-1 font-black truncate" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_NAME_FONT }}>{player.name}</div>
+      </div>
+      {/* single stat row, four compact chips instead of a boxed 2x2 well */}
+      <div className="grid grid-cols-4 gap-1">
+        <MiniStat label="胜率" value={`${stats.winRate}%`} color={STAT_PILL_COLORS.winRate} />
+        <MiniStat label="冠军" value={stats.champion} color={STAT_PILL_COLORS.champion} />
+        <MiniStat label="位置" value={stats.position} color={STAT_PILL_COLORS.position} />
+        <MiniStat label="分数" value={stats.rating} color={STAT_PILL_COLORS.rating} />
       </div>
     </button>
+  );
+}
+
+function MiniStat({ label, value, color }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 rounded-md py-1" style={{ background: PLAYER_CARD_STAT_BG, border: `1px solid ${PLAYER_CARD_STAT_BORDER}` }}>
+      <span className="font-black leading-none" style={{ color, fontSize: PLAYER_CARD_VALUE_FONT * 0.78 }}>{value}</span>
+      <span className="leading-none opacity-60" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_LABEL_FONT * 0.9 }}>{label}</span>
+    </div>
   );
 }
 
@@ -765,178 +780,109 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   if (teams.length === 0) return <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>;
 
   return (
-    <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-4 lg:overflow-hidden">
-      <PanelFrame className="shrink-0" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
-        <div className="h-full flex items-stretch">
-          {/* Nav column -- same back/undo handlers, disabled state, and
-              history-count badge as before, just restyled as a compact
-              ghost-button pair instead of one large button + one chip.
-              Undo is Admin-only -- not rendered at all (not merely
-              disabled) for non-staff viewers (e.g. the Spectator Page,
-              Phase 6). The back button itself is controlled separately
-              via `showBackButton` (defaults to `isStaff`, so admin usage
-              here is unchanged) -- Phase 6's Spectator Page sets it to
-              `true` even though isStaff=false, with its own `backLabel`,
-              so its exit button sits in this exact same position/style
-              as the admin's, instead of a separate page-level header. */}
-          {(showBackButton || isStaff) && (
-            <div className="flex-shrink-0 flex flex-col justify-center gap-2.5 px-5" style={{ borderRight: "1px solid rgba(34,229,255,0.16)" }}>
-              {showBackButton && (
-                <button onClick={onBack}
-                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
-                  style={{ background: "rgba(34,229,255,0.05)", borderColor: "rgba(34,229,255,0.28)", color: TEAL_SOFT }}>
-                  {backLabel}
-                </button>
-              )}
-              {isStaff && (
-                <button onClick={undoLastPick} disabled={draftHistory.length === 0}
-                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
-                  style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgba(0,0,0,0.2)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgba(255,255,255,0.06)", color: draftHistory.length > 0 ? "#fbbf24" : "rgba(255,255,255,0.15)", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer", boxShadow: draftHistory.length > 0 ? "0 0 10px rgba(251,191,36,0.2)" : "none" }}>
-                  ↩ 撤销上一次选择
-                  {draftHistory.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Masthead -- tournament name (teal glow, the event's identity)
-              stacked above the phase pill + current-turn headline (white
-              glow, the primary focus), same data/branches as before. */}
-          <div className="flex-1 min-w-0 flex flex-col justify-center px-8 gap-1.5">
-            {tournamentName && (
-              <div className="font-display font-extrabold text-2xl truncate text-gradient">
-                {tournamentName}
-              </div>
+    <div className="w-full flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
+      {/* ═══ STATUS STRIP — flush under the shared AppShell bar, not a
+          floating card. This is the "what's happening right now" line:
+          phase → who's on the clock → progress → the one action that
+          matters. Back/exit lives in AppShell now (backAction), so this
+          strip only carries draft-specific controls (Undo, Proceed). ═══ */}
+      <div className="shrink-0 border-b border-panel-line/80 bg-void/30 backdrop-blur-sm px-5 sm:px-8 h-20 flex items-center gap-6">
+        <div className="flex-1 min-w-0 flex items-center gap-4">
+          <span
+            className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full tracking-widest"
+            style={{
+              background: draftPhase === "captain" ? "rgba(34,197,94,0.12)" : "rgba(34,229,255,0.12)",
+              color: draftPhase === "captain" ? "#22c55e" : TEAL,
+              border: `1px solid ${draftPhase === "captain" ? "rgba(34,197,94,0.4)" : TEAL + "55"}`,
+            }}
+          >
+            {draftPhase === "captain" ? "第一阶段 · 队长分配" : "第二阶段 · 队员选秀"}
+          </span>
+          <div className="min-w-0">
+            {draftPhase === "captain" ? (
+              <GlowHeading size="text-xl" className="truncate block">
+                {effectiveSelectedCaptain ? `将 ${effectiveSelectedCaptain.name.toUpperCase()} 分配到战队` : "选择一名队长"}
+              </GlowHeading>
+            ) : allDrafted ? (
+              <GlowHeading size="text-xl" className="truncate block">全部选手已选完 🏆</GlowHeading>
+            ) : (
+              <GlowHeading size="text-xl" className="truncate block">{teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合</GlowHeading>
             )}
-            <div className="flex flex-col items-start gap-2 min-w-0">
-              <span
-                className="text-[11px] font-black px-3 py-0.5 rounded-full tracking-widest"
-                style={{
-                  background:
-                    draftPhase === "captain"
-                      ? "rgba(34,197,94,0.12)"
-                      : "rgba(34,229,255,0.12)",
-                  color: draftPhase === "captain" ? "#22c55e" : TEAL,
-                  border: `1px solid ${
-                    draftPhase === "captain"
-                      ? "rgba(34,197,94,0.4)"
-                      : TEAL + "55"
-                  }`,
-                }}
-              >
-                {draftPhase === "captain"
-                  ? "第一阶段 —— 队长分配"
-                  : "第二阶段 —— 队员选秀"}
-              </span>
-
-              {draftPhase === "captain" ? (
-                <GlowHeading size="text-3xl" className="font-display">
-                  {effectiveSelectedCaptain
-                    ? `将 ${effectiveSelectedCaptain.name.toUpperCase()} 分配到战队`
-                    : "选择一名队长"}
-                </GlowHeading>
-              ) : allDrafted ? (
-                <GlowHeading size="text-3xl" className="font-display">
-                  全部选手已选完 🏆
-                </GlowHeading>
-              ) : (
-                <GlowHeading size="text-3xl" className="font-display">
-                  {teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合
-                </GlowHeading>
-              )}
-            </div>
-            <div className="text-[11px] text-white/40 truncate">
+            <div className="text-[10.5px] text-white/40 truncate mt-0.5">
               {draftPhase === "captain"
-                ? (effectiveSelectedCaptain ? "现在点击下方一张空战队卡片（点击整张卡片即可）→" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
+                ? (effectiveSelectedCaptain ? "现在点击左侧一张空战队卡片 →" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
                 : (!allDrafted && <>第{roundLabel}轮，共{roundOrders.length}轮 · 战队{activeTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</>)}
             </div>
           </div>
-
-          {/* Progress + final-bracket action -- same two handlers/values
-              feeding a single ring (see headerProgressPct above) instead
-              of two separate bars, and the same onProceed/disabled logic
-              on the button, restyled to match the ghost-button language
-              used everywhere else in this header. */}
-          <div className="flex-shrink-0 flex items-center gap-6 px-8" style={{ borderLeft: "1px solid rgba(34,229,255,0.16)" }}>
-            <div className="relative flex-shrink-0" style={{ width: 78, height: 78 }}>
-              <svg width="78" height="78" style={{ transform: "rotate(-90deg)" }}>
-                <circle cx="39" cy="39" r={HEADER_RING_R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
-                <circle cx="39" cy="39" r={HEADER_RING_R} fill="none" stroke={headerRingColor} strokeWidth="7"
-                  strokeDasharray={HEADER_RING_CIRC} strokeDashoffset={headerRingOffset} strokeLinecap="round"
-                  style={{ transition: "stroke-dashoffset 500ms" }} />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center font-display font-bold" style={{ color: headerRingColor }}>
-                <span className="text-base leading-none">{Math.round(headerProgressPct)}%</span>
-                <span className="text-[9px] font-semibold text-white/40 tracking-wider mt-0.5">进度</span>
-              </div>
-            </div>
-            {isStaff && (
-              <button onClick={onProceed} disabled={!allDrafted}
-                className="font-bold text-sm px-5 py-2.5 rounded-xl border whitespace-nowrap transition-all"
-                style={{ background: "rgba(34,229,255,0.07)", borderColor: allDrafted ? TEAL : "rgba(255,255,255,0.08)", color: allDrafted ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: allDrafted ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: allDrafted ? "pointer" : "not-allowed" }}>
-                进入最终对阵 →
-              </button>
-            )}
-          </div>
         </div>
-      </PanelFrame>
 
-      {/* Team panels (top) + candidate/draft pool (bottom) stack vertically,
-          sharing the rest of the browser height on desktop. Each section
-          scrolls internally on its own (overflow-y-auto on its own content
-          area) instead of the whole page growing taller, per the Full
-          Browser Layout Standard. Below lg, this falls back to a plain
-          stacked column with normal page scroll, same as the rest of the
-          project's main pages. */}
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
-        {draftPhase === "teammate" && (
-          <div className="shrink-0">
-            <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
-          </div>
+        {isStaff && (
+          <button onClick={undoLastPick} disabled={draftHistory.length === 0}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
+            style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgba(0,0,0,0.2)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgba(255,255,255,0.06)", color: draftHistory.length > 0 ? "#fbbf24" : "rgba(255,255,255,0.15)", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer" }}>
+            ↩ 撤销
+            {draftHistory.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
+          </button>
         )}
 
-        {/* Sized to its own content (no forced flex-basis): with only
-            flex-shrink + min-h-0 + max-height set, this box is exactly as
-            tall as the team-card row(s) actually are. It only shrinks (and
-            only then does overflow-y-auto start a scrollbar) once real
-            content — enough rows of teams — doesn't fit in the space below
-            the header/sequence strip; a single row never triggers a
-            scrollbar or leaves unused space below it. The lg:max-h-[55%]
-            cap just keeps a pathological number of rows from squeezing the
-            candidate/draft pool panel below it down to nothing.
-
-            p-8 is one fixed value for both phases (not phase-conditional
-            like an earlier pass of this fix) so Captain and Player Draft
-            look the same. It's sized for the bigger of the two glows this
-            section can ever paint -- the Player Draft phase's current-
-            picker glow (2px ring + 26px blur ≈ 28px reach) -- which also
-            comfortably covers the Captain phase's smaller canAssign glow
-            (2px ring + 18px blur ≈ 20px reach), so one value is safe for
-            both with no clipping either way. items-start stops the default
-            flex cross-axis stretch from ever growing a sibling to match
-            another card's box (see PlayerStatCard below for why that
-            matters). */}
-        <div className="lg:max-h-[55%] lg:shrink lg:min-h-0 overflow-y-auto pt-2 px-8 pb-5">
-          <div className="flex flex-wrap items-start gap-x-4 gap-y-6 pb-1">
-            {teams.map((team, i) => (
-              <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
-                assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
-                onAssignCaptain={handleTeamSlotClick}
-                hiddenKeys={hiddenKeys} />
-            ))}
+        <div className="shrink-0 flex items-center gap-4">
+          <div className="relative" style={{ width: 52, height: 52 }}>
+            <svg width="52" height="52" style={{ transform: "rotate(-90deg)" }}>
+              <circle cx="26" cy="26" r={HEADER_RING_R * 0.7} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
+              <circle cx="26" cy="26" r={HEADER_RING_R * 0.7} fill="none" stroke={headerRingColor} strokeWidth="5"
+                strokeDasharray={HEADER_RING_CIRC * 0.7} strokeDashoffset={headerRingOffset * 0.7} strokeLinecap="round"
+                style={{ transition: "stroke-dashoffset 500ms" }} />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center font-display font-bold text-[11px]" style={{ color: headerRingColor }}>
+              {Math.round(headerProgressPct)}%
+            </div>
           </div>
+          {isStaff && (
+            <button onClick={onProceed} disabled={!allDrafted}
+              className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
+              style={{ background: "rgba(34,229,255,0.07)", borderColor: allDrafted ? TEAL : "rgba(255,255,255,0.08)", color: allDrafted ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: allDrafted ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: allDrafted ? "pointer" : "not-allowed" }}>
+              进入最终对阵 →
+            </button>
+          )}
         </div>
+      </div>
 
-        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
+      {/* ═══ BODY — same rail + main composition used by Lobby (roster +
+          action rail) and Admin (section nav + table): a team-overview
+          rail on the left, the draftable pool as the dominant content on
+          the right. Reversed from Lobby/Admin (rail-left here since teams
+          are reference context for the pool, not the primary action
+          surface) but built from the same shared shapes. ═══ */}
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row lg:overflow-hidden">
+        <aside className="lg:w-[280px] shrink-0 lg:h-full lg:overflow-y-auto px-4 sm:px-5 lg:px-4 py-4 flex flex-col gap-2.5">
+          <p className="eyebrow px-1">战队总览 · {teams.length}</p>
+          {teams.map((team, i) => (
+            <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
+              assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
+              onAssignCaptain={handleTeamSlotClick}
+              hiddenKeys={hiddenKeys} />
+          ))}
+        </aside>
+
+        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-panel-line/80">
+          {draftPhase === "teammate" && (
+            <div className="shrink-0 px-5 sm:px-6 pt-3">
+              <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
+            </div>
+          )}
+
           {draftPhase === "captain" && (
-            <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
-              <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: "#22c55e" }}>队长候选池（{captainCandidates.length}人未分配）</h2>
-              <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
-                <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
+            <div className="flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden px-5 sm:px-6 py-4">
+              <div className="flex items-center justify-between shrink-0 mb-3">
+                <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: "#22c55e" }}>队长候选池</h2>
+                <span className="text-xs font-mono text-white/30">{captainCandidates.length} 人未分配</span>
+              </div>
+              <div className="flex-1 lg:min-h-0 overflow-y-auto">
+                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
                   {captainCandidates.map((c) => (
                     <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={effectiveSelectedCaptain?.id === c.id} badge="队长" />
                   ))}
-                  {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center w-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
+                  {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center col-span-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
                 </div>
               </div>
               {isStaff && allCaptainsAssigned && (
@@ -946,15 +892,18 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   {roundOrderValid.every(Boolean) ? "🚀 锁定并开始队员选秀 →" : "⚠ 请先修正轮次顺序"}
                 </button>
               )}
-            </PanelFrame>
+            </div>
           )}
 
           {draftPhase === "teammate" && (
-            <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
-              <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: TEAL }}>待选选手（{pool?.length ?? 0}）</h2>
+            <div className="flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden px-5 sm:px-6 py-4">
+              <div className="flex items-center justify-between shrink-0 mb-3">
+                <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>待选选手</h2>
+                <span className="text-xs font-mono text-white/30">{pool?.length ?? 0} 人待选</span>
+              </div>
               {pool && pool.length > 0 ? (
-                <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
-                  <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
+                <div className="flex-1 lg:min-h-0 overflow-y-auto">
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
                     {pool.map((p) => (
                       <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
                     ))}
@@ -966,7 +915,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   <div className="font-display text-sm tracking-widest">选秀完成</div>
                 </div>
               )}
-            </PanelFrame>
+            </div>
           )}
         </div>
       </div>
@@ -1852,18 +1801,11 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
 
   return (
     <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-3 lg:overflow-y-auto">
-      <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
-        {showBackButton ? (
-          <button onClick={onBack} className="btn-ghost px-3.5 py-2 text-xs">
-            {backLabel}
-          </button>
-        ) : <span />}
-        {error && (
-          <div className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: "rgba(255,59,59,.1)", color: "#ff6b6b" }}>
-            ⚠ {error}
-          </div>
-        )}
-      </div>
+      {error && (
+        <div className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg w-fit" style={{ background: "rgba(255,59,59,.1)", color: "#ff6b6b" }}>
+          ⚠ {error}
+        </div>
+      )}
       <style>{FMP_CSS}</style>
       <style>{FMP_WIRE_CSS}</style>
       <div id="fmpStage" ref={containerRef} style={{ maxWidth: 1300, width: "100%", margin: "0 auto" }}
@@ -2209,8 +2151,13 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   }
 
   return (
-    <div className="min-h-screen w-full text-white font-sans flex flex-col lg:h-screen lg:overflow-hidden">
-      <AppBackground variant={stage === 'final' ? 'gold' : 'default'} />
+    <AppShell
+      account={account}
+      backAction={onExitToLobby}
+      backLabel="返回锦标赛大厅"
+      title={tournamentName}
+      bgVariant={stage === 'final' ? 'gold' : 'default'}
+    >
       <GlobalStyle />
       {stage === 'final' && finalMatches ? (
         <FinalMatchupsStage
@@ -2218,7 +2165,6 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
           teams={finalMatches.teams}
           matchups={finalMatches.matchups}
           isStaff={isStaff}
-          onBack={onExitToLobby || (() => {})}
         />
       ) : !ready ? (
         <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>
@@ -2226,7 +2172,6 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
         <DraftArena
           tournament={tournament}
           setTournament={setTournament}
-          onBack={onExitToLobby || (() => {})}
           onProceed={handleProceed}
           tournamentName={tournamentName}
           isStaff={isStaff}
@@ -2241,6 +2186,6 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
           ⚠ {proceedError}（点击关闭）
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }
