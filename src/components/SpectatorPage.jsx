@@ -190,7 +190,7 @@ export default function SpectatorPage({ onExitToLobby }) {
       backAction={onExitToLobby}
       backLabel="返回锦标赛大厅"
       title={tournamentName ? `${tournamentName} · 观赛` : '观赛'}
-      bgVariant={stage === 'final' ? 'gold' : 'default'}
+      bgVariant="default"
     >
       {/* Orbitron font/scrollbar styling used by the reused DraftArena/
           FinalMatchupsStage bodies below, so they render pixel-identical

@@ -1043,10 +1043,10 @@ function RosterRow({ team, status }) {
   const isUsed = status !== "idle";
   return (
     <div className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors duration-500 ${
-      isUsed ? "border-gold/35 bg-gold/5" : "border-panel-line bg-void/30"
+      isUsed ? "border-accent2/35 bg-accent2/5" : "border-panel-line bg-void/30"
     }`}>
       <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed} />
-      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${isUsed ? "text-gold-soft" : "text-ink-muted"}`}>
+      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${isUsed ? "text-accent2" : "text-ink-muted"}`}>
         {teamLabel(team)}
       </span>
       {status === "bye" && (
@@ -1269,9 +1269,9 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
         <div className="flex-1 min-w-0 flex items-center gap-4">
           <span className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full tracking-widest"
             style={{
-              background: complete ? "rgba(255,201,74,.12)" : "rgba(124,92,255,.12)",
-              color: complete ? "#FFC94A" : "#22E5FF",
-              border: `1px solid ${complete ? "rgba(255,201,74,.4)" : "rgba(124,92,255,.35)"}`,
+              background: complete ? "rgba(34,229,255,.12)" : "rgba(124,92,255,.12)",
+              color: complete ? "#22E5FF" : "#A78BFA",
+              border: `1px solid ${complete ? "rgba(34,229,255,.4)" : "rgba(124,92,255,.35)"}`,
             }}>
             {complete ? "对阵已就绪" : "对阵抽签"}
           </span>
@@ -1324,7 +1324,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
           <div className="relative flex-1 min-h-[380px] rounded-2xl border overflow-hidden flex items-center justify-center p-8 sm:p-10"
             style={{
               background: "radial-gradient(ellipse at 50% 0%, rgba(124,92,255,.14), transparent 60%), linear-gradient(180deg,#141833,#0a0c1c 80%)",
-              borderColor: complete ? "rgba(255,201,74,.35)" : "rgba(124,92,255,.25)",
+              borderColor: complete ? "rgba(34,229,255,.35)" : "rgba(124,92,255,.25)",
             }}>
             {reveal?.phase === "reveal" && (
               <div key={`flash-${reveal.idx}`} className="absolute inset-0 pointer-events-none"
@@ -1335,16 +1335,16 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
             )}
             {complete && featuredIdx === null ? (
               <div key={displayMatches.length} className="w-full max-w-2xl flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .7s ease forwards" }}>
-                <div className="text-[11px] font-heading font-semibold uppercase tracking-[0.3em] text-gold/90">对阵表已揭晓 · Final Lineup</div>
+                <div className="text-[11px] font-heading font-semibold uppercase tracking-[0.3em] text-accent2/90">对阵表已揭晓 · Final Lineup</div>
                 <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {displayMatches.map((m, i) => (
                     <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-panel-alt/50 border border-panel-line"
                       style={{ animation: "fmpRowIn .45s ease forwards", animationDelay: `${i * 110}ms`, opacity: 0 }}>
-                      <span className="text-[10px] font-mono text-gold/70 w-6 shrink-0">0{i + 1}</span>
+                      <span className="text-[10px] font-mono text-accent2/70 w-6 shrink-0">0{i + 1}</span>
                       <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate">{teamByIdx.get(m.a)?.captainName ?? "?"}</span>
                       {m.b != null ? (
                         <>
-                          <span className="shrink-0 text-[10px] font-display font-black text-gold">VS</span>
+                          <span className="shrink-0 text-[10px] font-display font-black text-accent-soft">VS</span>
                           <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate text-right">{teamByIdx.get(m.b)?.captainName ?? "?"}</span>
                         </>
                       ) : (
@@ -1367,11 +1367,11 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
                   </div>
                 </div>
               ) : (
-                <BroadcastFrame pulse={reveal.phase === "reveal"} glowColor={reveal.phase === "reveal" ? "#FFC94A" : "#22E5FF"}>
+                <BroadcastFrame pulse={reveal.phase === "reveal"} glowColor={reveal.phase === "reveal" ? "#7C5CFF" : "#22E5FF"}>
                   <div key={reveal.phase} className="flex items-center gap-8 sm:gap-14"
                     style={{ animation: reveal.phase === "flicker" ? "fmpFlicker .35s ease-in-out infinite" : undefined }}>
                     <TeamFace team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.a) : reveal.flickerA} animateIn={reveal.phase === "reveal"} />
-                    <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0"
+                    <span className="font-display font-black text-2xl sm:text-3xl text-accent-soft shrink-0"
                       style={reveal.phase === "reveal" ? { animation: "fmpVsPop .5s cubic-bezier(.2,.8,.2,1) forwards" } : undefined}>
                       VS
                     </span>
@@ -1390,11 +1390,11 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
                     <TeamFace team={teamByIdx.get(featured.a)} />
                     {featured.b != null ? (
                       <>
-                        <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0">VS</span>
+                        <span className="font-display font-black text-2xl sm:text-3xl text-accent-soft shrink-0">VS</span>
                         <TeamFace team={teamByIdx.get(featured.b)} />
                       </>
                     ) : (
-                      <span className="px-4 py-2 rounded-lg bg-gold/10 border border-gold/40 text-gold font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
+                      <span className="px-4 py-2 rounded-lg bg-accent2/10 border border-accent2/40 text-accent2 font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
                     )}
                   </div>
                 </BroadcastFrame>
@@ -1810,7 +1810,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       backAction={onExitToLobby}
       backLabel="返回锦标赛大厅"
       title={tournamentName}
-      bgVariant={stage === 'final' ? 'gold' : 'default'}
+      bgVariant="default"
     >
       <GlobalStyle />
       {stage === 'final' && finalMatches ? (
