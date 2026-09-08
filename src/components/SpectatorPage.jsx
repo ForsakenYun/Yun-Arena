@@ -108,53 +108,133 @@ export default function SpectatorPage({ onExitToLobby }) {
 
   // Live Draft State (Phase 6) -- mirrors whichever admin/developer is
   // currently running the Captain/Teammate draft.
+  //
+  // Realtime resilience: Supabase's client retries the underlying
+  // WebSocket on its own, but a channel that was live through a long
+  // backgrounded tab or a rough network patch can come back reporting
+  // 'CHANNEL_ERROR'/'TIMED_OUT' without ever cleanly re-subscribing --
+  // silently stuck on stale data with nothing on screen indicating a
+  // problem, which is exactly what "the Spectator page looked frozen
+  // mid-draft" looks like. So: on any non-SUBSCRIBED status, tear the
+  // channel down and reconnect after a short delay; and on every
+  // SUBSCRIBED (the first connect *and* every later reconnect), re-fetch
+  // once via the same plain REST read the initial load already uses, so
+  // anything that happened while disconnected is never silently lost.
   useEffect(() => {
     let cancelled = false
-    fetchDraftState()
-      .then((state) => { if (!cancelled) setDraftState(state) })
-      .catch(() => {})
+    let unsubscribe = null
+    let retryTimer = null
 
-    const unsubscribe = subscribeDraftState((payload) => {
-      if (payload.eventType === 'DELETE') { setDraftState(null); return }
-      const row = payload.new
-      if (!row || !row.state || typeof row.state !== 'object') { setDraftState(null); return }
-      setDraftState({ ...row.state })
-    })
-    return () => { cancelled = true; unsubscribe() }
+    function connect() {
+      unsubscribe = subscribeDraftState(
+        (payload) => {
+          if (cancelled) return
+          if (payload.eventType === 'DELETE') { setDraftState(null); return }
+          const row = payload.new
+          if (!row || !row.state || typeof row.state !== 'object') { setDraftState(null); return }
+          setDraftState({ ...row.state })
+        },
+        (status) => {
+          if (cancelled) return
+          if (status === 'SUBSCRIBED') {
+            fetchDraftState().then((state) => { if (!cancelled) setDraftState(state) }).catch(() => {})
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            unsubscribe?.()
+            unsubscribe = null
+            if (!cancelled) retryTimer = setTimeout(connect, 2000)
+          }
+        }
+      )
+    }
+    connect()
+
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+      unsubscribe?.()
+    }
+  }, [])
+
+  // Safety-net poll: re-fetches the live draft state every few seconds
+  // regardless of the realtime channel's own health. A plain REST read
+  // is idempotent (it just re-states "current truth"), so this can never
+  // fight with a newer realtime update landing around the same time --
+  // it's a cheap backstop for the rare case a dropped connection isn't
+  // caught by the reconnect logic above (e.g. the status callback itself
+  // getting delayed by a fully-suspended background tab).
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchDraftState().then((state) => setDraftState(state)).catch(() => {})
+    }, 8000)
+    return () => clearInterval(interval)
   }, [])
 
   // Final Matchups -- same table/channel the Draft Arena itself uses.
   // Ending the tournament (DELETE) sends every connected client, spectators
   // included, back to the Tournament Lobby -- same behavior as everywhere
-  // else in the project (DEVLOG.md, Final Matchups section).
+  // else in the project (DEVLOG.md, Final Matchups section). Uses the same
+  // reconnect-on-error + refetch-on-(re)subscribe pattern as the draft
+  // state subscription above, for the same reason.
   useEffect(() => {
     let cancelled = false
-    fetchFinalMatchups()
-      .then((row) => { if (!cancelled && row) setFinalMatches(row) })
-      .catch(() => {})
+    let unsubscribe = null
+    let retryTimer = null
 
-    const unsubscribe = subscribeFinalMatchups((payload) => {
-      if (payload.eventType === 'DELETE') {
-        setFinalMatches(null)
-        ;(onExitToLobby || (() => {}))()
-        return
-      }
-      const row = payload.new
-      if (!row) return
-      // See the matching comment in DraftArena.jsx's own subscription:
-      // `teams` never changes after creation, but a matchups-only update
-      // can still arrive here with `teams` missing due to Postgres
-      // logical replication omitting an unchanged TOASTed jsonb column.
-      // Keep whatever non-empty teams we already have instead of wiping
-      // the roster.
-      const incomingTeams = Array.isArray(row.teams) ? row.teams : []
-      setFinalMatches((prev) => ({
-        teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
-        matchups: Array.isArray(row.matchups) ? row.matchups : [],
-      }))
-    })
-    return () => { cancelled = true; unsubscribe() }
+    function connect() {
+      unsubscribe = subscribeFinalMatchups(
+        (payload) => {
+          if (cancelled) return
+          if (payload.eventType === 'DELETE') {
+            setFinalMatches(null)
+            ;(onExitToLobby || (() => {}))()
+            return
+          }
+          const row = payload.new
+          if (!row) return
+          // See the matching comment in DraftArena.jsx's own subscription:
+          // `teams` never changes after creation, but a matchups-only update
+          // can still arrive here with `teams` missing due to Postgres
+          // logical replication omitting an unchanged TOASTed jsonb column.
+          // Keep whatever non-empty teams we already have instead of wiping
+          // the roster.
+          const incomingTeams = Array.isArray(row.teams) ? row.teams : []
+          setFinalMatches((prev) => ({
+            teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
+            matchups: Array.isArray(row.matchups) ? row.matchups : [],
+          }))
+        },
+        (status) => {
+          if (cancelled) return
+          if (status === 'SUBSCRIBED') {
+            fetchFinalMatchups().then((row) => { if (!cancelled && row) setFinalMatches(row) }).catch(() => {})
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            unsubscribe?.()
+            unsubscribe = null
+            if (!cancelled) retryTimer = setTimeout(connect, 2000)
+          }
+        }
+      )
+    }
+    connect()
+
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+      unsubscribe?.()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Safety-net poll, same rationale as the draft-state one above. Never
+  // clears an already-known finalMatches to null on its own (mirrors the
+  // initial-load/realtime behavior, which only ever clears it via an
+  // explicit DELETE event) so a stray empty response can't blank the
+  // screen out from under a spectator mid-reveal.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchFinalMatchups().then((row) => { if (row) setFinalMatches(row) }).catch(() => {})
+    }, 8000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {

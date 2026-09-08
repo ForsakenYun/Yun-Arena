@@ -332,11 +332,25 @@ export async function fetchFinalMatchups() {
 // this stage" (see DraftArena.jsx's subscription for how DELETE is
 // handled, since payload.new is empty on delete and the caller needs the
 // raw event, not just the normalized row).
-export function subscribeFinalMatchups(onChange) {
+//
+// `onStatus` (optional) is called with the channel's connection status
+// on every change ('SUBSCRIBED' | 'CHANNEL_ERROR' | 'TIMED_OUT' |
+// 'CLOSED'). Supabase's realtime-js client already retries the
+// underlying WebSocket transport on its own, but a channel that was
+// live during a long-backgrounded tab or a rough network patch can come
+// back in a state where this fires 'CHANNEL_ERROR'/'TIMED_OUT' without
+// ever cleanly re-delivering 'SUBSCRIBED' -- silently stuck showing
+// stale data with no visible error, which is exactly what "Spectator
+// looks frozen mid-draft" looks like from the outside. Callers that
+// care about self-healing from that (SpectatorPage) tear down and
+// recreate the channel on error/timeout, and treat every fresh
+// 'SUBSCRIBED' (including this reconnect) as a cue to re-fetch once so
+// nothing missed while disconnected is silently lost.
+export function subscribeFinalMatchups(onChange, onStatus) {
   const channel = supabase
     .channel('tournament-matches-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_matches' }, onChange)
-    .subscribe()
+    .subscribe((status) => onStatus?.(status))
   return () => supabase.removeChannel(channel)
 }
 
@@ -458,11 +472,11 @@ export async function fetchDraftState() {
   return normalizeDraftStateRow(data)
 }
 
-export function subscribeDraftState(onChange) {
+export function subscribeDraftState(onChange, onStatus) {
   const channel = supabase
     .channel('tournament-draft-state-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_draft_state' }, onChange)
-    .subscribe()
+    .subscribe((status) => onStatus?.(status))
   return () => supabase.removeChannel(channel)
 }
 

@@ -1282,18 +1282,6 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
               : "等待生成首个对阵"}
           </GlowHeading>
         </div>
-        {isStaff && (
-          <button onClick={handleRemove} disabled={!featured || busyAction || !!reveal}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
-            style={{
-              background: featured ? "rgba(255,77,109,.08)" : "rgba(0,0,0,.2)",
-              borderColor: featured ? "#FF4D6D66" : "rgba(255,255,255,.06)",
-              color: featured ? "#FF4D6D" : "rgba(255,255,255,.15)",
-              cursor: featured ? "pointer" : "not-allowed",
-            }}>
-            ✕ 解除本场对阵
-          </button>
-        )}
       </div>
 
       {/* body: roster + pairing rail, spotlight reveal as the dominant surface */}
@@ -1434,6 +1422,16 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
               </button>
               <button type="button" onClick={handleResetClick} disabled={busyAction || !!reveal} className="btn-ghost px-4 py-2.5 text-sm">
                 🔄 重置
+              </button>
+              <button onClick={handleRemove} disabled={!featured || busyAction || !!reveal}
+                className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-bold border transition-all whitespace-nowrap"
+                style={{
+                  background: featured ? "rgba(255,77,109,.08)" : "rgba(0,0,0,.2)",
+                  borderColor: featured ? "#FF4D6D66" : "rgba(255,255,255,.06)",
+                  color: featured ? "#FF4D6D" : "rgba(255,255,255,.15)",
+                  cursor: featured ? "pointer" : "not-allowed",
+                }}>
+                ✕ 解除本场对阵
               </button>
               <button type="button" onClick={handleEndClick} disabled={busyAction || !!reveal} className="btn-danger px-4 py-2.5 text-sm">
                 🏁 结束锦标赛
@@ -1748,6 +1746,11 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   // remains in the next tournament.
   useEffect(() => {
     let cancelled = false
+    let unsubscribe = null
+    let retryTimer = null
+
+    // Immediate initial read (fast first paint, before the realtime
+    // channel has necessarily finished subscribing yet).
     fetchFinalMatchups()
       .then((row) => {
         if (cancelled || !row) return
@@ -1756,34 +1759,67 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       })
       .catch(() => {})
 
-    const unsubscribe = subscribeFinalMatchups((payload) => {
-      if (payload.eventType === 'DELETE') {
-        setFinalMatches(null)
-        setStage('draft')
-        ;(onExitToLobby || (() => {}))()
-        return
-      }
-      const row = payload.new
-      if (!row) return
-      // `teams` is snapshotted once by enter_final_matchups and never
-      // changes again for the lifetime of this tournament_matches row --
-      // every later mutation (lock/pair/roll/remove/reset) only ever
-      // touches `matchups`. But Postgres logical replication can omit an
-      // unchanged jsonb column's value from a realtime UPDATE payload
-      // once it's large enough to be TOASTed, so a matchups-only update
-      // can arrive here with `teams` missing/empty even though the
-      // database itself still has it. Guard against that by keeping
-      // whatever non-empty teams we already have instead of wiping the
-      // whole roster to nothing.
-      const incomingTeams = Array.isArray(row.teams) ? row.teams : []
-      setFinalMatches((prev) => ({
-        teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
-        matchups: Array.isArray(row.matchups) ? row.matchups : [],
-      }))
-      setStage('final')
-    })
+    function connect() {
+      unsubscribe = subscribeFinalMatchups(
+        (payload) => {
+          if (cancelled) return
+          if (payload.eventType === 'DELETE') {
+            setFinalMatches(null)
+            setStage('draft')
+            ;(onExitToLobby || (() => {}))()
+            return
+          }
+          const row = payload.new
+          if (!row) return
+          // `teams` is snapshotted once by enter_final_matchups and never
+          // changes again for the lifetime of this tournament_matches row --
+          // every later mutation (lock/pair/roll/remove/reset) only ever
+          // touches `matchups`. But Postgres logical replication can omit an
+          // unchanged jsonb column's value from a realtime UPDATE payload
+          // once it's large enough to be TOASTed, so a matchups-only update
+          // can arrive here with `teams` missing/empty even though the
+          // database itself still has it. Guard against that by keeping
+          // whatever non-empty teams we already have instead of wiping the
+          // whole roster to nothing.
+          const incomingTeams = Array.isArray(row.teams) ? row.teams : []
+          setFinalMatches((prev) => ({
+            teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
+            matchups: Array.isArray(row.matchups) ? row.matchups : [],
+          }))
+          setStage('final')
+        },
+        // Realtime resilience: Supabase's client retries the underlying
+        // WebSocket on its own, but a channel that was live through a long
+        // backgrounded tab or a rough network patch can come back
+        // reporting 'CHANNEL_ERROR'/'TIMED_OUT' without ever cleanly
+        // re-subscribing -- silently stuck on stale data. So: on any
+        // non-SUBSCRIBED status, tear the channel down and reconnect
+        // shortly; and on every SUBSCRIBED (the first connect *and* every
+        // later reconnect), re-fetch once so nothing missed while
+        // disconnected is silently lost. Same pattern used by the
+        // Spectator Page's own subscriptions (SpectatorPage.jsx), since
+        // this is the exact same underlying channel/table.
+        (status) => {
+          if (cancelled) return
+          if (status === 'SUBSCRIBED') {
+            fetchFinalMatchups()
+              .then((row) => { if (!cancelled && row) { setFinalMatches(row); setStage('final') } })
+              .catch(() => {})
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            unsubscribe?.()
+            unsubscribe = null
+            if (!cancelled) retryTimer = setTimeout(connect, 2000)
+          }
+        }
+      )
+    }
+    connect()
 
-    return () => { cancelled = true; unsubscribe() }
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+      unsubscribe?.()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
