@@ -278,6 +278,22 @@ create table if not exists public.tournament_draft_state (
 comment on table public.tournament_draft_state is
   'Singleton row (Phase 6 -- Spectator Page). Public read, written only through sync_draft_state()/clear_draft_state(), both Admin/Developer-only. A one-way broadcast mirror of the Draft Arena''s local captain-assignment/teammate-draft state, purely for read-only live spectating -- never read back by the Draft Arena itself. Absence of this row means no draft is currently in progress (or it already reached Final Matchups / ended).';
 
+-- Same rationale/fix as public.tournament_matches above: `state` is a
+-- large jsonb blob rewritten on every single sync_draft_state() call
+-- (i.e. on every captain assignment / player pick), and even though it's
+-- always part of that UPDATE's SET clause, Postgres's logical
+-- replication can still transmit an "unchanged TOAST" placeholder for it
+-- without REPLICA IDENTITY FULL -- so a realtime UPDATE payload can
+-- arrive with `state` missing even though the row's actual content just
+-- changed. Because this table is written far more frequently than
+-- tournament_matches (once per pick, for the entire length of a draft),
+-- this was reliably visible: the Spectator Page's realtime handler
+-- treated a payload with no `state` as "no draft in progress" and reset
+-- straight back to the "please wait for the admin to start" screen,
+-- immediately after almost every single pick. FULL guarantees Realtime
+-- always sees this row's complete column set on every change.
+alter table public.tournament_draft_state replica identity full;
+
 -- ----------------------------------------------------------------------------
 -- 2. Row Level Security
 -- ----------------------------------------------------------------------------

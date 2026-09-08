@@ -131,7 +131,15 @@ export default function SpectatorPage({ onExitToLobby }) {
           if (cancelled) return
           if (payload.eventType === 'DELETE') { setDraftState(null); return }
           const row = payload.new
-          if (!row || !row.state || typeof row.state !== 'object') { setDraftState(null); return }
+          // A payload with no usable `state` doesn't mean the draft ended
+          // -- Realtime could (without REPLICA IDENTITY FULL on this
+          // table, now fixed at the database level -- see schema.sql)
+          // deliver an UPDATE payload with this jsonb column missing even
+          // though the row's actual content is fine. Keep whatever draft
+          // state we already have instead of resetting to "no draft in
+          // progress"; a genuine end-of-draft is only ever a DELETE event
+          // (handled above), never an UPDATE with a blank `state`.
+          if (!row || !row.state || typeof row.state !== 'object' || Array.isArray(row.state)) return
           setDraftState({ ...row.state })
         },
         (status) => {

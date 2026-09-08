@@ -1652,75 +1652,49 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   // above): every time this admin/developer's local `tournament` (or the
   // Undo stack / ephemeral captain selection reported up from
   // DraftArena) actually changes during the draft, mirror a snapshot of
-  // it to the database. Fire-and-forget by design -- a slow or failed
-  // write here must never block or alter the admin's own drafting
-  // experience (all of this stays 100% local `DraftArena` state first;
-  // this is only ever a mirror of it, never the other way around while
-  // actively drafting). A non-staff account that somehow reaches this
-  // page (Section 8's pre-existing, unrelated known gap) simply has every
-  // call rejected server-side, same as any other admin-only RPC --
-  // harmless.
+  // it to the database immediately -- no artificial delay. Fire-and-
+  // forget by design -- a slow or failed write here must never block or
+  // alter the admin's own drafting experience (all of this stays 100%
+  // local `DraftArena` state first; this is only ever a mirror of it,
+  // never the other way around while actively drafting). A non-staff
+  // account that somehow reaches this page (Section 8's pre-existing,
+  // unrelated known gap) simply has every call rejected server-side,
+  // same as any other admin-only RPC -- harmless.
+  //
+  // Not debounced: an earlier pass here added a 200ms debounce purely to
+  // avoid re-JSON.stringify-ing the (increasingly large, as draftHistory
+  // grows) payload on every single click during a rapid-click burst
+  // (e.g. spam-clicking Undo late in a draft). That's a real but minor
+  // cost, and paying it on every change is what "Admin assigns a player
+  // -> Spectator updates immediately" actually requires -- so it's worth
+  // it. `draftBroadcastRef` still skips a write when the serialized
+  // payload is byte-identical to the last one sent (e.g. an effect
+  // re-run triggered by something other than tournament/draftHistory
+  // actually changing), which is a real, free no-latency dedupe, not a
+  // delay.
   const draftBroadcastRef = useRef(null)
-  const draftBroadcastTimerRef = useRef(null)
-  const pendingBroadcastRef = useRef(null)
   useEffect(() => {
     if (!isStaff || stage !== 'draft') return
     if (!tournament.teams || tournament.teams.length === 0) return
 
-    // Debounced on purpose: this payload includes the full draftHistory
-    // array (every entry itself a deep-cloned snapshot of teams/pool) plus
-    // the current teams/pool/captainCandidates again, so JSON.stringify-ing
-    // it gets more expensive the deeper into the draft this runs -- doing
-    // that synchronously on every single change meant a rapid click burst
-    // (e.g. spam-clicking Undo late in a draft, when draftHistory is
-    // longest) recomputed it once per click. Deferring it means a burst
-    // only pays that cost once, after the last change settles -- since this
-    // was already fire-and-forget/eventually-consistent (see comment
-    // above), the eventual broadcast content and this admin's own drafting
-    // experience are both unchanged; only the redundant mid-burst
-    // recomputation is removed. `pendingBroadcastRef` + the unmount effect
-    // right below exist so that navigating away mid-debounce still flushes
-    // the latest state instead of silently dropping it -- the old
-    // synchronous version never had a "pending" state that could be lost.
-    const run = () => {
-      const payload = {
-        tournamentName,
-        teamCount: settingsMeta.teamCount,
-        playersPerTeam: settingsMeta.playersPerTeam,
-        draftPhase: tournament.draftPhase,
-        teams: tournament.teams,
-        captainCandidates: tournament.captainCandidates,
-        pool: tournament.pool,
-        pickIndex: tournament.pickIndex,
-        roundOrders: tournament.roundOrders,
-        selectedCaptainId,
-        draftHistory,
-      }
-      const json = JSON.stringify(payload)
-      if (draftBroadcastRef.current === json) return
-      draftBroadcastRef.current = json
-      syncDraftState(payload).catch(() => {})
+    const payload = {
+      tournamentName,
+      teamCount: settingsMeta.teamCount,
+      playersPerTeam: settingsMeta.playersPerTeam,
+      draftPhase: tournament.draftPhase,
+      teams: tournament.teams,
+      captainCandidates: tournament.captainCandidates,
+      pool: tournament.pool,
+      pickIndex: tournament.pickIndex,
+      roundOrders: tournament.roundOrders,
+      selectedCaptainId,
+      draftHistory,
     }
-
-    if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
-    pendingBroadcastRef.current = run
-    draftBroadcastTimerRef.current = setTimeout(() => {
-      draftBroadcastTimerRef.current = null
-      pendingBroadcastRef.current = null
-      run()
-    }, 200)
+    const json = JSON.stringify(payload)
+    if (draftBroadcastRef.current === json) return
+    draftBroadcastRef.current = json
+    syncDraftState(payload).catch(() => {})
   }, [isStaff, stage, tournamentName, settingsMeta, tournament, selectedCaptainId, draftHistory])
-
-  // Flush any still-pending debounced broadcast on unmount (leaving this
-  // page) so the very last change before navigating away is never silently
-  // dropped -- a `[]`-deps effect so this runs exactly once, on true
-  // unmount, not on every dependency change above.
-  useEffect(() => {
-    return () => {
-      if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
-      pendingBroadcastRef.current?.()
-    }
-  }, [])
 
   // Draft progress now persists across leaving this page entirely: the
   // Live Draft State broadcast above is the *only* place captain

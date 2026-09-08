@@ -452,31 +452,41 @@ very first sync on mount) snaps immediately.
 The Captain assignment / Teammate draft phases are still 100% local
 React state (`tournament` in `DraftArenaPage`) while actively being
 driven. In parallel, every time that state actually changes (while an
-Admin/Developer is on the draft stage), it's mirrored to
-`public.tournament_draft_state` (structural singleton, public-read,
-Realtime-enabled) via `sync_draft_state()` — this is what feeds the
+Admin/Developer is on the draft stage), it's mirrored **immediately, on
+every single change** to `public.tournament_draft_state` (structural
+singleton, public-read, Realtime-enabled, `REPLICA IDENTITY FULL` --
+see why below) via `sync_draft_state()` — this is what feeds the
 Spectator Page's live view (Section 9). A failed/slow write here can
 never block or alter the admin's own drafting experience.
 
-**Watch out — this broadcast is debounced (200ms) on purpose, and needs
-to stay that way:** its payload includes the full Undo stack
-(`draftHistory` — every entry itself a deep-cloned snapshot of `teams`/
-`pool`) plus the current `teams`/`pool`/`captainCandidates` again, so
-`JSON.stringify`-ing it gets measurably more expensive the deeper into
-a draft this runs (measured: ~12ms for a realistic full 8×5 draft's
-worth of history, ~3MB serialized — cheap once, but a rapid click burst
-that recomputes it **on every single click** adds up fast: a 20-click
-burst measured at ~220ms of blocking main-thread work undebounced vs.
-~11ms debounced). This was a real, measured cause of lag when
-spam-clicking Undo (and to a lesser extent, rapid picks) late in a
-draft. The debounce means a rapid burst only pays this cost once, right
-after it settles — since the broadcast was already fire-and-forget/
-eventually-consistent by design, this doesn't change what eventually
-gets persisted, just skips the redundant mid-burst recomputation. A
-matching "flush on unmount" effect exists alongside it specifically so
-navigating away *during* the debounce window still persists the latest
-state instead of silently dropping it — keep both effects together if
-this code is ever touched again.
+**Do not debounce this broadcast.** An earlier pass added a 200ms
+debounce here purely to avoid re-`JSON.stringify`-ing the payload
+(which includes the full Undo stack) on every click during a rapid-
+click burst. It was removed: the Spectator Page needs "Admin assigns a
+player → Spectator updates immediately," and 200ms of artificial,
+uniform latency on *every* pick to save a rare burst-click optimization
+wasn't worth it. If a future performance pass wants that optimization
+back, do it a different way (e.g. only throttle while `draftHistory` is
+past some length) rather than delaying every single broadcast.
+
+**`REPLICA IDENTITY FULL` on this table is load-bearing, not
+decoration.** `state` is a single large jsonb blob rewritten on *every*
+pick — Postgres's logical replication can transmit an "unchanged TOAST"
+placeholder for a jsonb column even when it's part of the `UPDATE`'s
+`SET` clause and its content did change, once REPLICA IDENTITY isn't
+FULL. This was a real, previously-shipped bug: the Spectator Page's
+realtime handler treated a payload with a missing `state` as "no draft
+in progress" and reset straight back to the "请等待管理员开始选秀"
+placeholder — reproducing on very close to every single pick, since it's
+tied to Postgres's TOAST behavior for this table's write pattern, not
+to network flakiness. Fixed at both ends, and both need to stay in
+place together: `replica identity full` on the table (schema.sql) is
+the actual fix; `SpectatorPage.jsx`'s realtime handler additionally
+*never* nulls out already-known draft state just because one payload's
+`state` came back unusable (a real end-of-draft is only ever the
+row's DELETE event, never an UPDATE with a blank `state`) as defense in
+depth, matching the same pattern already used for `tournament_matches`/
+`teams` (Section 8's Final Matchups notes).
 
 **Resuming a paused draft:** `DraftArenaPage`'s mount effect checks for
 an existing `tournament_draft_state` row first and, if one exists,
@@ -491,14 +501,14 @@ click that never happened).
 
 `src/components/SpectatorPage.jsx`, reached via a **观赛** button (open
 to every logged-in account, staff or not) on the Tournament Lobby,
-routed at `#spectate`. Uses the main app's Tailwind dark/neon-teal
-theme only for its own thin identity/exit header — the Captain/Teammate
-draft and Final Matchups bodies are the **exact same `DraftArena`/
-`FinalMatchupsStage` components** the admin's own Draft Arena renders,
-mounted with `isStaff={false}` — pixel-identical layout to what staff
-see, not a reimplementation. Deliberately scoped to the live drafting
-process only — general tournament/roster info already lives in the
-Tournament Lobby.
+routed at `#spectate`. Renders through the same `AppShell` every other
+full page in the app uses (in `viewerMode`, so no account chip/nav
+tabs — a single 返回锦标赛大厅 back action is the only chrome) — the
+Captain/Teammate draft and Final Matchups bodies are the **exact same
+`DraftArena`/`FinalMatchupsStage` components** the admin's own Draft
+Arena renders, mounted with `isStaff={false}`, not a reimplementation.
+Deliberately scoped to the live drafting process only — general
+tournament/roster info already lives in the Tournament Lobby.
 
 `isStaff={false}` means every admin-only control is not rendered at
 all (not merely disabled), and every mutating click handler no-ops —
@@ -511,10 +521,19 @@ Views, switched purely by what's currently in the database:
   yet: a minimal "选秀尚未开始" message.
 - **`drafting`** — a `tournament_draft_state` row exists: `<DraftArena>`
   fed a `tournament` object built from that broadcast.
-- **`final`** — a `tournament_matches` row exists: `<FinalMatchupsStage>`
-  with its own back button suppressed (this page's header already has
-  an exit button). Ending the tournament sends spectators back to the
-  Lobby too, same as every other connected client.
+- **`final`** — a `tournament_matches` row exists: `<FinalMatchupsStage>`.
+  Ending the tournament sends spectators back to the Lobby too, same as
+  every other connected client.
+
+**Realtime resilience:** both of this page's subscriptions
+(`subscribeDraftState`/`subscribeFinalMatchups`) reconnect on
+`CHANNEL_ERROR`/`TIMED_OUT`/`CLOSED` (a channel that's been open through
+a long-backgrounded tab or a rough network patch can otherwise come back
+silently stuck) and re-fetch once on every successful (re)subscribe, plus
+a small periodic poll as a backstop -- all in `SpectatorPage.jsx`. This is
+about the *channel* going away entirely, a different failure mode than
+the "payload missing a column" issue above, which is why both fixes are
+needed and neither one replaces the other.
 
 ## 10. Not Yet Built / Known Limitations
 
@@ -523,7 +542,12 @@ Views, switched purely by what's currently in the database:
   draft called it most recently — an accepted, unaddressed edge case.
   The Live Draft State broadcast has the same "last writer wins"
   behavior for the Spectator Page's `drafting` view, and for resuming a
-  paused draft.
+  paused draft. Since that broadcast is no longer debounced, two very
+  rapid consecutive picks *could* in theory have their two separate
+  `sync_draft_state()` calls land out of order at the database — same
+  theoretical risk the original pre-debounce implementation always had,
+  never observed in practice, not addressed here (see the immediate-
+  broadcast note above for why re-introducing a delay isn't the fix).
 - Sessions are bearer tokens, not JWTs — no Supabase-Auth-based RLS
   (Section 6 explains why).
 - No password reset, "remember me," or email anywhere (by design,
