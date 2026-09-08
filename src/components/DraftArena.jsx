@@ -986,21 +986,54 @@ const fmpWait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const FMP_ANIM_CSS = `
 @keyframes fmpCountPulse{0%{transform:scale(2.3);opacity:0;}25%{opacity:1;}100%{transform:scale(.65);opacity:0;}}
-@keyframes fmpFlicker{0%,100%{opacity:1;}50%{opacity:.3;}}
+@keyframes fmpRingPulse{0%{transform:scale(.5);opacity:.9;}100%{transform:scale(1.7);opacity:0;}}
+@keyframes fmpFlicker{0%,100%{opacity:1;filter:none;}20%{opacity:.22;filter:blur(1.5px);}45%{opacity:1;filter:none;}70%{opacity:.32;filter:blur(2px) hue-rotate(25deg);}100%{opacity:1;filter:none;}}
+@keyframes fmpNameSlam{0%{opacity:0;letter-spacing:.6em;filter:blur(12px);transform:scale(.8);}55%{opacity:1;}100%{opacity:1;letter-spacing:normal;filter:blur(0);transform:scale(1);}}
+@keyframes fmpVsPop{0%{opacity:0;transform:scale(.3) rotate(-10deg);}55%{opacity:1;transform:scale(1.35) rotate(5deg);}100%{opacity:1;transform:scale(1) rotate(0deg);}}
 @keyframes fmpSlamIn{0%{opacity:0;transform:translateY(16px) scale(.94);filter:blur(6px);}60%{opacity:1;filter:blur(0);}100%{opacity:1;transform:translateY(0) scale(1);}}
 @keyframes fmpRowIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-@keyframes fmpFlashSweep{0%{opacity:.75;}100%{opacity:0;}}
+@keyframes fmpFlashBurst{0%{opacity:0;}10%{opacity:1;}100%{opacity:0;}}
+@keyframes fmpFrameGlow{0%{box-shadow:0 0 0 0 rgba(124,92,255,0);}35%{box-shadow:0 0 70px rgba(124,92,255,.6),0 0 120px rgba(34,229,255,.32);}100%{box-shadow:0 0 0 0 rgba(124,92,255,0);}}
 @media (prefers-reduced-motion: reduce) {
   #fmpStage2, #fmpStage2 * { animation-duration: 0.001ms !important; }
 }
 `;
 
-function TeamFace({ team, dim = false }) {
+// Ornate corner-bracket "broadcast frame" around a featured VS pair --
+// purely decorative chrome around content that's already centered in the
+// spotlight card; doesn't add or move any layout region. `pulse` plays a
+// one-shot glow burst (keyed by the caller) the instant a match locks in.
+function BroadcastFrame({ children, pulse = false, glowColor = "rgba(34,229,255,.9)" }) {
+  return (
+    <div className="relative px-10 py-8 sm:px-16 sm:py-10 rounded-2xl"
+      style={{
+        border: "1px solid rgba(124,92,255,.35)",
+        background: "rgba(6,7,15,.35)",
+        animation: pulse ? "fmpFrameGlow 1s ease-out" : undefined,
+      }}>
+      {[
+        "-top-1 -left-1 border-t-2 border-l-2 rounded-tl-md",
+        "-top-1 -right-1 border-t-2 border-r-2 rounded-tr-md",
+        "-bottom-1 -left-1 border-b-2 border-l-2 rounded-bl-md",
+        "-bottom-1 -right-1 border-b-2 border-r-2 rounded-br-md",
+      ].map((cls, i) => (
+        <span key={i} className={`absolute ${cls} w-5 h-5 pointer-events-none`} style={{ borderColor: glowColor }} />
+      ))}
+      {children}
+    </div>
+  );
+}
+
+
+function TeamFace({ team, dim = false, animateIn = false }) {
   const name = team ? teamLabel(team) : "？？？";
   return (
     <div className={`flex flex-col items-center gap-3 transition-opacity ${dim ? "opacity-40" : ""}`} style={{ minWidth: 112 }}>
       <Avatar avatarUrl={team?.captainAvatarUrl} size={72} glow />
-      <span className="font-display font-bold text-xl sm:text-2xl text-ink-primary text-center leading-tight max-w-[220px] truncate">{name}</span>
+      <span className="font-display font-bold text-xl sm:text-2xl text-ink-primary text-center leading-tight max-w-[220px] truncate"
+        style={animateIn ? { animation: "fmpNameSlam .6s cubic-bezier(.2,.8,.2,1) forwards", textShadow: "0 0 26px rgba(34,229,255,.55)" } : undefined}>
+        {name}
+      </span>
       <span className="text-[9px] font-heading font-semibold tracking-[0.3em] text-ink-faint uppercase">Captain</span>
     </div>
   );
@@ -1293,6 +1326,13 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
               background: "radial-gradient(ellipse at 50% 0%, rgba(124,92,255,.14), transparent 60%), linear-gradient(180deg,#141833,#0a0c1c 80%)",
               borderColor: complete ? "rgba(255,201,74,.35)" : "rgba(124,92,255,.25)",
             }}>
+            {reveal?.phase === "reveal" && (
+              <div key={`flash-${reveal.idx}`} className="absolute inset-0 pointer-events-none"
+                style={{
+                  animation: "fmpFlashBurst .8s ease-out forwards",
+                  background: "radial-gradient(circle at 50% 45%, rgba(255,255,255,.55), rgba(124,92,255,.5) 30%, rgba(34,229,255,.3) 50%, transparent 72%)",
+                }} />
+            )}
             {complete && featuredIdx === null ? (
               <div key={displayMatches.length} className="w-full max-w-2xl flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .7s ease forwards" }}>
                 <div className="text-[11px] font-heading font-semibold uppercase tracking-[0.3em] text-gold/90">对阵表已揭晓 · Final Lineup</div>
@@ -1316,33 +1356,48 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
               </div>
             ) : reveal ? (
               reveal.phase === "countdown" ? (
-                <div key={reveal.n} className="font-display font-black text-white"
-                  style={{ fontSize: 120, animation: "fmpCountPulse .6s cubic-bezier(.2,.8,.3,1) forwards", textShadow: "0 0 60px rgba(124,92,255,.7)" }}>
-                  {reveal.n}
+                <div key={reveal.n} className="relative flex items-center justify-center">
+                  <span className="absolute w-48 h-48 sm:w-56 sm:h-56 rounded-full pointer-events-none"
+                    style={{ border: "2px solid rgba(124,92,255,.5)", animation: "fmpRingPulse .6s ease-out forwards" }} />
+                  <span className="absolute w-48 h-48 sm:w-56 sm:h-56 rounded-full pointer-events-none"
+                    style={{ border: "2px solid rgba(34,229,255,.35)", animation: "fmpRingPulse .6s ease-out .12s forwards" }} />
+                  <div className="font-display font-black text-white"
+                    style={{ fontSize: 140, animation: "fmpCountPulse .6s cubic-bezier(.2,.8,.3,1) forwards", textShadow: "0 0 80px rgba(124,92,255,.9), 0 0 140px rgba(34,229,255,.5)" }}>
+                    {reveal.n}
+                  </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-8 sm:gap-14" style={{ animation: reveal.phase === "flicker" ? "fmpFlicker .35s ease-in-out infinite" : undefined }}>
-                  <TeamFace team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.a) : reveal.flickerA} />
-                  <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0">VS</span>
-                  <TeamFace
-                    team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.b) : reveal.flickerB}
-                    dim={reveal.phase === "reveal" && displayMatches[reveal.idx]?.b == null}
-                  />
-                </div>
+                <BroadcastFrame pulse={reveal.phase === "reveal"} glowColor={reveal.phase === "reveal" ? "#FFC94A" : "#22E5FF"}>
+                  <div key={reveal.phase} className="flex items-center gap-8 sm:gap-14"
+                    style={{ animation: reveal.phase === "flicker" ? "fmpFlicker .35s ease-in-out infinite" : undefined }}>
+                    <TeamFace team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.a) : reveal.flickerA} animateIn={reveal.phase === "reveal"} />
+                    <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0"
+                      style={reveal.phase === "reveal" ? { animation: "fmpVsPop .5s cubic-bezier(.2,.8,.2,1) forwards" } : undefined}>
+                      VS
+                    </span>
+                    <TeamFace
+                      team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.b) : reveal.flickerB}
+                      dim={reveal.phase === "reveal" && displayMatches[reveal.idx]?.b == null}
+                      animateIn={reveal.phase === "reveal"}
+                    />
+                  </div>
+                </BroadcastFrame>
               )
             ) : featured ? (
               <div key={featuredIdx} className="flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .5s ease forwards" }}>
-                <div className="flex items-center gap-8 sm:gap-14">
-                  <TeamFace team={teamByIdx.get(featured.a)} />
-                  {featured.b != null ? (
-                    <>
-                      <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0">VS</span>
-                      <TeamFace team={teamByIdx.get(featured.b)} />
-                    </>
-                  ) : (
-                    <span className="px-4 py-2 rounded-lg bg-gold/10 border border-gold/40 text-gold font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
-                  )}
-                </div>
+                <BroadcastFrame glowColor="rgba(124,92,255,.6)">
+                  <div className="flex items-center gap-8 sm:gap-14">
+                    <TeamFace team={teamByIdx.get(featured.a)} />
+                    {featured.b != null ? (
+                      <>
+                        <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0">VS</span>
+                        <TeamFace team={teamByIdx.get(featured.b)} />
+                      </>
+                    ) : (
+                      <span className="px-4 py-2 rounded-lg bg-gold/10 border border-gold/40 text-gold font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
+                    )}
+                  </div>
+                </BroadcastFrame>
                 {complete && (
                   <button type="button" onClick={() => setFeaturedIdx(null)} className="text-xs text-ink-muted hover:text-accent2 transition font-heading">
                     ← 返回完整对阵表
