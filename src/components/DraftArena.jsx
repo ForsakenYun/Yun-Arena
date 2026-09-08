@@ -1076,6 +1076,20 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
   const byeIdxs = useMemo(() => new Set(displayMatches.filter((m) => m.a != null && m.b == null).map((m) => m.a)), [displayMatches]);
   const complete = displayMatches.length > 0 && remaining.length === 0;
 
+  // If another connected admin locks/pairs/rolls a team this client
+  // currently has selected in the pairing pool (e.g. two admins working
+  // the casting pool at once), drop it from the selection instead of
+  // leaving a stale idx sitting there that would just fail server-side
+  // the moment 定角锁定/随机生成剩余对阵 is clicked.
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.length === 0) return prev;
+      const stillFree = new Set(remaining.map((t) => t.idx));
+      const next = prev.filter((idx) => stillFree.has(idx));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [remaining]);
+
   // Plays the countdown -> flicker -> settle sequence for one or more
   // newly-appended matches, one at a time, entirely via React state.
   // Used both when this client itself triggers a roll (fed the RPC's own
@@ -1153,7 +1167,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
     await withBusy("pair", async () => {
       const result = await createManualMatchup(idxA, idxB);
       setSelected([]);
-      const newTeams = result.teams || teams;
+      const newTeams = result.teams && result.teams.length > 0 ? result.teams : teams;
       const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
       setDisplayTeams(newTeams);
       setDisplayMatches(newMatches);
@@ -1172,7 +1186,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
       const beforeLen = displayMatchesRef.current.length;
       const result = await rollTournamentMatchupsPool(poolIdxs);
       setSelected([]);
-      const newTeams = result.teams || teams;
+      const newTeams = result.teams && result.teams.length > 0 ? result.teams : teams;
       const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
       setDisplayTeams(newTeams);
       await runReveal(newMatches.slice(beforeLen), beforeLen, newMatches, newTeams);
@@ -1184,7 +1198,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
     const idx = featuredIdx;
     await withBusy(`remove:${idx}`, async () => {
       const result = await removeTournamentMatchup(idx);
-      const newTeams = result.teams || teams;
+      const newTeams = result.teams && result.teams.length > 0 ? result.teams : teams;
       const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
       setDisplayTeams(newTeams);
       setDisplayMatches(newMatches);
@@ -1196,7 +1210,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
     if (busyAction || reveal) return;
     pendingActionRef.current.reset = () => withBusy("reset", async () => {
       const result = await resetTournamentMatchups();
-      setDisplayTeams(result.teams || teams);
+      setDisplayTeams(result.teams && result.teams.length > 0 ? result.teams : teams);
       setDisplayMatches([]);
       setFeaturedIdx(null);
       setSelected([]);
@@ -1696,10 +1710,21 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       }
       const row = payload.new
       if (!row) return
-      setFinalMatches({
-        teams: Array.isArray(row.teams) ? row.teams : [],
+      // `teams` is snapshotted once by enter_final_matchups and never
+      // changes again for the lifetime of this tournament_matches row --
+      // every later mutation (lock/pair/roll/remove/reset) only ever
+      // touches `matchups`. But Postgres logical replication can omit an
+      // unchanged jsonb column's value from a realtime UPDATE payload
+      // once it's large enough to be TOASTed, so a matchups-only update
+      // can arrive here with `teams` missing/empty even though the
+      // database itself still has it. Guard against that by keeping
+      // whatever non-empty teams we already have instead of wiping the
+      // whole roster to nothing.
+      const incomingTeams = Array.isArray(row.teams) ? row.teams : []
+      setFinalMatches((prev) => ({
+        teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
         matchups: Array.isArray(row.matchups) ? row.matchups : [],
-      })
+      }))
       setStage('final')
     })
 

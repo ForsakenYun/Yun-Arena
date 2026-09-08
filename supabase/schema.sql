@@ -231,6 +231,24 @@ create table if not exists public.tournament_matches (
 comment on table public.tournament_matches is
   'Singleton row (Draft Arena -- Final Matchups / 对阵生成 stage). Public read, written only through enter_final_matchups()/create_manual_matchup()/remove_tournament_matchup()/roll_tournament_matchups()/lock_tournament_matchup()/reset_tournament_matchups(), all Admin/Developer-only. matchups starts (and, after Reset, returns to) a blank array -- nothing is ever auto-generated. Absence of this row means no tournament has reached the Final Matchups stage yet (or End Tournament just cleared it); its presence is itself the signal every connected Draft Arena client uses to switch into this stage, via Realtime.';
 
+-- `teams` is snapshotted once (by enter_final_matchups) and never
+-- written again for the rest of this row's life -- every later mutation
+-- (create_manual_matchup / roll_tournament_matchups_pool /
+-- remove_tournament_matchup / lock_tournament_matchup /
+-- reset_tournament_matchups) only ever touches `matchups`. Postgres's
+-- default replica identity only includes a changed row's *primary key*
+-- in the logical-replication stream for columns it can prove are
+-- unchanged once they're large enough to be TOASTed -- which `teams`
+-- (a jsonb array) very much can be -- so without REPLICA IDENTITY FULL,
+-- a matchups-only update can broadcast a Realtime payload with `teams`
+-- silently missing, even though the column's value in the database
+-- never changed. That previously showed up as the team roster
+-- appearing to vanish (captains rendering as "?"/unknown, team count
+-- showing 0) immediately after any admin action that doesn't touch
+-- `teams` -- lock/pair/roll/remove/reset all qualify. FULL guarantees
+-- Realtime always sees this row's complete column set on every change.
+alter table public.tournament_matches replica identity full;
+
 -- Live Draft State (Phase 6 -- Spectator Page). Singleton row, same
 -- structural trick as tournament_matches/tournament_settings. This fills
 -- the gap DEVLOG.md's "Not Yet Built" section used to flag: the Draft

@@ -141,10 +141,17 @@ export default function SpectatorPage({ onExitToLobby }) {
       }
       const row = payload.new
       if (!row) return
-      setFinalMatches({
-        teams: Array.isArray(row.teams) ? row.teams : [],
+      // See the matching comment in DraftArena.jsx's own subscription:
+      // `teams` never changes after creation, but a matchups-only update
+      // can still arrive here with `teams` missing due to Postgres
+      // logical replication omitting an unchanged TOASTed jsonb column.
+      // Keep whatever non-empty teams we already have instead of wiping
+      // the roster.
+      const incomingTeams = Array.isArray(row.teams) ? row.teams : []
+      setFinalMatches((prev) => ({
+        teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
         matchups: Array.isArray(row.matchups) ? row.matchups : [],
-      })
+      }))
     })
     return () => { cancelled = true; unsubscribe() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
