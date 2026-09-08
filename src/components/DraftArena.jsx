@@ -1,4 +1,4 @@
-import React, { useState, useLayoutEffect, useEffect, useRef } from "react";
+import React, { useState, useLayoutEffect, useEffect, useRef, useMemo } from "react";
 import {
   fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby,
   fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchupsPool,
@@ -924,60 +924,16 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   FINAL MATCHUPS STAGE — "01 冠军海报版" (Movie Poster Premiere)
+   FINAL MATCHUPS STAGE — "Broadcast Bracket Reveal"
 
-   This is a DIRECT COPY of the HTML / CSS / JS for concept "01 冠军海报版"
-   from final_matchups_concept3_variants_v2.html -- not a React
-   reimplementation of it. The markup below (FMP_HTML) is the reference
-   file's own `.stage` innerHTML for that concept, unedited. The stylesheet
-   below (FMP_CSS) is the reference's own shared `.pv-*` rules plus its
-   `.h1-*` / `[data-c="1"]` rules, unedited except that every selector is
-   prefixed with `#fmpStage` so it can't leak onto the rest of this app's
-   pages (the reference relied on a `[data-c="1"]` ancestor for the same
-   scoping job; `#fmpStage` does the same job here). The script below
-   (inside the mount effect) is the reference's own `makeModel`,
-   `initials`, `renderFilmstrip`, `renderCasting`, `runRollSequence`, and
-   its Variant-1 IIFE -- same functions, same variable names, same
-   choreography (3-2-1 countdown, 7-tick flicker at 150ms, 1200ms pause
-   between reveals, identical CSS class toggling for every animation).
-
-   The only edits are the minimum wiring called for so this can run inside
-   a React app against real data instead of the reference's standalone
-   demo page (see Section 8 below for the fuller backend rewrite this
-   grew into once real Random Pool / bye / lock-unlock-remove behavior
-   was required):
-     1. `TEAMS` (a hardcoded 8-name array in the reference) is built from
-        this tournament's real captain names instead.
-     2. `lockBtn` (定角锁定) still does exactly what the reference's own
-        button did -- hand-pick 2 teams, lock them together immediately --
-        just persisted via createManualMatchup() instead of only mutating
-        an in-memory model. `rollBtn` (开幕！随机生成剩余对阵) is now
-        scoped to whatever the admin has selected from the casting pool
-        (any number of teams, no cap) and calls the real
-        roll_tournament_matchups_pool RPC (see Section 8) -- the pool's
-        teams only, nothing else. `reset1` / `end1` call
-        resetTournamentMatchups / endTournament. `runRollSequence` itself
-        is never touched; only `computeRollPlan()` is told the server's
-        actual result (via `model._pendingPlan`, set right before it
-        runs) instead of computing its own client-only shuffle, since a
-        real roll must reveal what the server actually assigned.
-     3. A small amount of chrome the reference didn't need (it was never
-        embedded in a larger app, and its demo had no way to undo
-        anything): a plain "back" control and an error banner above the
-        poster, admin/developer-only visibility for the casting pool +
-        action bar, and (appended by script, not by editing FMP_HTML) a
-        lock/unlock + dissolve control pair on the featured spotlight
-        card plus a small pool-size hint. None of this touches the
-        poster's own markup (FMP_HTML), CSS (FMP_CSS), or the
-        countdown/flicker/reveal script -- all of it lives outside
-        `#fmpStage`'s copied nodes, styled by a separate FMP_WIRE_CSS
-        stylesheet.
-     4. A sync effect so that when another connected admin locks / rolls /
-        removes / resets / ends from their own client, this client's
-        `model` (and therefore the on-screen poster) picks it up via this
-        project's existing Realtime subscription (`matchups`/`teams`
-        props), the same live-sync guarantee every other stage in this
-        app already has.
+   Ground-up visual/interaction redesign (see the fuller comment directly
+   above the FinalMatchupsStage component below for the full rationale
+   and composition). The data/logic layer this stage renders is entirely
+   unchanged: `teams`/`matchups` props, kept live via this project's
+   existing Realtime subscription, and the same RPC-backed mutation
+   functions (createManualMatchup / rollTournamentMatchupsPool /
+   removeTournamentMatchup / resetTournamentMatchups / endTournament)
+   imported at the top of this file.
    ════════════════════════════════════════════════════════════════════════ */
 
 function teamLabel(team) {
@@ -985,831 +941,449 @@ function teamLabel(team) {
 }
 
 // ---------------------------------------------------------------------
-// FMP_CSS -- copied from final_matchups_concept3_variants_v2.html's
-// shared `.pv-*` block and its `.h1-*` / `[data-c="1"]` VARIANT 1 block,
-// verbatim, with every selector prefixed `#fmpStage ` for page-scoping
-// (see note above) and `[data-c="1"]` folded into `#fmpStage` itself
-// since this page only ever renders this one concept.
+// FINAL MATCHUPS -- "Broadcast Bracket Reveal"
+//
+// Ground-up redesign (visual + interaction only). The data/logic layer
+// is unchanged from the rest of the app's conventions: `teams` is an
+// array of {idx, captainName, captainAvatarUrl} snapshots and `matchups`
+// is an array of {a, b, locked} entries (a/b are team idx, b is null for
+// a bye), both persisted server-side and delivered as props (with
+// Realtime keeping every connected client in sync) exactly like every
+// other stage in this app. Every mutation still goes through the same
+// RPC-backed functions imported at the top of this file
+// (createManualMatchup / rollTournamentMatchupsPool /
+// removeTournamentMatchup / resetTournamentMatchups / endTournament) --
+// nothing about how matchups are generated, stored, loaded, or updated
+// has changed, only how that data is presented.
+//
+// Composition mirrors the rail + main pattern used by the Tournament
+// Lobby, Admin Dashboard, and Draft Arena: a team roster/pairing rail on
+// the left, a large "spotlight" reveal card as the dominant surface on
+// the right, with a filmstrip to browse every match already generated
+// and an action bar for staff. A slim status strip sits on top, flush
+// under the shared AppShell bar, the same idiom Draft Arena's own status
+// strip uses.
+//
+// The reveal itself is a new concept: a countdown -> name-shuffle
+// flicker -> settle sequence played inside the spotlight card using
+// plain React state (no manual DOM manipulation), reusing this file's
+// own Avatar component so captains render with their real photos, VS
+// duels instead of a gold movie-poster. Once every team has a matchup,
+// the spotlight becomes a clean scoreboard-style lineup grid.
 // ---------------------------------------------------------------------
-const FMP_CSS = `
-#fmpStage{--ac:#FFC94A;--ac2:#C9862B;--ac-a:rgba(255,201,74,.45);--ac-a2:rgba(255,201,74,.12);}
 
-#fmpStage .pv-filmstrip{margin-top:14px;height:78px;display:flex;gap:8px;align-items:center;overflow-x:auto;padding:4px 2px;}
-#fmpStage .pv-frame{flex-shrink:0;width:100px;height:64px;border-radius:7px;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.02);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:all .15s ease;}
-#fmpStage .pv-frame:hover{border-color:var(--ac);}
-#fmpStage .pv-frame.active{border-color:var(--ac);box-shadow:0 0 14px var(--ac-a,rgba(232,180,90,.4));}
-#fmpStage .pv-frame .fn{font-family:'Orbitron',sans-serif;font-size:9px;color:rgba(255,255,255,.35);}
-#fmpStage .pv-frame .ft{font-family:'Cinzel',serif;font-size:10px;color:#f3dfb0;text-align:center;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:92px;}
-#fmpStage .pv-frame .fe{font-family:'Rajdhani',sans-serif;font-size:9px;color:rgba(255,255,255,.25);}
-#fmpStage .pv-casting{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px;min-height:66px;align-content:flex-start;}
-#fmpStage .pv-castcard{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.02);cursor:pointer;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12.5px;color:#fff;transition:all .15s ease;}
-#fmpStage .pv-castcard:hover{border-color:var(--ac);}
-#fmpStage .pv-castcard.sel{border-color:var(--ac);background:var(--ac-a2,rgba(232,180,90,.12));box-shadow:0 0 14px var(--ac-a,rgba(232,180,90,.35));}
-#fmpStage .pv-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
-#fmpStage .pv-btn{font-family:'Orbitron',sans-serif;font-weight:800;font-size:11px;letter-spacing:.03em;padding:12px 20px;border-radius:10px;border:1px solid;cursor:pointer;transition:all .16s ease;}
-#fmpStage .pv-btn:disabled{opacity:.3;cursor:not-allowed;}
-#fmpStage .pv-btn.gold{background:linear-gradient(135deg,var(--ac),var(--ac2,#8a6a1e));color:#160f04;border-color:transparent;}
-#fmpStage .pv-btn.ghost{background:rgba(255,255,255,.03);color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.16);}
-#fmpStage .pv-btn.danger{background:rgba(255,59,59,.08);color:#ff6b6b;border-color:#5a1414;}
+function computeUsedIdxs(matches) {
+  const s = new Set();
+  matches.forEach((m) => { if (m.a != null) s.add(m.a); if (m.b != null) s.add(m.b); });
+  return s;
+}
+function computeComplete(matches, teamsArr) {
+  if (matches.length === 0 || teamsArr.length === 0) return false;
+  const used = computeUsedIdxs(matches);
+  return teamsArr.every((t) => used.has(t.idx));
+}
+const fmpWait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-#fmpStage .h1{position:relative;height:620px;border-radius:14px;overflow:hidden;border:1px solid rgba(232,180,90,.22);
-  background:radial-gradient(ellipse at 50% 0%, rgba(232,180,90,.14), transparent 55%), linear-gradient(180deg,#1a1206,#070502 75%);}
-#fmpStage .h1-rays{position:absolute;left:50%;top:-10%;width:900px;height:900px;transform:translateX(-50%);background:conic-gradient(from 0deg, transparent 0deg, rgba(232,180,90,.06) 6deg, transparent 14deg);animation:fmpH1Spin 40s linear infinite;}
-@keyframes fmpH1Spin{to{transform:translateX(-50%) rotate(360deg);}}
-#fmpStage .h1-grain{position:absolute;inset:0;opacity:.045;background-image:radial-gradient(circle,#fff 1px,transparent 1px);background-size:3px 3px;pointer-events:none;}
-#fmpStage .h1-title{position:relative;z-index:3;text-align:center;padding-top:38px;}
-#fmpStage .h1-t-orn{color:#e8b45a;font-size:14px;opacity:.6;letter-spacing:.5em;margin-bottom:6px;}
-#fmpStage .h1-t-main{font-family:'Cinzel',serif;font-weight:900;font-size:40px;color:#f3dfb0;letter-spacing:.12em;text-shadow:0 0 30px rgba(232,180,90,.5);}
-#fmpStage .h1-t-sub{margin-top:8px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12px;letter-spacing:.35em;color:rgba(232,180,90,.55);}
-#fmpStage .h1-badge{position:absolute;top:20px;right:20px;z-index:5;font-family:'Orbitron',sans-serif;font-size:10px;font-weight:800;letter-spacing:.08em;padding:6px 12px;border:1px solid #e8b45a;border-radius:5px;color:#f3dfb0;background:rgba(0,0,0,.4);}
-#fmpStage .h1-cast{position:relative;z-index:3;display:flex;justify-content:center;gap:14px;margin-top:34px;flex-wrap:wrap;padding:0 30px;}
-#fmpStage .h1-portrait{width:56px;height:56px;border-radius:50%;border:2px solid rgba(232,180,90,.3);background:radial-gradient(circle at 35% 30%, #3a2f16, #16110a 75%);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-weight:700;font-size:19px;color:rgba(232,180,90,.5);transition:all .5s ease;}
-#fmpStage .h1-portrait.used{border-color:#e8b45a;color:#f3dfb0;box-shadow:0 0 16px rgba(232,180,90,.5);}
-#fmpStage .h1-portrait.dim{opacity:.3;}
-#fmpStage .h1-portrait.bye{border-color:#c9ced6;color:#eef1f4;box-shadow:0 0 16px rgba(201,206,214,.5);}
-#fmpStage .h1-feature{position:relative;z-index:3;height:230px;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:14px;}
-#fmpStage .h1-feature-idle{font-family:'Rajdhani',sans-serif;font-size:13px;color:rgba(255,255,255,.3);letter-spacing:.05em;}
-#fmpStage .h1-feature-pair{display:none;flex-direction:column;align-items:center;gap:14px;}
-#fmpStage .h1-feature-pair.show{display:flex;}
-#fmpStage .h1-finale{display:none;flex-direction:column;align-items:center;gap:14px;width:100%;}
-#fmpStage .h1-finale.show{display:flex;animation:fmpH1FinaleIn 1s ease forwards;}
-@keyframes fmpH1FinaleIn{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:scale(1);}}
-#fmpStage .h1-finale-title{font-family:'Cinzel',serif;font-weight:900;font-size:20px;letter-spacing:.1em;color:#f3dfb0;text-shadow:0 0 20px rgba(232,180,90,.6);}
-#fmpStage .h1-finale-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 26px;margin-top:6px;}
-#fmpStage .h1-finale-row{display:flex;align-items:center;gap:10px;font-family:'Cinzel',serif;font-size:13px;color:#f3dfb0;opacity:0;}
-#fmpStage .h1-finale-row.in{animation:fmpH1FrIn .5s ease forwards;}
-@keyframes fmpH1FrIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
-#fmpStage .h1-finale-row .vs{color:#e8b45a;font-family:'Orbitron',sans-serif;font-size:10px;}
-#fmpStage .h1-finale-row .no{color:rgba(232,180,90,.5);font-family:'Orbitron',sans-serif;font-size:9px;width:26px;}
-#fmpStage .h1-fp-frame{position:relative;display:flex;align-items:center;justify-content:center;gap:30px;padding:22px 40px;border:1.5px solid #e8b45a;border-radius:8px;background:rgba(0,0,0,.3);box-shadow:0 0 40px rgba(232,180,90,.25), inset 0 0 30px rgba(232,180,90,.08);}
-#fmpStage .h1-fp-frame::before,#fmpStage .h1-fp-frame::after{content:'';position:absolute;width:14px;height:14px;border:2px solid #f3dfb0;}
-#fmpStage .h1-fp-frame::before{top:-2px;left:-2px;border-right:none;border-bottom:none;}
-#fmpStage .h1-fp-frame::after{bottom:-2px;right:-2px;border-left:none;border-top:none;}
-#fmpStage .h1-fp-name{font-family:'Cinzel',serif;font-weight:800;font-size:28px;color:#f3dfb0;opacity:0;text-shadow:0 0 20px rgba(232,180,90,.6);}
-#fmpStage .h1-fp-name.in{animation:fmpH1NameIn .8s ease forwards;}
-@keyframes fmpH1NameIn{from{opacity:0;letter-spacing:.5em;filter:blur(8px);}to{opacity:1;letter-spacing:.03em;filter:blur(0);}}
-#fmpStage .h1-fp-vs{font-family:'Orbitron',sans-serif;font-weight:900;font-size:16px;color:#e8b45a;}
-#fmpStage .h1-fp-tag{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.3em;color:rgba(232,180,90,.5);}
-#fmpStage .h1-countdown{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;pointer-events:none;}
-#fmpStage .h1-countdown span{font-family:'Cinzel',serif;font-weight:900;font-size:130px;color:#f3dfb0;text-shadow:0 0 50px rgba(232,180,90,.8);display:none;}
-#fmpStage .h1-countdown span.go{display:block;animation:fmpH1Count 1s cubic-bezier(.2,.8,.3,1) forwards;}
-@keyframes fmpH1Count{0%{transform:scale(2.6);opacity:0;}30%{opacity:1;}100%{transform:scale(.6);opacity:0;}}
-#fmpStage .h1-flash{position:absolute;inset:0;background:radial-gradient(circle at 50% 40%, rgba(255,240,210,.85), transparent 62%);opacity:0;z-index:7;pointer-events:none;}
-#fmpStage .h1-flash.go{animation:fmpH1Flash .8s ease;}
-@keyframes fmpH1Flash{0%{opacity:.8;}100%{opacity:0;}}
-
-/* This project has a global prefers-reduced-motion rule (src/index.css)
-   that collapses every animation/transition on the page to ~0ms for
-   accessibility. The reference file has no such rule and always plays
-   its animations at full speed/timing regardless of that OS setting.
-   To render #fmpStage identically to the reference in every environment,
-   its own animations are exempted from that collapse -- this changes
-   nothing about the animations themselves (names/keyframes/durations
-   above are untouched), it only stops something outside the copied CSS
-   from truncating them. */
+const FMP_ANIM_CSS = `
+@keyframes fmpCountPulse{0%{transform:scale(2.3);opacity:0;}25%{opacity:1;}100%{transform:scale(.65);opacity:0;}}
+@keyframes fmpFlicker{0%,100%{opacity:1;}50%{opacity:.3;}}
+@keyframes fmpSlamIn{0%{opacity:0;transform:translateY(16px) scale(.94);filter:blur(6px);}60%{opacity:1;filter:blur(0);}100%{opacity:1;transform:translateY(0) scale(1);}}
+@keyframes fmpRowIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+@keyframes fmpFlashSweep{0%{opacity:.75;}100%{opacity:0;}}
 @media (prefers-reduced-motion: reduce) {
-  #fmpStage, #fmpStage * {
-    animation-duration: revert !important;
-    animation-iteration-count: revert !important;
-    transition-duration: revert !important;
-  }
+  #fmpStage2, #fmpStage2 * { animation-duration: 0.001ms !important; }
 }
 `;
 
-// ---------------------------------------------------------------------
-// FMP_HTML -- copied verbatim from the reference's
-// <section data-c="1"> > <div class="stage"> innerHTML (i.e. everything
-// except the demo-file's own concept-picker chrome -- the "01 冠军海报版"
-// title/description blurb above the stage -- which belongs to the
-// reference file's showcase wrapper, not to the page itself). Every id
-// (hero1, h1Cast, h1Idle, fs1, lock1, roll1, ...) is unchanged so the
-// script below can address these exact elements exactly like the
-// reference's own script did.
-// ---------------------------------------------------------------------
-const FMP_HTML = `
-<div class="h1" id="hero1">
-  <div class="h1-rays"></div>
-  <div class="h1-grain"></div>
-  <div class="h1-badge" id="h1Badge">ROUND 1 · PREMIERE</div>
-  <div class="h1-title">
-    <div class="h1-t-orn">✦ ✦ ✦</div>
-    <div class="h1-t-main" id="h1TitleMain">冠军之战</div>
-    <div class="h1-t-sub">FINAL MATCHUPS · WORLD CHAMPIONSHIP</div>
-  </div>
-  <div class="h1-cast" id="h1Cast"></div>
-  <div class="h1-feature" id="h1Feature">
-    <div class="h1-feature-idle" id="h1Idle">敬请期待首个对阵公布 · 手动配对或随机生成开启序幕</div>
-    <div class="h1-feature-pair" id="h1Pair">
-      <div class="h1-fp-frame">
-        <span class="h1-fp-name" id="h1NameA">—</span>
-        <span class="h1-fp-vs">VS</span>
-        <span class="h1-fp-name" id="h1NameB">—</span>
+function TeamFace({ team, dim = false }) {
+  const name = team ? teamLabel(team) : "？？？";
+  return (
+    <div className={`flex flex-col items-center gap-3 transition-opacity ${dim ? "opacity-40" : ""}`} style={{ minWidth: 112 }}>
+      <Avatar avatarUrl={team?.captainAvatarUrl} size={72} glow />
+      <span className="font-display font-bold text-xl sm:text-2xl text-ink-primary text-center leading-tight max-w-[220px] truncate">{name}</span>
+      <span className="text-[9px] font-heading font-semibold tracking-[0.3em] text-ink-faint uppercase">Captain</span>
+    </div>
+  );
+}
+
+function RosterRow({ team, status }) {
+  const isUsed = status !== "idle";
+  return (
+    <div className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors duration-500 ${
+      isUsed ? "border-gold/35 bg-gold/5" : "border-panel-line bg-void/30"
+    }`}>
+      <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed} />
+      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${isUsed ? "text-gold-soft" : "text-ink-muted"}`}>
+        {teamLabel(team)}
+      </span>
+      {status === "bye" && (
+        <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white/50">轮空</span>
+      )}
+    </div>
+  );
+}
+
+function PoolChip({ team, selected, onClick }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`px-2.5 py-1.5 rounded-lg border text-xs font-heading font-semibold transition-all ${
+        selected ? "border-accent2 bg-accent2/15 text-white shadow-accent-glow" : "border-panel-line bg-void/30 text-ink-muted hover:border-accent2/40 hover:text-ink-primary"
+      }`}>
+      {teamLabel(team)}
+    </button>
+  );
+}
+
+function FilmChip({ idx, match, teamByIdx, active, onClick }) {
+  const a = teamByIdx.get(match.a);
+  const b = match.b != null ? teamByIdx.get(match.b) : null;
+  return (
+    <button type="button" onClick={onClick}
+      className={`shrink-0 w-[140px] px-2.5 py-2 rounded-lg border text-left transition-all ${
+        active ? "border-accent2 shadow-accent-glow bg-accent2/10" : "border-panel-line bg-void/30 hover:border-panel-line/60 hover:bg-panel-alt/40"
+      }`}>
+      <div className="text-[8px] font-mono text-ink-faint mb-0.5 tracking-wider">MATCH {String(idx + 1).padStart(2, "0")}</div>
+      <div className="text-[11px] font-heading font-semibold text-ink-primary truncate">
+        {b ? `${a?.captainName ?? "?"} / ${b.captainName ?? "?"}` : `${a?.captainName ?? "?"} 轮空`}
       </div>
-      <div class="h1-fp-tag" id="h1Tag">MATCH 01</div>
-    </div>
-    <div class="h1-finale" id="h1Finale">
-      <div class="h1-finale-title">对阵表已揭晓 · FINAL LINEUP</div>
-      <div class="h1-finale-grid" id="h1FinaleGrid"></div>
-    </div>
-  </div>
-  <div class="h1-countdown" id="h1Countdown"><span id="h1CNum">3</span></div>
-  <div class="h1-flash" id="h1Flash"></div>
-</div>
-<div class="pv-filmstrip" id="fs1"></div>
-<div class="pv-casting" id="cast1"></div>
-<div class="pv-actions" id="actions1">
-  <button class="pv-btn gold" id="lock1" disabled>🎬 定角锁定</button>
-  <button class="pv-btn gold" id="roll1" style="background:linear-gradient(135deg,#7C5CFF,#FFC94A)">🎞️ 开幕！随机生成剩余对阵</button>
-  <button class="pv-btn ghost" id="reset1">🔄 重置</button>
-  <button class="pv-btn danger" id="end1">🏁 结束锦标赛</button>
-</div>
-`;
+    </button>
+  );
+}
 
-// ---------------------------------------------------------------------
-// FMP_WIRE_CSS -- NOT from the reference. A small, separate stylesheet
-// (deliberately kept apart from FMP_CSS above, which stays byte-for-byte
-// identical to the reference) for the two elements the reference's demo
-// never needed: per-match lock/unlock/dissolve controls, and a pool-size
-// hint. Same gold/Rajdhani vocabulary as the rest of the card so it
-// doesn't visually clash, but these are new nodes appended by the script
-// below -- FMP_HTML itself is never edited.
-// ---------------------------------------------------------------------
-const FMP_WIRE_CSS = `
-.fmpwire-pairctl{display:flex;gap:10px;align-self:center;}
-.fmpwire-btn{font-family:'Orbitron',sans-serif;font-weight:800;font-size:11px;letter-spacing:.03em;padding:12px 20px;border-radius:10px;border:1px solid #FFC94A;background:rgba(0,0,0,.3);color:#ff8f8f;cursor:pointer;transition:all .16s ease;}
-.fmpwire-btn:hover{border-color:#F3DFB0;color:#ffb3b3;}
-.fmpwire-btn:disabled{opacity:.3;cursor:not-allowed;}
-.fmpwire-hint{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;color:rgba(255,255,255,.4);align-self:center;}
-`;
-
-// Exported (Phase 6) so the read-only Spectator Page can reuse this exact
-// stage -- with isStaff={false} -- for a genuinely live, real-data view of
-// Final Matchups, instead of reimplementing this poster/roll/reveal
-// animation a second time. Nothing about how it's used from DraftArenaPage
-// below (isStaff=true/false there too) changes.
-export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack, backLabel = "← 返回选手管理", showBackButton = true }) {
-  const containerRef = useRef(null);
-  const modelRef = useRef(null);
-  const activeIdxRef = useRef(-1);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmEnd, setConfirmEnd] = useState(false);
+export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff }) {
+  const initialMatches = useMemo(() => matchups.map((m) => ({ a: m.a, b: m.b, locked: !!m.locked })), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [displayTeams, setDisplayTeams] = useState(teams);
+  const [displayMatches, setDisplayMatches] = useState(initialMatches);
+  const [selected, setSelected] = useState([]);
+  const [featuredIdx, setFeaturedIdx] = useState(() => {
+    if (initialMatches.length === 0) return null;
+    return computeComplete(initialMatches, teams) ? null : initialMatches.length - 1;
+  });
+  const [reveal, setReveal] = useState(null); // { idx, phase: 'countdown'|'flicker'|'reveal', n, flickerA, flickerB }
   const [busyAction, setBusyAction] = useState(null);
   const [error, setError] = useState(null);
-  const stateRef = useRef({ teams, matchups, isStaff }); // always-current props for handlers below
-  stateRef.current = { teams, matchups, isStaff };
-  const pendingActionRef = useRef({ reset: null, end: null }); // holds the fn a confirm dialog will run
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
-  // True for the whole duration of a Random Roll's on-screen sequence
-  // (countdown -> flicker -> reveal, one match at a time). The server
-  // already has the fully-resolved result the instant the roll RPC
-  // returns -- well before that multi-second sequence finishes playing --
-  // and Realtime pushes that resolved `matchups` prop back to this
-  // component almost immediately. Without this guard, the prop-sync
-  // effect below would immediately overwrite the cast portraits /
-  // filmstrip with the fully-revealed end state instead of letting the
-  // sequence reveal it one match at a time like the reference.
-  const rollAnimatingRef = useRef(false);
-  const renderAllRef = useRef(() => {}); // set by the mount effect; called by the prop-sync effect below so both share one render path (and one place that attaches click listeners)
-  const showFinaleRef = useRef(() => {});
-  // Spectator-only ("isStaff=false") replay: set by the mount effect to a
-  // function that plays the exact same countdown -> flicker -> reveal
-  // sequence onPoolRollClick's own runRollSequence call uses, driven by
-  // an already-resolved result instead of a fresh RPC response -- see
-  // the prop-sync effect below, which is this ref's only caller.
-  const playAppendedRevealRef = useRef(async () => {});
+  const revealingRef = useRef(false);
+  const displayMatchesRef = useRef(displayMatches);
+  const pendingActionRef = useRef({ reset: null, end: null });
+  useEffect(() => { displayMatchesRef.current = displayMatches; }, [displayMatches]);
 
-  // Mount once: build the model from real data and wire up the
-  // reference's own script (verbatim functions + Variant-1 IIFE) against
-  // the real DOM this component just rendered.
+  const teamByIdx = useMemo(() => new Map(displayTeams.map((t) => [t.idx, t])), [displayTeams]);
+  const usedIdxs = useMemo(() => computeUsedIdxs(displayMatches), [displayMatches]);
+  const remaining = useMemo(() => displayTeams.filter((t) => !usedIdxs.has(t.idx)), [displayTeams, usedIdxs]);
+  const byeIdxs = useMemo(() => new Set(displayMatches.filter((m) => m.a != null && m.b == null).map((m) => m.a)), [displayMatches]);
+  const complete = displayMatches.length > 0 && remaining.length === 0;
+
+  // Plays the countdown -> flicker -> settle sequence for one or more
+  // newly-appended matches, one at a time, entirely via React state.
+  // Used both when this client itself triggers a roll (fed the RPC's own
+  // result) and when Realtime reports another client's roll (fed that
+  // update's resolved teams/matchups) -- either way the viewer sees the
+  // exact same show instead of the result just snapping into place.
+  async function runReveal(appended, startIdx, finalMatches, labelTeams) {
+    if (appended.length === 0) { setDisplayMatches(finalMatches); return; }
+    revealingRef.current = true;
+    for (let k = 0; k < appended.length; k++) {
+      const idx = startIdx + k;
+      setFeaturedIdx(idx);
+      for (const n of [3, 2, 1]) { setReveal({ idx, phase: "countdown", n }); await fmpWait(600); }
+      for (let f = 0; f < 8; f++) {
+        const flickerA = labelTeams[Math.floor(Math.random() * labelTeams.length)] || null;
+        const flickerB = labelTeams[Math.floor(Math.random() * labelTeams.length)] || null;
+        setReveal({ idx, phase: "flicker", flickerA, flickerB });
+        await fmpWait(110);
+      }
+      setDisplayMatches((prev) => { const next = prev.slice(); next[idx] = appended[k]; return next; });
+      setReveal({ idx, phase: "reveal" });
+      await fmpWait(1100);
+      setReveal(null);
+    }
+    setDisplayMatches(finalMatches);
+    setFeaturedIdx((prev) => (computeComplete(finalMatches, labelTeams) ? null : prev));
+    revealingRef.current = false;
+  }
+
+  // Live-sync whenever `matchups`/`teams` change (Realtime -- another
+  // connected admin locked/rolled/removed/reset, or this stage just
+  // mounted with a tournament already in progress). A pure append (more
+  // entries than we're currently showing) means a roll just happened
+  // somewhere -- replay it via runReveal instead of snapping straight to
+  // the end state. Anything else (manual pair already applied locally,
+  // a removal, a reset) syncs directly.
   useEffect(() => {
-    const root = containerRef.current;
-    if (!root) return undefined;
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-
-    // ---- makeModel(): the reference's own shape (teams/selected/
-    // usedSet/remaining/toggleSelect/lockSelected/reset/computeRollPlan/
-    // applyRollResult), adapted so `matches` is a true append-only array
-    // mirroring exactly what the server persists (the reference's demo
-    // never needed byes, so it always pre-sized `matches` to a fixed
-    // teams.length/2 with null placeholders -- that assumption breaks for
-    // any odd team count, which real tournaments have all the time, so
-    // matches now grows exactly the way the real matchups column does:
-    // starts empty, only ever appended to). `toggleSelect` no longer caps
-    // at 2 -- "Unlimited team pool" -- 定角锁定 below still requires
-    // choosing exactly 2 before it does anything, same as before.
-    function makeModel(teamLabels) {
-      return {
-        teams: teamLabels.slice(),
-        matches: [],
-        selected: [],
-        usedSet() { const s = new Set(); this.matches.forEach((m) => { if (m.a) s.add(m.a); if (m.b) s.add(m.b); }); return s; },
-        remaining() { const u = this.usedSet(); return this.teams.filter((t) => !u.has(t)); },
-        toggleSelect(t) {
-          if (this.selected.includes(t)) this.selected = this.selected.filter((x) => x !== t);
-          else this.selected.push(t);
-        },
-        lockSelected() {
-          if (this.selected.length !== 2) return null;
-          const [a, b] = this.selected;
-          const idx = this.matches.length;
-          this.matches.push({ a, b, locked: true });
-          this.selected = [];
-          return idx;
-        },
-        reset() { this.matches = []; this.selected = []; },
-        isComplete() { return this.matches.length > 0 && this.remaining().length === 0; },
-        // Only ever called with a real {emptyIdxs, plan} handed to it via
-        // `_pendingPlan` (set right before runRollSequence() runs, from
-        // the server's actual roll result) -- see onPoolRollClick below.
-        // The reference's own client-only shuffle is kept as a fallback
-        // so this still behaves exactly like the reference if ever called
-        // with no override, it's just never exercised in production
-        // since a real override is always supplied.
-        computeRollPlan() {
-          if (this._pendingPlan) { const p = this._pendingPlan; this._pendingPlan = null; return p; }
-          const remaining = this.remaining();
-          const shuffled = remaining.slice();
-          for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
-          const emptyIdxs = this.matches.map((m, i) => ({ m, i })).filter((x) => !x.m.a && !x.m.b).map((x) => x.i);
-          const plan = {}; let p = 0;
-          emptyIdxs.forEach((idx) => { plan[idx] = { a: shuffled[p++] ?? null, b: shuffled[p++] ?? null }; });
-          return { emptyIdxs, plan };
-        },
-        applyRollResult(idx, pair) { this.matches[idx] = { a: pair.a, b: pair.b, locked: false }; },
-      };
-    }
-    function initials(name) { return name ? name[0] : "?"; }
-
-    // ---- shared filmstrip + casting renderers, copied from the
-    // reference, extended only to treat a bye (`b === null`, impossible
-    // in the reference's own always-even demo) as a filled/complete slot
-    // rather than "未生成", and to label it accordingly.
-    function renderFilmstrip(el, model, activeIdx, onPick) {
-      el.innerHTML = model.matches.map((m, i) => `
-        <div class="pv-frame ${i === activeIdx ? "active" : ""}" data-idx="${i}">
-          <div class="fn">MATCH ${String(i + 1).padStart(2, "0")}</div>
-          ${m.a != null ? `<div class="ft">${m.b != null ? `${m.a} / ${m.b}` : `${m.a} 轮空`}</div>` : `<div class="fe">未生成</div>`}
-        </div>`).join("");
-      el.querySelectorAll(".pv-frame").forEach((f) => f.addEventListener("click", () => {
-        const i = +f.dataset.idx; const m = model.matches[i];
-        if (m.a != null) onPick(i);
-      }));
-    }
-    function renderCasting(el, model, onToggle) {
-      const used = model.usedSet();
-      el.innerHTML = model.teams.filter((t) => !used.has(t)).map((t) => {
-        const sel = model.selected.includes(t);
-        return `<button class="pv-castcard ${sel ? "sel" : ""}" data-team="${t}">${t}</button>`;
-      }).join("") || '<div style="color:rgba(255,255,255,.3);font-size:12px;">全部战队已配对</div>';
-      el.querySelectorAll(".pv-castcard").forEach((b) => b.addEventListener("click", () => { onToggle(b.dataset.team); }));
-    }
-
-    // ---- generic roll sequence, copied verbatim, unmodified.
-    async function runRollSequence(model, hooks) {
-      const { emptyIdxs, plan } = model.computeRollPlan();
-      if (emptyIdxs.length === 0) return;
-      if (hooks.before) await hooks.before();
-      for (const n of [3, 2, 1]) { await hooks.countdown(n); await wait(750); }
-      for (let k = 0; k < emptyIdxs.length; k++) {
-        const idx = emptyIdxs[k];
-        for (let f = 0; f < 7; f++) {
-          const rn1 = model.teams[Math.floor(Math.random() * model.teams.length)];
-          const rn2 = model.teams[Math.floor(Math.random() * model.teams.length)];
-          await hooks.flicker(idx, rn1, rn2, f);
-          await wait(150);
-        }
-        const pair = plan[idx];
-        model.applyRollResult(idx, pair);
-        await hooks.reveal(idx, pair, k === emptyIdxs.length - 1);
-        await wait(1200);
-      }
-      if (hooks.allDone) await hooks.allDone();
-    }
-
-    // ---- team labels, built from this tournament's real captains
-    // instead of the reference's hardcoded TEAMS array. labelFromServer
-    // builds the same label directly from an RPC response's own `teams`
-    // snapshot, so applyServerRow() below never has to cross-reference
-    // stale client props.
-    function labelFromServer(t) { return t?.captainName ? `${t.captainName} 战队` : "（空）战队"; }
-    const teamLabels = stateRef.current.teams.map((t) => teamLabel(t));
-    const labelToIdx = new Map(stateRef.current.teams.map((t) => [teamLabel(t), t.idx]));
-
-    const model = makeModel(teamLabels);
-    modelRef.current = model;
-
-    // Every mutating RPC below returns the fresh row -- always trust that
-    // over any locally-guessed mutation, so the model can never drift
-    // from what the server actually persisted.
-    function applyServerRow(result) {
-      if (!result) return;
-      const byIdx = new Map((result.teams || []).map((t) => [t.idx, labelFromServer(t)]));
-      model.teams = (result.teams || []).map((t) => labelFromServer(t));
-      model.matches = (result.matchups || []).map((m) => ({
-        a: m.a != null ? byIdx.get(m.a) : null,
-        b: m.b != null ? byIdx.get(m.b) : null,
-        locked: !!m.locked,
-      }));
-    }
-
-    const castEl = root.querySelector("#h1Cast");
-    const idleEl = root.querySelector("#h1Idle");
-    const pairEl = root.querySelector("#h1Pair");
-    const nameA = root.querySelector("#h1NameA");
-    const nameB = root.querySelector("#h1NameB");
-    const vsEl = root.querySelector(".h1-fp-vs"); // the reference's own "VS" span -- has no id in FMP_HTML, selected by its existing class instead of adding one
-    const tagEl = root.querySelector("#h1Tag");
-    const cnumEl = root.querySelector("#h1CNum");
-    const flashEl = root.querySelector("#h1Flash");
-    const badgeEl = root.querySelector("#h1Badge");
-    const fsEl = root.querySelector("#fs1");
-    const castPoolEl = root.querySelector("#cast1");
-    const lockBtn = root.querySelector("#lock1");
-    const rollBtn = root.querySelector("#roll1");
-    const finaleEl = root.querySelector("#h1Finale");
-    const finaleGridEl = root.querySelector("#h1FinaleGrid");
-    const actionsWrap = root.querySelector("#actions1");
-
-    // ---- Minimum extra wiring the reference's own demo never needed:
-    // per-match dissolve control (the reference had no concept of undoing
-    // an already-created matchup), and a small pool counter. Both are
-    // appended as NEW nodes -- FMP_HTML itself is never edited -- and
-    // styled by a small separate stylesheet (FMP_WIRE_CSS), never by
-    // touching FMP_CSS. "✕ 解除对阵" (pairCtl) lives in the same action
-    // bar as 定角锁定/开幕！随机生成剩余对阵/重置/结束锦标赛 (#actions1 /
-    // `actionsWrap`), not beneath the featured matchup box -- grouping
-    // every admin action for the currently-featured match together with
-    // the rest of the admin controls, rather than splitting it off into
-    // its own spot elsewhere on the page.
-    const pairCtl = document.createElement("div");
-    pairCtl.className = "fmpwire-pairctl";
-    pairCtl.innerHTML = `
-      <button type="button" class="fmpwire-btn" id="fmpwireRemove">✕ 解除对阵</button>
-    `;
-    actionsWrap.appendChild(pairCtl);
-    const pairRemoveBtn = pairCtl.querySelector("#fmpwireRemove");
-
-    const poolHint = document.createElement("div");
-    poolHint.className = "fmpwire-hint";
-    actionsWrap.appendChild(poolHint);
-
-    function updatePairControls() {
-      // Always visible for staff once this is possible at all (same
-      // pattern as lockBtn/定角锁定, which is always rendered and just
-      // toggles `.disabled` based on selection) -- enabled only once a
-      // match is actually selected/featured, disabled otherwise.
-      if (!stateRef.current.isStaff) { pairCtl.style.display = "none"; return; }
-      pairCtl.style.display = "flex";
-      const idx = activeIdxRef.current;
-      const m = idx >= 0 ? model.matches[idx] : null;
-      pairRemoveBtn.disabled = !m || busyRef.current !== null;
-    }
-
-    function renderCast() {
-      const used = model.usedSet();
-      // A team currently sitting alone in a bye entry (m.a set, m.b null)
-      // gets the "bye" modifier alongside "used" so its portrait is
-      // recolored silver instead of the normal gold -- purely a color
-      // swap, same size/shape/border-width/glow-radius/animation as
-      // every other portrait.
-      const byeTeams = new Set(model.matches.filter((m) => m.a && m.b == null).map((m) => m.a));
-      castEl.innerHTML = model.teams.map((t) =>
-        `<div class="h1-portrait ${used.has(t) ? (byeTeams.has(t) ? "used bye" : "used") : "dim"}">${initials(t)}</div>`
-      ).join("");
-    }
-    function renderAll() {
-      renderCast();
-      renderFilmstrip(fsEl, model, activeIdxRef.current, cutTo);
-      renderCasting(castPoolEl, model, (t) => { model.toggleSelect(t); renderAll(); });
-      // Lock is enabled from 2 selected teams up -- with exactly 2 it
-      // creates an immediate manual pairing; with 3+ it kicks off Random
-      // Roll for exactly that selected group (see onLockClick below).
-      lockBtn.disabled = model.selected.length < 2 || busyRef.current !== null;
-      // Roll is disabled only when there's truly nothing it could do:
-      // busy, or (no pool selected AND no free teams left to default to).
-      // An empty pool is not a blocker -- it's the "roll everyone free"
-      // case.
-      const rollTargetCount = model.selected.length > 0 ? model.selected.length : model.remaining().length;
-      rollBtn.disabled = rollTargetCount < 1 || busyRef.current !== null;
-      poolHint.textContent = model.selected.length > 0
-        ? `已选择 ${model.selected.length} 支战队进入随机池`
-        : (model.remaining().length > 0 ? `未选择战队 · 将随机排位全部剩余 ${model.remaining().length} 支战队` : "");
-      badgeEl.textContent = model.isComplete() ? "TOURNAMENT READY" : "ROUND 1 · PREMIERE";
-      updatePairControls();
-    }
-    function showFinale() {
-      finaleGridEl.innerHTML = model.matches.map((m, i) =>
-        m.b != null
-          ? `<div class="h1-finale-row" style="animation-delay:${i * 180}ms"><span class="no">0${i + 1}</span>${m.a} <span class="vs">VS</span> ${m.b}</div>`
-          : `<div class="h1-finale-row" style="animation-delay:${i * 180}ms"><span class="no">0${i + 1}</span>${m.a} <span class="vs"></span> 轮空</div>`
-      ).join("");
-      finaleGridEl.querySelectorAll(".h1-finale-row").forEach((r) => r.classList.add("in"));
-      pairEl.classList.remove("show");
-      finaleEl.classList.remove("show"); void finaleEl.offsetWidth; finaleEl.classList.add("show");
-      flashEl.classList.remove("go"); void flashEl.offsetWidth; flashEl.classList.add("go");
-    }
-    function cutTo(idx) {
-      activeIdxRef.current = idx;
-      const m = model.matches[idx];
-      idleEl.style.display = "none";
-      finaleEl.classList.remove("show");
-      pairEl.classList.add("show");
-      if (m.b != null) {
-        nameA.textContent = m.a || "—";
-        if (vsEl) { vsEl.textContent = "VS"; vsEl.style.display = ""; }
-        nameB.textContent = m.b;
-        nameB.style.display = "";
-      } else {
-        // Bye: only "A 战队 轮空" is shown, centered in the frame -- no
-        // "VS", no second team. The "VS" span and the second-name span
-        // are now hidden with display:none (not just emptied text), so
-        // the flex row's `gap` no longer reserves space for them and
-        // #fmpStage .h1-fp-frame naturally shrink-wraps to the single
-        // remaining name plus its existing symmetric 22px/40px padding
-        // -- which is what centers it. Same 3 spans as the reference
-        // (h1NameA / h1-fp-vs / h1NameB); nothing about the markup,
-        // corner-bracket decoration, glow, or reveal animation those
-        // spans already play is touched.
-        nameA.textContent = `${m.a || "—"} 轮空`;
-        if (vsEl) { vsEl.textContent = ""; vsEl.style.display = "none"; }
-        nameB.textContent = "";
-        nameB.style.display = "none";
-      }
-      [nameA, nameB].forEach((el) => { el.classList.remove("in"); void el.offsetWidth; el.classList.add("in"); });
-      tagEl.textContent = `MATCH ${String(idx + 1).padStart(2, "0")}`;
-      flashEl.classList.remove("go"); void flashEl.offsetWidth; flashEl.classList.add("go");
-      renderFilmstrip(fsEl, model, activeIdxRef.current, cutTo);
-      updatePairControls();
-    }
-
-    // busyRef mirrors React's busy state into the imperative script so
-    // renderAll() can disable buttons during an in-flight request the
-    // same way the reference disabled `rollBtn` mid-sequence.
-    const busyRef = { current: null };
-
-    async function withBusy(action, fn) {
-      busyRef.current = action;
-      setBusyAction(action);
-      setError(null);
-      renderAll();
-      try {
-        await fn();
-      } catch (err) {
-        setError(err?.message || "操作失败，请重试");
-      } finally {
-        busyRef.current = null;
-        setBusyAction(null);
-        renderAll();
-      }
-    }
-
-    // lock1 -- with exactly 2 teams selected, hand-pick and lock that pair
-    // together immediately (unchanged from before). With 3 or more
-    // selected, 定角锁定 now means "lock this exact group in and
-    // randomize it": it hands the selected teams straight to the same
-    // Random Roll flow as roll1 (onPoolRollClick below), using them as
-    // the explicit pool, so e.g. selecting A+B+C and clicking Lock rolls
-    // those 3 immediately -- one random pair plus one random bye -- via
-    // the real backend and the same countdown/flicker/reveal sequence,
-    // without needing a separate click on 开幕！随机生成剩余对阵.
-    async function onLockClick() {
-      if (model.selected.length < 2 || busyRef.current) return;
-      if (model.selected.length > 2) {
-        await onPoolRollClick();
-        return;
-      }
-      const [la, lb] = model.selected;
-      const idxA = labelToIdx.get(la), idxB = labelToIdx.get(lb);
-      await withBusy("pair", async () => {
-        const result = await createManualMatchup(idxA, idxB);
-        model.selected = [];
-        applyServerRow(result);
-        const idx = model.matches.length - 1; // createManualMatchup always appends
-        renderAll();
-        if (model.isComplete()) showFinale(); else cutTo(idx);
-      });
-    }
-
-    // roll1 -- Random Roll. If the admin has selected teams from the
-    // casting pool (model.selected), the roll is scoped to exactly that
-    // pool. If nothing is selected, this rolls every currently-free team
-    // instead -- the same "roll everyone" behavior the reference's own
-    // button implied, now genuinely computed server-side (not guessed on
-    // the client) so it can't race with what's actually free. Either way
-    // `runRollSequence` itself is never touched; the real
-    // roll_tournament_matchups_pool RPC shuffles + pairs server-side
-    // (including a bye if the rolled group is odd), and the reveal
-    // sequence plays back that real result -- teams outside whatever
-    // group ends up being rolled, and every existing matchup (locked or
-    // unlocked), are guaranteed untouched by the RPC itself, not just by
-    // convention here.
-    async function onPoolRollClick() {
-      if (rollBtn.disabled || busyRef.current) return;
-      const poolLabels = model.selected.slice();
-      const explicitPool = poolLabels.length > 0;
-      if (!explicitPool && model.remaining().length < 1) return; // nothing free to roll either way
-      const poolIdxs = explicitPool ? poolLabels.map((l) => labelToIdx.get(l)) : null; // null = let the server default to "every free team"
-      idleEl.style.display = "none";
-      rollAnimatingRef.current = true; // block the prop-sync effect until the sequence below finishes
-      await withBusy("roll", async () => {
-        const beforeLen = stateRef.current.matchups.length; // roll_tournament_matchups_pool only ever appends, either way, so anything from here on is new
-        const result = await rollTournamentMatchupsPool(poolIdxs);
-        model.selected = [];
-        // Deliberately do NOT apply the server's result to model.matches
-        // yet. The reference's own reveal engine (runRollSequence, via
-        // model.applyRollResult) is what's supposed to grow model.matches
-        // one entry at a time, in step with each reveal -- that's the
-        // entire mechanism the countdown -> flicker -> reveal choreography
-        // relies on for "only the just-revealed match's teams light up".
-        // Writing the full, already-known result here immediately would
-        // make every rolled team's cast portrait light up together the
-        // instant the very first reveal fires renderAll(), since
-        // renderCast()'s used/dim state is computed by scanning the
-        // entirety of model.matches. Only team LABELS are safe to sync
-        // early (they don't drive any lit/dim state); the actual match
-        // entries are handed to the sequence as a plan and applied by it,
-        // exactly once per reveal step, exactly like the reference.
-        const teamsByIdx = new Map((result.teams || []).map((t) => [t.idx, labelFromServer(t)]));
-        model.teams = (result.teams || []).map((t) => labelFromServer(t));
-        const newIdxs = [];
-        const plan = {};
-        (result.matchups || []).forEach((m, i) => {
-          if (i < beforeLen) return; // pre-existing entry -- untouched, not part of this reveal
-          newIdxs.push(i);
-          plan[i] = { a: m.a != null ? teamsByIdx.get(m.a) : null, b: m.b != null ? teamsByIdx.get(m.b) : null };
-        });
-        model._pendingPlan = { emptyIdxs: newIdxs, plan };
-
-        await runRollSequence(model, {
-          countdown: async (n) => { cnumEl.textContent = n; cnumEl.classList.remove("go"); void cnumEl.offsetWidth; cnumEl.classList.add("go"); },
-          flicker: async (idx, a, b) => {
-            pairCtl.style.display = "none";
-            pairEl.classList.add("show");
-            nameA.textContent = a; nameB.textContent = b;
-            nameA.style.opacity = nameA.style.opacity === "1" ? ".25" : "1";
-            nameB.style.opacity = nameA.style.opacity;
-            tagEl.textContent = `MATCH ${String(idx + 1).padStart(2, "0")} · ANALYZING`;
-          },
-          reveal: async (idx) => {
-            // model.matches[idx] was just written by runRollSequence's own
-            // model.applyRollResult(idx, plan[idx]) call, immediately
-            // before this hook fires -- so renderAll() here only ever
-            // lights up the teams revealed so far, never teams from
-            // later, still-unrevealed matches in this same roll.
-            nameA.style.opacity = "1"; nameB.style.opacity = "1";
-            renderAll();
-            cutTo(idx);
-          },
-          allDone: async () => {
-            // Final reconciliation against the server's own row (covers
-            // e.g. `locked` flags) -- by now model.matches already equals
-            // this anyway, since every entry was written incrementally
-            // above, so this is a no-op in practice, not a second reveal.
-            applyServerRow(result);
-            renderAll();
-            if (model.isComplete()) showFinale();
-          },
-        });
-      });
-      rollAnimatingRef.current = false; // sequence finished -- prop-sync effect may resume (and will just confirm the same end state)
-    }
-
-    // Spectator-only replay: same countdown->flicker->reveal choreography
-    // as onPoolRollClick's own runRollSequence call just above, but fed an
-    // already-resolved `{newTeams, newMatches}` (this component's own
-    // `teams`/`matchups` props, label-resolved) instead of driving off a
-    // fresh RPC response -- so a spectator watching someone else's roll
-    // sees it play out live instead of snapping straight to the result.
-    // If `newMatches` isn't strictly longer than what the model already
-    // has (nothing was appended -- a lock/unlock/remove/reset instead),
-    // this just syncs directly, same as the prop-sync effect always did.
-    async function playAppendedReveal(newTeams, newMatches) {
-      const beforeLen = model.matches.length;
-      if (newMatches.length <= beforeLen) {
-        model.teams = newTeams;
-        model.matches = newMatches;
-        if (activeIdxRef.current >= model.matches.length) activeIdxRef.current = -1;
-        if (activeIdxRef.current < 0 && model.matches.length === 0) {
-          idleEl.style.display = "block";
-          pairEl.classList.remove("show");
-        }
-        renderAll();
-        if (model.isComplete() && !finaleEl.classList.contains("show")) showFinale();
-        return;
-      }
-      idleEl.style.display = "none";
-      model.teams = newTeams;
-      const emptyIdxs = [];
-      const plan = {};
-      for (let i = beforeLen; i < newMatches.length; i++) {
-        emptyIdxs.push(i);
-        plan[i] = { a: newMatches[i].a, b: newMatches[i].b };
-        model.matches[i] = { a: null, b: null, locked: false };
-      }
-      model._pendingPlan = { emptyIdxs, plan };
-      await runRollSequence(model, {
-        countdown: async (n) => { cnumEl.textContent = n; cnumEl.classList.remove("go"); void cnumEl.offsetWidth; cnumEl.classList.add("go"); },
-        flicker: async (idx, a, b) => {
-          pairCtl.style.display = "none";
-          pairEl.classList.add("show");
-          nameA.textContent = a; nameB.textContent = b;
-          nameA.style.opacity = nameA.style.opacity === "1" ? ".25" : "1";
-          nameB.style.opacity = nameA.style.opacity;
-          tagEl.textContent = `MATCH ${String(idx + 1).padStart(2, "0")} · ANALYZING`;
-        },
-        reveal: async (idx) => {
-          nameA.style.opacity = "1"; nameB.style.opacity = "1";
-          renderAll();
-          cutTo(idx);
-        },
-        allDone: async () => {
-          model.teams = newTeams;
-          model.matches = newMatches;
-          renderAll();
-          if (model.isComplete()) showFinale();
-        },
-      });
-    }
-    playAppendedRevealRef.current = playAppendedReveal;
-
-    // Matchup-level dissolve on whatever's currently featured -- the
-    // reference never needed this (its demo had no way to undo
-    // anything); this project's backend already supports it, so it's
-    // wired here.
-    async function onPairRemove() {
-      const idx = activeIdxRef.current;
-      if (idx < 0 || busyRef.current) return;
-      await withBusy(`remove:${idx}`, async () => {
-        const result = await removeTournamentMatchup(idx);
-        applyServerRow(result);
-        activeIdxRef.current = -1;
-        pairEl.classList.remove("show");
-        if (model.matches.length === 0) idleEl.style.display = "block";
-        renderAll();
-      });
-    }
-
-    async function onResetClick() {
-      if (busyRef.current) return;
-      pendingActionRef.current.reset = () => withBusy("reset", async () => {
-        const result = await resetTournamentMatchups();
-        applyServerRow(result);
-        activeIdxRef.current = -1;
-        renderAll();
-        pairEl.classList.remove("show"); finaleEl.classList.remove("show"); idleEl.style.display = "block";
-      });
-      setConfirmReset(true);
-    }
-    async function onEndClick() {
-      if (busyRef.current) return;
-      pendingActionRef.current.end = () => withBusy("end", async () => { await endTournament(); });
-      setConfirmEnd(true);
-    }
-
-    root.querySelector("#lock1").addEventListener("click", onLockClick);
-    root.querySelector("#roll1").addEventListener("click", onPoolRollClick);
-    root.querySelector("#reset1").addEventListener("click", onResetClick);
-    root.querySelector("#end1").addEventListener("click", onEndClick);
-    pairRemoveBtn.addEventListener("click", onPairRemove);
-
-    // Title text (real tournament name) -- the reference hardcoded
-    // "冠军之战" as demo copy; this is the one piece of text content
-    // swapped for real data, same font/size/position/animation.
-    const titleEl = root.querySelector("#h1TitleMain");
-    if (titleEl) titleEl.textContent = stateRef.current.__tournamentName || "冠军之战";
-
-    // Casting pool + action bar visibility for isStaff is handled by a
-    // dedicated reactive effect below (so it responds to isStaff changing
-    // after mount, not just at mount time).
-
-    // Seed the model from whatever Final Matchups state already existed
-    // the moment this stage mounted (e.g. this admin refreshed mid-way
-    // through an existing tournament) instead of assuming a blank slate.
-    applyServerRow({ teams: stateRef.current.teams.map((t) => ({ idx: t.idx, captainName: t.captainName })), matchups: stateRef.current.matchups });
-    if (model.matches.length > 0) idleEl.style.display = "none";
-
-    renderAllRef.current = renderAll;
-    showFinaleRef.current = showFinale;
-
-    renderAll();
-    if (model.isComplete()) showFinale();
-
-    return () => {
-      root.querySelector("#lock1")?.removeEventListener("click", onLockClick);
-      root.querySelector("#roll1")?.removeEventListener("click", onPoolRollClick);
-      root.querySelector("#reset1")?.removeEventListener("click", onResetClick);
-      root.querySelector("#end1")?.removeEventListener("click", onEndClick);
-      pairRemoveBtn.removeEventListener("click", onPairRemove);
-      pairCtl.remove();
-      poolHint.remove();
-    };
-    // Mount once -- see the sync effect below for how later prop changes
-    // (Realtime updates from other clients) get reflected.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Keep the model (and therefore the on-screen poster) in sync whenever
-  // `matchups`/`teams` change from Realtime -- e.g. another connected
-  // Admin/Developer locks, rolls, removes, or resets from their own
-  // client. The reference never needed this (single local `model`, no
-  // server); it's required here for the same live-sync guarantee every
-  // other stage in this project already has.
-  useEffect(() => {
-    if (rollAnimatingRef.current) return; // a Random Roll reveal sequence is actively playing -- let it finish rendering its own frames
-    const model = modelRef.current;
-    const root = containerRef.current;
-    if (!model || !root) return;
-    const teamsByIdx = new Map(teams.map((t) => [t.idx, t]));
-    const newTeams = teams.map((t) => teamLabel(t));
-    const newMatches = matchups.map((m) => ({
-      a: m.a != null ? teamLabel(teamsByIdx.get(m.a)) : null,
-      b: m.b != null ? teamLabel(teamsByIdx.get(m.b)) : null,
-      locked: !!m.locked,
-    }));
-
-    // Spectator-only ("isStaff=false"): if this update is a pure append
-    // (every previously-known entry is unchanged, and at least one new,
-    // already-resolved entry was added) -- i.e. someone else just locked
-    // a manual pairing or ran a Random Roll -- replay it live via
-    // playAppendedRevealRef instead of snapping straight to the result.
-    // Never fires on the very first sync right after mount (the mount
-    // effect above already seeded model.matches from these same initial
-    // props, so beforeLen === newMatches.length then, which fails the
-    // ">" check below) and never for isStaff=true (unchanged, pre-
-    // existing behavior for admins -- the one who actually clicked
-    // already gets their own sequence from onPoolRollClick).
-    const beforeLen = model.matches.length;
-    const isPureAppend = !isStaff && newMatches.length > beforeLen &&
-      newMatches.slice(0, beforeLen).every((m, i) => {
-        const prevMatch = model.matches[i];
-        return prevMatch && prevMatch.a === m.a && prevMatch.b === m.b && prevMatch.locked === m.locked;
-      });
-
-    if (isPureAppend) {
-      rollAnimatingRef.current = true;
-      playAppendedRevealRef.current(newTeams, newMatches).finally(() => { rollAnimatingRef.current = false; });
-      return;
-    }
-
-    model.teams = newTeams;
-    model.matches = newMatches;
-    // Realtime can move a currently-featured match's index (e.g. another
-    // admin removed an earlier entry, shifting everything after it down)
-    // or dissolve it outright -- drop the spotlight rather than risk
-    // showing the wrong pair.
-    if (activeIdxRef.current >= model.matches.length) activeIdxRef.current = -1;
-    if (activeIdxRef.current < 0 && model.matches.length === 0) {
-      const idleEl = root.querySelector("#h1Idle");
-      const pairEl = root.querySelector("#h1Pair");
-      if (idleEl) idleEl.style.display = "block";
-      if (pairEl) pairEl.classList.remove("show");
-    }
-    // Delegate to the exact same render function the mount effect itself
-    // uses (renderAllRef), so this can never drift out of sync with it --
-    // in particular, so the casting-pool chips this rebuilds always keep
-    // their click listeners (renderAll()/renderCasting() re-attach them
-    // on every call; a hand-rolled innerHTML rebuild here previously did
-    // not, which silently broke pool selection after the very first
-    // Realtime update).
-    renderAllRef.current();
-    const finaleEl = root.querySelector("#h1Finale");
-    if (model.isComplete() && finaleEl && !finaleEl.classList.contains("show")) {
-      showFinaleRef.current();
-    }
-  }, [teams, matchups, isStaff]);
-
-  // isStaff visibility, kept reactive (not just set once at mount) --
-  // casting pool + action bar + per-match lock/unlock/remove controls are
-  // admin/developer tools; everyone else gets a read-only poster
-  // (filmstrip still clickable to browse revealed matchups).
-  useLayoutEffect(() => {
-    const root = containerRef.current;
-    if (!root) return;
-    const castingWrap = root.querySelector("#cast1");
-    const actionsWrap = root.querySelector("#actions1");
-    if (castingWrap) castingWrap.style.display = isStaff ? "" : "none";
-    if (actionsWrap) actionsWrap.style.display = isStaff ? "" : "none";
-    if (!isStaff) {
-      const pairCtl = root.querySelector(".fmpwire-pairctl");
-      if (pairCtl) pairCtl.style.display = "none";
+    if (revealingRef.current) return;
+    const newMatches = matchups.map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
+    const prevLen = displayMatchesRef.current.length;
+    setDisplayTeams(teams);
+    if (newMatches.length > prevLen) {
+      runReveal(newMatches.slice(prevLen), prevLen, newMatches, teams);
     } else {
-      renderAllRef.current();
+      setDisplayMatches(newMatches);
+      const nowComplete = computeComplete(newMatches, teams);
+      setFeaturedIdx((prev) => {
+        if (newMatches.length === 0) return null;
+        if (nowComplete) return null;
+        return Math.min(prev ?? newMatches.length - 1, newMatches.length - 1);
+      });
     }
-  }, [isStaff]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchups, teams]);
 
-  stateRef.current.__tournamentName = tournamentName;
+  async function withBusy(action, fn) {
+    setBusyAction(action);
+    setError(null);
+    try { await fn(); }
+    catch (err) { setError(err?.message || "操作失败，请重试"); }
+    finally { setBusyAction(null); }
+  }
+
+  function toggleSelect(idx) {
+    setSelected((prev) => (prev.includes(idx) ? prev.filter((x) => x !== idx) : [...prev, idx]));
+  }
+
+  // 定角锁定 -- exactly 2 selected: hand-pick and lock that pair
+  // immediately, no countdown (a deliberate pick, not a random one).
+  // 3+ selected: hands off to Random Roll scoped to that exact group.
+  async function handleLockOrRoll() {
+    if (selected.length < 2 || busyAction || reveal) return;
+    if (selected.length > 2) { await handleRoll(); return; }
+    const [idxA, idxB] = selected;
+    await withBusy("pair", async () => {
+      const result = await createManualMatchup(idxA, idxB);
+      setSelected([]);
+      const newTeams = result.teams || teams;
+      const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
+      setDisplayTeams(newTeams);
+      setDisplayMatches(newMatches);
+      setFeaturedIdx(computeComplete(newMatches, newTeams) ? null : newMatches.length - 1);
+    });
+  }
+
+  // Random Roll -- scoped to the current pool selection, or every free
+  // team when nothing's selected. The RPC resolves server-side; this
+  // just plays that resolved result back one match at a time.
+  async function handleRoll() {
+    if (busyAction || reveal || complete) return;
+    const poolIdxs = selected.length > 0 ? selected.slice() : null;
+    if (!poolIdxs && remaining.length < 1) return;
+    await withBusy("roll", async () => {
+      const beforeLen = displayMatchesRef.current.length;
+      const result = await rollTournamentMatchupsPool(poolIdxs);
+      setSelected([]);
+      const newTeams = result.teams || teams;
+      const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
+      setDisplayTeams(newTeams);
+      await runReveal(newMatches.slice(beforeLen), beforeLen, newMatches, newTeams);
+    });
+  }
+
+  async function handleRemove() {
+    if (featuredIdx == null || busyAction || reveal) return;
+    const idx = featuredIdx;
+    await withBusy(`remove:${idx}`, async () => {
+      const result = await removeTournamentMatchup(idx);
+      const newTeams = result.teams || teams;
+      const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
+      setDisplayTeams(newTeams);
+      setDisplayMatches(newMatches);
+      setFeaturedIdx(newMatches.length > 0 ? Math.min(idx, newMatches.length - 1) : null);
+    });
+  }
+
+  function handleResetClick() {
+    if (busyAction || reveal) return;
+    pendingActionRef.current.reset = () => withBusy("reset", async () => {
+      const result = await resetTournamentMatchups();
+      setDisplayTeams(result.teams || teams);
+      setDisplayMatches([]);
+      setFeaturedIdx(null);
+      setSelected([]);
+    });
+    setConfirmReset(true);
+  }
+  function handleEndClick() {
+    if (busyAction || reveal) return;
+    pendingActionRef.current.end = () => withBusy("end", async () => { await endTournament(); });
+    setConfirmEnd(true);
+  }
+
+  const featured = featuredIdx != null ? displayMatches[featuredIdx] : null;
+  const rollDisabled = busyAction || !!reveal || complete || (selected.length === 0 && remaining.length < 1);
+  const lockDisabled = busyAction || !!reveal || selected.length < 2;
 
   return (
-    <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-3 lg:overflow-y-auto">
+    <div id="fmpStage2" className="w-full flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
+      <style>{FMP_ANIM_CSS}</style>
+
+      {/* status strip -- same flat, flush-under-the-shell idiom as Draft Arena's own status strip */}
+      <div className="shrink-0 border-b border-panel-line/80 bg-void/30 backdrop-blur-sm px-5 sm:px-8 h-20 flex items-center gap-6">
+        <div className="flex-1 min-w-0 flex items-center gap-4">
+          <span className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full tracking-widest"
+            style={{
+              background: complete ? "rgba(255,201,74,.12)" : "rgba(124,92,255,.12)",
+              color: complete ? "#FFC94A" : "#22E5FF",
+              border: `1px solid ${complete ? "rgba(255,201,74,.4)" : "rgba(124,92,255,.35)"}`,
+            }}>
+            {complete ? "对阵已就绪" : "对阵抽签"}
+          </span>
+          <GlowHeading size="text-xl" className="truncate block">
+            {reveal ? `MATCH ${String(reveal.idx + 1).padStart(2, "0")} 生成中…`
+              : complete ? "全部对阵已生成 🏆"
+              : featured ? `MATCH ${String(featuredIdx + 1).padStart(2, "0")}`
+              : "等待生成首个对阵"}
+          </GlowHeading>
+        </div>
+        {isStaff && (
+          <button onClick={handleRemove} disabled={!featured || busyAction || !!reveal}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
+            style={{
+              background: featured ? "rgba(255,77,109,.08)" : "rgba(0,0,0,.2)",
+              borderColor: featured ? "#FF4D6D66" : "rgba(255,255,255,.06)",
+              color: featured ? "#FF4D6D" : "rgba(255,255,255,.15)",
+              cursor: featured ? "pointer" : "not-allowed",
+            }}>
+            ✕ 解除本场对阵
+          </button>
+        )}
+      </div>
+
+      {/* body: roster + pairing rail, spotlight reveal as the dominant surface */}
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row lg:overflow-hidden">
+        <aside className="lg:w-[280px] shrink-0 lg:h-full lg:overflow-y-auto px-4 sm:px-5 lg:px-4 py-4 flex flex-col gap-2">
+          <p className="eyebrow px-1">参赛战队 · {displayTeams.length}</p>
+          {displayTeams.map((t) => (
+            <RosterRow key={t.idx} team={t} status={byeIdxs.has(t.idx) ? "bye" : usedIdxs.has(t.idx) ? "used" : "idle"} />
+          ))}
+          {isStaff && (
+            <>
+              <p className="eyebrow px-1 mt-3">选择配对战队</p>
+              <div className="flex flex-wrap gap-1.5">
+                {remaining.length === 0 ? (
+                  <span className="text-xs text-ink-faint px-1 py-1">全部战队已配对</span>
+                ) : (
+                  remaining.map((t) => (
+                    <PoolChip key={t.idx} team={t} selected={selected.includes(t.idx)} onClick={() => toggleSelect(t.idx)} />
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </aside>
+
+        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-panel-line/80 px-5 sm:px-6 py-4 gap-4">
+          {/* spotlight */}
+          <div className="relative flex-1 min-h-[380px] rounded-2xl border overflow-hidden flex items-center justify-center p-8 sm:p-10"
+            style={{
+              background: "radial-gradient(ellipse at 50% 0%, rgba(124,92,255,.14), transparent 60%), linear-gradient(180deg,#141833,#0a0c1c 80%)",
+              borderColor: complete ? "rgba(255,201,74,.35)" : "rgba(124,92,255,.25)",
+            }}>
+            {complete && featuredIdx === null ? (
+              <div key={displayMatches.length} className="w-full max-w-2xl flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .7s ease forwards" }}>
+                <div className="text-[11px] font-heading font-semibold uppercase tracking-[0.3em] text-gold/90">对阵表已揭晓 · Final Lineup</div>
+                <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {displayMatches.map((m, i) => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-panel-alt/50 border border-panel-line"
+                      style={{ animation: "fmpRowIn .45s ease forwards", animationDelay: `${i * 110}ms`, opacity: 0 }}>
+                      <span className="text-[10px] font-mono text-gold/70 w-6 shrink-0">0{i + 1}</span>
+                      <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate">{teamByIdx.get(m.a)?.captainName ?? "?"}</span>
+                      {m.b != null ? (
+                        <>
+                          <span className="shrink-0 text-[10px] font-display font-black text-gold">VS</span>
+                          <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate text-right">{teamByIdx.get(m.b)?.captainName ?? "?"}</span>
+                        </>
+                      ) : (
+                        <span className="shrink-0 text-xs text-ink-muted">轮空 · 直接晋级</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : reveal ? (
+              reveal.phase === "countdown" ? (
+                <div key={reveal.n} className="font-display font-black text-white"
+                  style={{ fontSize: 120, animation: "fmpCountPulse .6s cubic-bezier(.2,.8,.3,1) forwards", textShadow: "0 0 60px rgba(124,92,255,.7)" }}>
+                  {reveal.n}
+                </div>
+              ) : (
+                <div className="flex items-center gap-8 sm:gap-14" style={{ animation: reveal.phase === "flicker" ? "fmpFlicker .35s ease-in-out infinite" : undefined }}>
+                  <TeamFace team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.a) : reveal.flickerA} />
+                  <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0">VS</span>
+                  <TeamFace
+                    team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.b) : reveal.flickerB}
+                    dim={reveal.phase === "reveal" && displayMatches[reveal.idx]?.b == null}
+                  />
+                </div>
+              )
+            ) : featured ? (
+              <div key={featuredIdx} className="flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .5s ease forwards" }}>
+                <div className="flex items-center gap-8 sm:gap-14">
+                  <TeamFace team={teamByIdx.get(featured.a)} />
+                  {featured.b != null ? (
+                    <>
+                      <span className="font-display font-black text-2xl sm:text-3xl text-gold shrink-0">VS</span>
+                      <TeamFace team={teamByIdx.get(featured.b)} />
+                    </>
+                  ) : (
+                    <span className="px-4 py-2 rounded-lg bg-gold/10 border border-gold/40 text-gold font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
+                  )}
+                </div>
+                {complete && (
+                  <button type="button" onClick={() => setFeaturedIdx(null)} className="text-xs text-ink-muted hover:text-accent2 transition font-heading">
+                    ← 返回完整对阵表
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="text-center text-ink-faint text-sm max-w-xs leading-relaxed">
+                敬请期待首个对阵公布
+                <br />
+                手动配对或随机生成开启序幕
+              </div>
+            )}
+          </div>
+
+          {/* filmstrip */}
+          {displayMatches.length > 0 && (
+            <div className="shrink-0 flex gap-2 overflow-x-auto pb-1">
+              {displayMatches.map((m, i) => (
+                <FilmChip key={i} idx={i} match={m} teamByIdx={teamByIdx} active={featuredIdx === i}
+                  onClick={() => { if (!reveal) setFeaturedIdx(i); }} />
+              ))}
+            </div>
+          )}
+
+          {/* actions */}
+          {isStaff && (
+            <div className="shrink-0 flex items-center gap-3 flex-wrap">
+              <button type="button" onClick={handleLockOrRoll} disabled={lockDisabled} className="btn-primary px-4 py-2.5 text-sm">
+                🎬 定角锁定
+              </button>
+              <button type="button" onClick={handleRoll} disabled={rollDisabled} className="btn-primary px-4 py-2.5 text-sm">
+                🎞️ 随机生成剩余对阵
+              </button>
+              <button type="button" onClick={handleResetClick} disabled={busyAction || !!reveal} className="btn-ghost px-4 py-2.5 text-sm">
+                🔄 重置
+              </button>
+              <button type="button" onClick={handleEndClick} disabled={busyAction || !!reveal} className="btn-danger px-4 py-2.5 text-sm">
+                🏁 结束锦标赛
+              </button>
+              <span className="text-xs text-ink-muted ml-auto">
+                {selected.length > 0 ? `已选择 ${selected.length} 支战队` : remaining.length > 0 ? `未选择 · 将随机排位剩余 ${remaining.length} 支战队` : ""}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {error && (
-        <div className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg w-fit" style={{ background: "rgba(255,59,59,.1)", color: "#ff6b6b" }}>
-          ⚠ {error}
+        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt/95 backdrop-blur border border-danger/40 shadow-[0_0_24px_rgba(255,77,109,0.2)] text-danger text-xs px-4 py-3 rounded-lg cursor-pointer"
+          onClick={() => setError(null)}>
+          ⚠ {error}（点击关闭）
         </div>
       )}
-      <style>{FMP_CSS}</style>
-      <style>{FMP_WIRE_CSS}</style>
-      <div id="fmpStage" ref={containerRef} style={{ maxWidth: 1300, width: "100%", margin: "0 auto" }}
-        dangerouslySetInnerHTML={{ __html: FMP_HTML }} />
+
       {confirmReset && (
         <ConfirmDialog
           title="确认重置对阵"

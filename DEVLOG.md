@@ -374,45 +374,53 @@ future edit in this file rather than re-discovering them):
   content is smaller than it, or gets scrolled unnecessarily when
   content plus padding exceeds it.
 
-### Final Matchups ("01 冠军海报版" poster)
+### Final Matchups ("Broadcast Bracket Reveal")
 
-Reached via 进入最终对阵. **This UI is a literal, character-for-character
-port of an external reference file, not a React reimplementation** —
-`FMP_HTML`/`FMP_CSS` inside `DraftArena.jsx` are copied verbatim (only
-scoped/renamed to avoid collisions), and the mount effect's DOM-building
-functions are the reference's own imperative code, deliberately not
-translated into React state. **Any future change to this poster should
-edit this existing code in place, matching its existing patterns
-(inline `<style>` strings, `querySelector`/`innerHTML` DOM building) —
-do not redesign it as idiomatic React.** The only intentional
-deviations from the raw reference are: real team names/data instead of
-a demo array; click handlers wired to real RPCs (below); a Realtime
-prop-sync effect; staff-only visibility gating for non-admin viewers;
-and small appended wire-up chrome (the per-match dissolve button,
-`FMP_WIRE_CSS`) styled to match the existing action bar rather than
-introducing a new style.
+Reached via 进入最终对阵. **As of the visual redesign pass, this is a
+genuine, idiomatic React component** (`FinalMatchupsStage` in
+`DraftArena.jsx`) -- the earlier "01 冠军海报版" implementation (a
+literal, character-for-character port of an external static HTML/CSS/JS
+reference file, rendered via `dangerouslySetInnerHTML` + manual
+`querySelector`/`classList`/`innerHTML` DOM building) was fully replaced
+at the user's explicit request for a ground-up UI/UX redesign, matching
+the rest of the app's shared visual language (AppShell rail+main
+composition, `.btn-primary`/`.btn-ghost`/`.btn-danger`, `GlowHeading`,
+`Avatar`) instead of a separately-styled gold/Cinzel "movie poster."
+**Any future change to this stage should be made the normal React way --
+component state, JSX, Tailwind classes -- like every other stage in this
+file; there is no more special "edit this like raw DOM-scripting code"
+carve-out for it.**
 
-**Workflow (admin-controlled, blank canvas — nothing auto-generated):**
+Only the *data/logic* layer was carried over unchanged: `teams`/
+`matchups` props (kept live via Realtime), and the same RPC-backed
+mutation functions below. The reveal choreography (countdown -> name-
+shuffle flicker -> settle) is a new implementation built entirely from
+React state (`reveal` = `{idx, phase, n, flickerA, flickerB}`) rather
+than manual class-toggling, but keeps the same real-server-data-driven
+guarantee described further down.
+
+**Workflow (admin-controlled, blank canvas -- nothing auto-generated):**
 entering this stage snapshots the drafted teams (captain identity
 only) with zero matchups. From there, freely mixable:
-- **Manual Pairing** — select exactly 2 remaining teams → 锁定此对阵 →
+- **Manual Pairing** -- select exactly 2 remaining teams -> 定角锁定 ->
   creates an already-**locked** matchup.
-- **Random Roll** — select any number of teams (or none, defaulting to
-  "every currently-free team") → 开幕！随机生成剩余对阵 → server shuffles
-  + pairs just that pool (odd count → one team gets a **轮空**/bye),
-  plays the full countdown → flicker → reveal animation against the
+- **Random Roll** -- select any number of teams (or none, defaulting to
+  "every currently-free team") -> 随机生成剩余对阵 -> server shuffles
+  + pairs just that pool (odd count -> one team gets a **轮空**/bye),
+  plays the full countdown -> flicker -> reveal animation against the
   real result. Locked matchups are left untouched by any later roll.
-- Every matchup can be removed (✕ 解除对阵, returns both teams to the
-  free pool immediately). 定角锁定 with 3+ selected delegates straight
-  to Random Roll for that exact group instead of being disabled.
+- Every matchup can be removed (✕ 解除本场对阵, returns both teams to
+  the free pool immediately). 定角锁定 with 3+ selected delegates
+  straight to Random Roll for that exact group instead of being
+  disabled.
 - 🔄 重置 wipes every matchup back to the blank canvas. 🏁 结束锦标赛
   deletes the whole `tournament_matches` row *and* clears
   `tournament_participants` (nobody carries into the next tournament;
   `tournament_settings` is left alone, so a new tournament reuses the
-  last-configured team count/order) — every connected client is booted
-  back to the Tournament Lobby.
+  last-configured team count/order) -- every connected client is
+  booted back to the Tournament Lobby.
 
-**Backend:** `public.tournament_matches` — a structural singleton
+**Backend:** `public.tournament_matches` -- a structural singleton
 holding a `teams` snapshot and a `matchups` **append-only** JSON array.
 Public-read, Realtime-enabled. Admin/Developer-gated RPCs:
 `enter_final_matchups`, `create_manual_matchup`,
@@ -423,19 +431,21 @@ whole page's life regardless of which stage it's on, so a matchup
 change / End Tournament reaches every connected client instantly, not
 just the one that clicked.
 
-**Real-server-data-must-drive-the-reveal pattern:** the countdown/
-flicker/reveal animation must only ever paint what the server actually
-returned, in step with its own reveal timing — never write the
-already-known result into the model ahead of the sequence, and guard
-the Realtime prop-sync effect from overwriting the DOM mid-sequence.
+**Real-server-data-must-drive-the-reveal pattern:** `runReveal()` only
+ever paints matches it was explicitly handed (the RPC's own resolved
+result, appended entries only) -- `displayMatches` (React state) is
+never written ahead of the sequence, and a `revealingRef` guard stops
+the Realtime prop-sync effect from overwriting it mid-sequence, same
+guarantee as before, just implemented as a plain ref + effect instead
+of a mutable non-React model object.
 
-**Spectator-only reveal replay.** For anyone who didn't click the roll
-button themselves (another admin, or a spectator), the prop-sync effect
-diffs incoming `matchups` against the current model; a pure append
-(someone else just locked/rolled a new pairing) replays the identical
-countdown→flicker→reveal sequence instead of snapping straight to the
-result. A non-append change (lock/unlock/remove/reset, or the very
-first sync on mount) still snaps immediately.
+**Spectator-only reveal replay.** For anyone who didn't trigger the
+roll themselves (another admin, or a spectator), the prop-sync effect
+diffs incoming `matchups` length against `displayMatches`; a pure
+append (someone else just locked/rolled a new pairing) replays the
+identical countdown->flicker->reveal sequence instead of snapping
+straight to the result. A non-append change (removal/reset, or the
+very first sync on mount) snaps immediately.
 
 ### Live Draft State broadcast, and resuming a paused draft
 
