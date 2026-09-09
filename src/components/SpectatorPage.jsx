@@ -10,10 +10,15 @@ import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
 import AppShell from './AppShell.jsx'
 
 /* ════════════════════════════════════════════════════════════════════════
-   SPECTATOR PAGE (Phase 6) — a read-only window onto the live tournament,
-   built on the exact same public/Realtime backend as everything else in
-   this project (Section 6, DEVLOG.md): no separate data source, no fake/
-   demo data.
+   SPECTATOR PAGE — a read-only window onto the live tournament, built on
+   the exact same public/Realtime backend as everything else in this
+   project (Section 6, DEVLOG.md): no separate data source, no fake/demo
+   data.
+
+   Concept, deliberately simple: Admin/Draft page controls the tournament
+   and writes its state to Supabase (tournament_draft_state /
+   tournament_matches); this page only ever reads those two tables and
+   renders whatever is currently in them. It never writes anything.
 
    Deliberately scoped to the live drafting process only (Captain
    Drafting → Player Drafting → Matchup/Bracket Roll) — general
@@ -35,6 +40,39 @@ import AppShell from './AppShell.jsx'
          broadcast this page renders.
    Only a thin identity/exit strip (this file's own header) is unique to
    this page, in the main app's Tailwind accent theme (Section 3).
+
+   ---------------------------------------------------------------------
+   Sync layer -- rebuilt to mirror the Draft page's own, already-reliable
+   Final Matchups sync (see DraftArenaPage's `tournament_matches` effect
+   in DraftArena.jsx) for BOTH tables it reads, via `useLiveRow` below:
+     - fetch once immediately on mount (fast first paint)
+     - subscribe via Realtime for the rest of this page's life
+     - on any non-SUBSCRIBED channel status, tear the channel down and
+       reconnect shortly after (Supabase's client retries the underlying
+       socket on its own, but a channel that lived through a long
+       backgrounded tab or a rough network patch can come back reporting
+       CHANNEL_ERROR/TIMED_OUT without ever cleanly re-subscribing --
+       silently stuck on stale data with nothing on screen indicating a
+       problem)
+     - on every fresh SUBSCRIBED (the first connect *and* every later
+       reconnect), re-fetch once via the same plain REST read the initial
+       load uses, so anything that happened while disconnected is never
+       silently lost
+   No polling on top of this -- the Draft page's own version of this sync
+   doesn't poll, and doesn't need to; a realtime channel that reconnects
+   and re-fetches on every reconnect already covers "missed an update."
+
+   The one thing this page must never do: turn a partial/malformed
+   realtime payload into "nothing is happening" (i.e. wipe good state
+   back to the waiting placeholder). `tournament_matches` already guarded
+   against this for its `teams` column (Postgres's logical replication
+   can omit an unchanged, TOASTed jsonb column from a change payload);
+   `tournament_draft_state`'s `state` column is exactly the same shape of
+   risk (a single, only-ever-growing jsonb blob), so the merge function
+   below applies the same rule: keep whatever good state is already on
+   screen unless the event is a genuine DELETE (draft state cleared /
+   Final Matchups reached / tournament ended -- the only real "stop
+   showing this" signals) or a fully-formed row.
 
    View, switched purely by what's currently in the database (never by
    anything this page writes):
@@ -88,11 +126,98 @@ function WaitingSpectatorView() {
 // safeguard (that's isStaff itself, see DraftArena.jsx).
 function noop() {}
 
+/* ---------- shared live-singleton-row sync (see header comment above) ---------- */
+// One small hook, used identically for tournament_draft_state and
+// tournament_matches -- the same fetch/subscribe/reconnect shape
+// DraftArenaPage already relies on for tournament_matches, just factored
+// out so both tables in this file share one implementation instead of two
+// hand-copied effects that could drift apart.
+//
+// `mergeRow(prev, row)` decides what a realtime INSERT/UPDATE event does
+// to the current value -- this is where "never wipe good state on a
+// partial payload" lives; a plain REST fetch (initial load + the
+// refetch-on-resubscribe below) is always a complete row, so those are
+// applied directly, never through mergeRow. `onDelete` (optional) fires
+// once per genuine DELETE event, for callers that need to react to it
+// (e.g. leaving the page), in addition to the row itself being cleared.
+function useLiveRow(fetchFn, subscribeFn, mergeRow, onDelete) {
+  const [data, setData] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let unsubscribe = null
+    let retryTimer = null
+
+    function connect() {
+      unsubscribe = subscribeFn(
+        (payload) => {
+          if (cancelled) return
+          if (payload.eventType === 'DELETE') {
+            setData(null)
+            onDelete?.()
+            return
+          }
+          setData((prev) => mergeRow(prev, payload.new))
+        },
+        (status) => {
+          if (cancelled) return
+          if (status === 'SUBSCRIBED') {
+            fetchFn().then((row) => { if (!cancelled) setData(row) }).catch(() => {})
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            unsubscribe?.()
+            unsubscribe = null
+            if (!cancelled) retryTimer = setTimeout(connect, 2000)
+          }
+        }
+      )
+    }
+
+    // Immediate initial read (fast first paint, before the realtime
+    // channel has necessarily finished subscribing yet) -- the same
+    // 'SUBSCRIBED' handler above will also fire this once the channel
+    // itself connects, so nothing that happened in between is missed.
+    fetchFn().then((row) => { if (!cancelled) setData(row) }).catch(() => {})
+    connect()
+
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+      unsubscribe?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return data
+}
+
+// tournament_draft_state: an INSERT/UPDATE payload missing/malformed
+// `state` (see the header comment's TOAST note) keeps whatever draft
+// state is already on screen instead of snapping back to the waiting
+// placeholder -- only a genuine DELETE (handled in useLiveRow itself)
+// means "stop showing a draft."
+function mergeDraftStateRow(prev, row) {
+  if (!row || !row.state || typeof row.state !== 'object') return prev
+  return { ...row.state, updatedAt: row.updated_at ?? null }
+}
+
+// tournament_matches: `teams` is snapshotted once by enter_final_matchups
+// and never written again -- every later mutation (lock/pair/roll/
+// remove/reset) only touches `matchups`. Postgres's logical replication
+// can still omit that unchanged, TOASTed `teams` value from a
+// matchups-only update payload, so keep whatever non-empty teams are
+// already known instead of wiping the roster to nothing.
+function mergeFinalMatchesRow(prev, row) {
+  if (!row) return prev
+  const incomingTeams = Array.isArray(row.teams) ? row.teams : []
+  return {
+    teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
+    matchups: Array.isArray(row.matchups) ? row.matchups : [],
+  }
+}
+
 /* ---------- top-level page ---------- */
 export default function SpectatorPage({ onExitToLobby }) {
   const [tournamentName, setTournamentName] = useState('')
-  const [draftState, setDraftState] = useState(null)
-  const [finalMatches, setFinalMatches] = useState(null) // { teams, matchups } | null
   const [initialLoading, setInitialLoading] = useState(true)
 
   // Tournament name (fetch-on-open, same as the Lobby's own Tournament
@@ -106,144 +231,15 @@ export default function SpectatorPage({ onExitToLobby }) {
     return () => { cancelled = true }
   }, [])
 
-  // Live Draft State (Phase 6) -- mirrors whichever admin/developer is
-  // currently running the Captain/Teammate draft.
-  //
-  // Realtime resilience: Supabase's client retries the underlying
-  // WebSocket on its own, but a channel that was live through a long
-  // backgrounded tab or a rough network patch can come back reporting
-  // 'CHANNEL_ERROR'/'TIMED_OUT' without ever cleanly re-subscribing --
-  // silently stuck on stale data with nothing on screen indicating a
-  // problem, which is exactly what "the Spectator page looked frozen
-  // mid-draft" looks like. So: on any non-SUBSCRIBED status, tear the
-  // channel down and reconnect after a short delay; and on every
-  // SUBSCRIBED (the first connect *and* every later reconnect), re-fetch
-  // once via the same plain REST read the initial load already uses, so
-  // anything that happened while disconnected is never silently lost.
-  useEffect(() => {
-    let cancelled = false
-    let unsubscribe = null
-    let retryTimer = null
-
-    function connect() {
-      unsubscribe = subscribeDraftState(
-        (payload) => {
-          if (cancelled) return
-          if (payload.eventType === 'DELETE') { setDraftState(null); return }
-          const row = payload.new
-          // A payload with no usable `state` doesn't mean the draft ended
-          // -- Realtime could (without REPLICA IDENTITY FULL on this
-          // table, now fixed at the database level -- see schema.sql)
-          // deliver an UPDATE payload with this jsonb column missing even
-          // though the row's actual content is fine. Keep whatever draft
-          // state we already have instead of resetting to "no draft in
-          // progress"; a genuine end-of-draft is only ever a DELETE event
-          // (handled above), never an UPDATE with a blank `state`.
-          if (!row || !row.state || typeof row.state !== 'object' || Array.isArray(row.state)) return
-          setDraftState({ ...row.state })
-        },
-        (status) => {
-          if (cancelled) return
-          if (status === 'SUBSCRIBED') {
-            fetchDraftState().then((state) => { if (!cancelled) setDraftState(state) }).catch(() => {})
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            unsubscribe?.()
-            unsubscribe = null
-            if (!cancelled) retryTimer = setTimeout(connect, 2000)
-          }
-        }
-      )
-    }
-    connect()
-
-    return () => {
-      cancelled = true
-      if (retryTimer) clearTimeout(retryTimer)
-      unsubscribe?.()
-    }
-  }, [])
-
-  // Safety-net poll: re-fetches the live draft state every few seconds
-  // regardless of the realtime channel's own health. A plain REST read
-  // is idempotent (it just re-states "current truth"), so this can never
-  // fight with a newer realtime update landing around the same time --
-  // it's a cheap backstop for the rare case a dropped connection isn't
-  // caught by the reconnect logic above (e.g. the status callback itself
-  // getting delayed by a fully-suspended background tab).
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchDraftState().then((state) => setDraftState(state)).catch(() => {})
-    }, 8000)
-    return () => clearInterval(interval)
-  }, [])
+  // Live Draft State -- mirrors whichever admin/developer is currently
+  // running the Captain/Teammate draft. See the header comment above and
+  // useLiveRow/mergeDraftStateRow for the sync guarantees.
+  const draftState = useLiveRow(fetchDraftState, subscribeDraftState, mergeDraftStateRow)
 
   // Final Matchups -- same table/channel the Draft Arena itself uses.
-  // Ending the tournament (DELETE) sends every connected client, spectators
-  // included, back to the Tournament Lobby -- same behavior as everywhere
-  // else in the project (DEVLOG.md, Final Matchups section). Uses the same
-  // reconnect-on-error + refetch-on-(re)subscribe pattern as the draft
-  // state subscription above, for the same reason.
-  useEffect(() => {
-    let cancelled = false
-    let unsubscribe = null
-    let retryTimer = null
-
-    function connect() {
-      unsubscribe = subscribeFinalMatchups(
-        (payload) => {
-          if (cancelled) return
-          if (payload.eventType === 'DELETE') {
-            setFinalMatches(null)
-            ;(onExitToLobby || (() => {}))()
-            return
-          }
-          const row = payload.new
-          if (!row) return
-          // See the matching comment in DraftArena.jsx's own subscription:
-          // `teams` never changes after creation, but a matchups-only update
-          // can still arrive here with `teams` missing due to Postgres
-          // logical replication omitting an unchanged TOASTed jsonb column.
-          // Keep whatever non-empty teams we already have instead of wiping
-          // the roster.
-          const incomingTeams = Array.isArray(row.teams) ? row.teams : []
-          setFinalMatches((prev) => ({
-            teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
-            matchups: Array.isArray(row.matchups) ? row.matchups : [],
-          }))
-        },
-        (status) => {
-          if (cancelled) return
-          if (status === 'SUBSCRIBED') {
-            fetchFinalMatchups().then((row) => { if (!cancelled && row) setFinalMatches(row) }).catch(() => {})
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            unsubscribe?.()
-            unsubscribe = null
-            if (!cancelled) retryTimer = setTimeout(connect, 2000)
-          }
-        }
-      )
-    }
-    connect()
-
-    return () => {
-      cancelled = true
-      if (retryTimer) clearTimeout(retryTimer)
-      unsubscribe?.()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Safety-net poll, same rationale as the draft-state one above. Never
-  // clears an already-known finalMatches to null on its own (mirrors the
-  // initial-load/realtime behavior, which only ever clears it via an
-  // explicit DELETE event) so a stray empty response can't blank the
-  // screen out from under a spectator mid-reveal.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchFinalMatchups().then((row) => { if (row) setFinalMatches(row) }).catch(() => {})
-    }, 8000)
-    return () => clearInterval(interval)
-  }, [])
+  // Ending the tournament sends every connected client, spectators
+  // included, back to the Tournament Lobby via the DELETE event below.
+  const finalMatches = useLiveRow(fetchFinalMatchups, subscribeFinalMatchups, mergeFinalMatchesRow, onExitToLobby)
 
   useEffect(() => {
     let cancelled = false
