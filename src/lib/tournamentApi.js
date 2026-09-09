@@ -339,13 +339,25 @@ export async function fetchFinalMatchups() {
 // underlying WebSocket transport on its own, but a channel that was
 // live during a long-backgrounded tab or a rough network patch can come
 // back in a state where this fires 'CHANNEL_ERROR'/'TIMED_OUT' without
-// ever cleanly re-delivering 'SUBSCRIBED' -- silently stuck showing
-// stale data with no visible error, which is exactly what "Spectator
-// looks frozen mid-draft" looks like from the outside. Callers that
-// care about self-healing from that (SpectatorPage) tear down and
-// recreate the channel on error/timeout, and treat every fresh
-// 'SUBSCRIBED' (including this reconnect) as a cue to re-fetch once so
-// nothing missed while disconnected is silently lost.
+// ever cleanly re-delivering 'SUBSCRIBED'. DraftArenaPage's own Final
+// Matchups effect tears down and recreates the channel on error/timeout,
+// and treats every fresh 'SUBSCRIBED' (including a reconnect) as a cue
+// to re-fetch once so nothing missed while disconnected is silently
+// lost.
+//
+// realtime-js has a known gotcha where calling `.channel(sameTopicName)`
+// again before a previous channel for that exact topic has fully torn
+// down can hand back a stale/duplicate channel that never cleanly
+// re-subscribes (github.com/supabase/supabase-js#1722). Giving every
+// connection attempt (including reconnects) its own unique topic name
+// sidesteps that -- each attempt is guaranteed a genuinely fresh channel
+// instead of depending on the client library's own topic de-duplication.
+let channelSeq = 0
+function uniqueChannelName(base) {
+  channelSeq += 1
+  return `${base}-${Date.now()}-${channelSeq}`
+}
+
 export function subscribeFinalMatchups(onChange, onStatus) {
   const channel = supabase
     .channel(uniqueChannelName('tournament-matches-realtime'))
@@ -465,14 +477,9 @@ export async function endTournament() {
 // Deliberately does NOT include the Undo stack (`draftHistory`) -- see
 // fetchDraftHistory()/syncDraftState() below and the comment on
 // tournament_draft_history in schema.sql for why: that stack only grows
-// over a draft and once it (plus the rest of this state) crossed
-// Supabase Realtime's default ~1MiB per-row payload cap, Realtime began
-// silently stripping the oversized field from every further
-// postgres_changes payload instead of delivering it -- which is what
-// made the Spectator Page appear to freeze mid-draft while a fresh page
-// load (a plain REST read, uncapped) still showed the correct state.
+// over a draft and would otherwise make this row unnecessarily large.
 // Keeping this table's payload small and bounded by roster size (not
-// Undo-stack size) is the actual fix.
+// Undo-stack size) is deliberate, independent of how it's read.
 function normalizeDraftStateRow(row) {
   if (!row || !row.state || typeof row.state !== 'object') return null
   return { ...row.state, updatedAt: row.updated_at ?? null }
@@ -485,36 +492,11 @@ export async function fetchDraftState() {
 }
 
 // Admin-only usage (DraftArenaPage's own mount effect, resuming a paused
-// draft) -- the Undo stack, read back via plain REST, which has no
-// Realtime payload cap. Never subscribed to, never used by the Spectator
-// Page.
+// draft) -- the Undo stack, read back via plain REST.
 export async function fetchDraftHistory() {
   const { data, error } = await supabase.from('tournament_draft_history').select('*').maybeSingle()
   if (error) throw new Error(friendlyError(error, '获取选秀历史失败'))
   return Array.isArray(data?.history) ? data.history : []
-}
-
-// realtime-js has a known gotcha where calling `.channel(sameTopicName)`
-// again before a previous channel for that exact topic has fully torn
-// down can hand back a stale/duplicate channel that never cleanly
-// re-subscribes (github.com/supabase/supabase-js#1722) -- which looks
-// exactly like "the page is stuck, needs a full reload" from the
-// outside. Giving every connection attempt (including reconnects) its
-// own unique topic name sidesteps that entirely -- each attempt is
-// guaranteed a genuinely fresh channel instead of depending on the
-// client library's own topic de-duplication.
-let channelSeq = 0
-function uniqueChannelName(base) {
-  channelSeq += 1
-  return `${base}-${Date.now()}-${channelSeq}`
-}
-
-export function subscribeDraftState(onChange, onStatus) {
-  const channel = supabase
-    .channel(uniqueChannelName('tournament-draft-state-realtime'))
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_draft_state' }, onChange)
-    .subscribe((status) => onStatus?.(status))
-  return () => supabase.removeChannel(channel)
 }
 
 // Admin/Developer only. Fire-and-forget -- called by DraftArenaPage every
