@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchTournamentSettings,
   fetchDraftState,
-  subscribeDraftState,
   fetchFinalMatchups,
-  subscribeFinalMatchups,
 } from '../lib/tournamentApi.js'
 import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
 import AppShell from './AppShell.jsx'
 
 /* ════════════════════════════════════════════════════════════════════════
    SPECTATOR PAGE — a read-only window onto the live tournament, built on
-   the exact same public/Realtime backend as everything else in this
+   the exact same public Supabase backend as everything else in this
    project (Section 6, DEVLOG.md): no separate data source, no fake/demo
    data.
 
@@ -37,57 +35,46 @@ import AppShell from './AppShell.jsx'
          lock-unlock-remove on the Final Matchups side; and
      (b) make every click handler that would mutate the draft a no-op, so
          a spectator's click can never diverge local state from the live
-         broadcast this page renders.
+         data this page renders.
    Only a thin identity/exit strip (this file's own header) is unique to
    this page, in the main app's Tailwind accent theme (Section 3).
 
    ---------------------------------------------------------------------
-   Sync layer -- rebuilt to mirror the Draft page's own, already-reliable
-   Final Matchups sync (see DraftArenaPage's `tournament_matches` effect
-   in DraftArena.jsx) for BOTH tables it reads, via `useLiveRow` below:
-     - fetch once immediately on mount (fast first paint)
-     - subscribe via Realtime for the rest of this page's life
-     - on any non-SUBSCRIBED channel status, tear the channel down and
-       reconnect shortly after (Supabase's client retries the underlying
-       socket on its own, but a channel that lived through a long
-       backgrounded tab or a rough network patch can come back reporting
-       CHANNEL_ERROR/TIMED_OUT without ever cleanly re-subscribing --
-       silently stuck on stale data with nothing on screen indicating a
-       problem)
-     - on every fresh SUBSCRIBED (the first connect *and* every later
-       reconnect), re-fetch once via the same plain REST read the initial
-       load uses, so anything that happened while disconnected is never
-       silently lost
-     - PLUS a low-frequency REST reconciliation poll (~4s) alongside all
-       of the above. This page originally shipped without one, on the
-       (reasonable-looking, but incomplete) theory that mirroring the
-       Draft page's realtime-only pattern would be enough. It isn't, for
-       this page specifically: Supabase Realtime has a documented,
-       still-open platform gap where a channel reports SUBSCRIBED before
-       its backend replication listener has actually finished starting
-       up, silently dropping every event for that channel's remaining
-       lifetime with no error to react to (see the comment on `pollMs` in
-       useLiveRow below for sources). A passive, possibly long-idle
-       listener -- exactly what the Spectator Page is, sitting on
-       "waiting" until an admin happens to start a draft -- is precisely
-       the scenario that gap bites. The poll is a bounded worst-case
-       latency guarantee sitting alongside Realtime, which still applies
-       everything instantly when it does arrive; it is not a replacement
-       for the above, and it is not "unnecessary" complexity re-added out
-       of caution -- it's the standard mitigation for a specific, named
-       external limitation this page cannot avoid any other way.
+   Sync mechanism — rebuilt from scratch (this file's second full rework).
+   The first two attempts kept Supabase Realtime (`postgres_changes`) as
+   the delivery mechanism and tried to patch around specific failure
+   modes: oversized payloads, stale/duplicate channels, a "premature
+   SUBSCRIBED" race. None of those actually fixed the reported symptom:
+   an already-open Spectator tab simply never receives a single live
+   event, for the entire session, no matter what the Admin does --
+   confirmed by testing that a plain REST read always shows the correct,
+   current state, but the realtime channel sitting next to it never
+   fires. That is consistent with a documented, still-open Supabase
+   Realtime platform gap where a channel reports "subscribed" without its
+   backend replication listener ever actually becoming live for that
+   session (github.com/supabase/supabase-js#1599, closed "not planned";
+   the identical symptom independently reported in supabase/ssr#122 and
+   supabase/realtime#370) -- not something fixable from this file no
+   matter how the subscription/reconnect logic around it is written.
 
-   The one thing this page must never do: turn a partial/malformed
-   realtime payload into "nothing is happening" (i.e. wipe good state
-   back to the waiting placeholder). `tournament_matches` already guarded
-   against this for its `teams` column (Postgres's logical replication
-   can omit an unchanged, TOASTed jsonb column from a change payload);
-   `tournament_draft_state`'s `state` column is exactly the same shape of
-   risk (a single, only-ever-growing jsonb blob), so the merge function
-   below applies the same rule: keep whatever good state is already on
-   screen unless the event is a genuine DELETE (draft state cleared /
-   Final Matchups reached / tournament ended -- the only real "stop
-   showing this" signals) or a fully-formed row.
+   So this page no longer uses Realtime at all. The mechanism is now the
+   simplest thing that is actually guaranteed to work, because it's the
+   exact operation already confirmed reliable: a plain REST read of
+   tournament_draft_state / tournament_matches, repeated on a short
+   interval (`POLL_MS` below) for as long as this page stays open, via
+   `usePolledRow`. Every tick fully replaces whatever was on screen with
+   the fresh row -- there is no partial/malformed-payload merging to
+   reason about anymore, because a REST read is always the complete,
+   current row, never a delta.
+
+     Admin changes state → written to Supabase (unchanged -- Section 6c)
+       → next poll tick on this page reads it → this page re-renders.
+
+   Worst-case staleness is bounded by `POLL_MS`, not indefinite the way a
+   silently-dead realtime channel was. `tournament_matches` is still used
+   exactly as before by the Admin's own Draft Arena (DraftArena.jsx's own
+   `subscribeFinalMatchups` effect there is untouched) -- this rework only
+   replaces how THIS page gets data, nothing else.
 
    View, switched purely by what's currently in the database (never by
    anything this page writes):
@@ -101,6 +88,13 @@ import AppShell from './AppShell.jsx'
                     draft to start" placeholder (no roster/stats — that's
                     the Tournament Lobby's job, not duplicated here).
    ════════════════════════════════════════════════════════════════════════ */
+
+// How often this page re-reads the two tables it renders. Short enough to
+// feel live for a drafting spectacle, long enough to stay cheap -- both
+// rows are small (see tournament_draft_state/tournament_draft_history's
+// split in schema.sql), so this is two lightweight REST reads every
+// POLL_MS for as long as a spectator keeps this page open.
+const POLL_MS = 1500
 
 /* ---------- inline icons (kept consistent with TournamentLobby.jsx) ---------- */
 const Icon = {
@@ -141,113 +135,38 @@ function WaitingSpectatorView() {
 // safeguard (that's isStaff itself, see DraftArena.jsx).
 function noop() {}
 
-/* ---------- shared live-singleton-row sync (see header comment above) ---------- */
-// One small hook, used identically for tournament_draft_state and
-// tournament_matches -- the same fetch/subscribe/reconnect shape
-// DraftArenaPage already relies on for tournament_matches, just factored
-// out so both tables in this file share one implementation instead of two
-// hand-copied effects that could drift apart.
-//
-// `mergeRow(prev, row)` decides what a realtime INSERT/UPDATE event does
-// to the current value -- this is where "never wipe good state on a
-// partial payload" lives; a plain REST fetch (initial load + the
-// refetch-on-resubscribe below) is always a complete row, so those are
-// applied directly, never through mergeRow. `onDelete` (optional) fires
-// once per genuine DELETE event, for callers that need to react to it
-// (e.g. leaving the page), in addition to the row itself being cleared.
-// `pollMs` (optional): a low-frequency REST reconciliation fetch running
-// alongside the realtime subscription above -- NOT a replacement for it,
-// and not "unnecessary" polling. It exists specifically because of a
-// documented, still-open Supabase Realtime platform gap: the client's
-// 'SUBSCRIBED' status fires as soon as the WebSocket channel joins, but
-// the backend's actual logical-replication listener for that channel
-// finishes initializing separately and can take several seconds --worse
-// on a connection that's been sitting idle, which describes a Spectator
-// tab opened before a draft starts almost exactly. Any change to the
-// table inside that window is silently dropped, permanently, for that
-// channel's remaining lifetime -- no error, no close event, nothing this
-// hook (or any purely-event-driven client) could ever react to on its
-// own (see github.com/supabase/supabase-js#1599, closed "not planned" as
-// an accepted platform limitation, plus independent reports of the exact
-// same "subscribes fine, zero events delivered until the page is
-// reloaded" symptom in supabase/ssr#122 and supabase/realtime#370). A
-// realtime event, when it does arrive, still applies instantly through
-// `mergeRow` above -- this poll only bounds the worst case for whenever
-// it doesn't.
-function useLiveRow(fetchFn, subscribeFn, mergeRow, onDelete, pollMs = 4000) {
+/* ---------- the actual sync mechanism ---------- */
+// Repeatedly re-reads `fetchFn` (a plain REST read -- fetchDraftState or
+// fetchFinalMatchups, both already used elsewhere in this project) on a
+// fixed interval for as long as the calling component stays mounted.
+// Every tick's result fully replaces the previous value -- a REST read is
+// always the complete current row, so there's nothing to merge.
+// `onDisappear` (optional) fires the one time a previously-present row is
+// found gone on a later tick (used below so ending the tournament still
+// sends the Spectator back to the Lobby, same as it always has).
+function usePolledRow(fetchFn, onDisappear) {
   const [data, setData] = useState(null)
+  const hadRowRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
-    let unsubscribe = null
-    let retryTimer = null
 
-    function connect() {
-      unsubscribe = subscribeFn(
-        (payload) => {
-          if (cancelled) return
-          if (payload.eventType === 'DELETE') {
-            setData(null)
-            onDelete?.()
-            return
-          }
-          setData((prev) => mergeRow(prev, payload.new))
-        },
-        (status) => {
-          if (cancelled) return
-          if (status === 'SUBSCRIBED') {
-            fetchFn()
-              .then((row) => { if (!cancelled) setData(row) })
-              .catch((err) => console.error('[spectator sync] refetch-on-subscribe failed:', err))
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            console.error(`[spectator sync] realtime channel ${status.toLowerCase()}, reconnecting in 2s…`)
-            unsubscribe?.()
-            unsubscribe = null
-            if (!cancelled) retryTimer = setTimeout(connect, 2000)
-          }
-        }
-      )
-    }
-
-    // Immediate initial read (fast first paint, before the realtime
-    // channel has necessarily finished subscribing yet) -- the same
-    // 'SUBSCRIBED' handler above will also fire this once the channel
-    // itself connects, so nothing that happened in between is missed.
-    fetchFn()
-      .then((row) => { if (!cancelled) setData(row) })
-      .catch((err) => console.error('[spectator sync] initial fetch failed:', err))
-    connect()
-
-    // See the comment on `pollMs` above -- this is the actual mitigation
-    // for a channel that's silently stopped delivering events. A plain
-    // REST read is always the complete row, so it's applied directly,
-    // same as the initial load and every refetch-on-resubscribe above.
-    const pollTimer = pollMs
-      ? setInterval(() => {
-          fetchFn()
-            .then((row) => { if (!cancelled) setData(row) })
-            .catch(() => {})
-        }, pollMs)
-      : null
-
-    // The other common trigger for the same platform gap: a backgrounded
-    // tab's realtime connection going quiet, then the tab regaining focus
-    // long after. Reconcile immediately instead of waiting out the poll
-    // interval.
-    function onVisible() {
-      if (document.visibilityState !== 'visible') return
+    function tick() {
       fetchFn()
-        .then((row) => { if (!cancelled) setData(row) })
-        .catch(() => {})
+        .then((row) => {
+          if (cancelled) return
+          if (hadRowRef.current && !row) onDisappear?.()
+          hadRowRef.current = !!row
+          setData(row)
+        })
+        .catch((err) => console.error('[spectator sync] poll failed:', err))
     }
-    document.addEventListener('visibilitychange', onVisible)
 
+    tick()
+    const timer = setInterval(tick, POLL_MS)
     return () => {
       cancelled = true
-      if (retryTimer) clearTimeout(retryTimer)
-      if (pollTimer) clearInterval(pollTimer)
-      document.removeEventListener('visibilitychange', onVisible)
-      unsubscribe?.()
+      clearInterval(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -255,39 +174,14 @@ function useLiveRow(fetchFn, subscribeFn, mergeRow, onDelete, pollMs = 4000) {
   return data
 }
 
-// tournament_draft_state: an INSERT/UPDATE payload missing/malformed
-// `state` (see the header comment's TOAST note) keeps whatever draft
-// state is already on screen instead of snapping back to the waiting
-// placeholder -- only a genuine DELETE (handled in useLiveRow itself)
-// means "stop showing a draft."
-function mergeDraftStateRow(prev, row) {
-  if (!row || !row.state || typeof row.state !== 'object') return prev
-  return { ...row.state, updatedAt: row.updated_at ?? null }
-}
-
-// tournament_matches: `teams` is snapshotted once by enter_final_matchups
-// and never written again -- every later mutation (lock/pair/roll/
-// remove/reset) only touches `matchups`. Postgres's logical replication
-// can still omit that unchanged, TOASTed `teams` value from a
-// matchups-only update payload, so keep whatever non-empty teams are
-// already known instead of wiping the roster to nothing.
-function mergeFinalMatchesRow(prev, row) {
-  if (!row) return prev
-  const incomingTeams = Array.isArray(row.teams) ? row.teams : []
-  return {
-    teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
-    matchups: Array.isArray(row.matchups) ? row.matchups : [],
-  }
-}
-
 /* ---------- top-level page ---------- */
 export default function SpectatorPage({ onExitToLobby }) {
   const [tournamentName, setTournamentName] = useState('')
   const [initialLoading, setInitialLoading] = useState(true)
 
-  // Tournament name (fetch-on-open, same as the Lobby's own Tournament
-  // Settings dialog -- not on the Realtime publication, so this is not
-  // live; harmless since it rarely changes mid-tournament).
+  // Tournament name -- fetched once on open, same as the Lobby's own
+  // Tournament Settings dialog. Rarely changes mid-tournament, so this
+  // one stays a single fetch rather than joining the poll above.
   useEffect(() => {
     let cancelled = false
     fetchTournamentSettings()
@@ -297,14 +191,14 @@ export default function SpectatorPage({ onExitToLobby }) {
   }, [])
 
   // Live Draft State -- mirrors whichever admin/developer is currently
-  // running the Captain/Teammate draft. See the header comment above and
-  // useLiveRow/mergeDraftStateRow for the sync guarantees.
-  const draftState = useLiveRow(fetchDraftState, subscribeDraftState, mergeDraftStateRow)
+  // running the Captain/Teammate draft.
+  const draftState = usePolledRow(fetchDraftState)
 
-  // Final Matchups -- same table/channel the Draft Arena itself uses.
-  // Ending the tournament sends every connected client, spectators
-  // included, back to the Tournament Lobby via the DELETE event below.
-  const finalMatches = useLiveRow(fetchFinalMatchups, subscribeFinalMatchups, mergeFinalMatchesRow, onExitToLobby)
+  // Final Matchups -- same table the Draft Arena itself reads/writes.
+  // Ending the tournament deletes this row; the next poll tick notices it
+  // just disappeared and sends every Spectator back to the Lobby, same as
+  // before.
+  const finalMatches = usePolledRow(fetchFinalMatchups, onExitToLobby)
 
   useEffect(() => {
     let cancelled = false

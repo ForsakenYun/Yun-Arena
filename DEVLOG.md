@@ -553,6 +553,42 @@ but visually nothing is missing: both stages' spectator-replay paths
 (Section 8) fire the identical animations for every pick/roll as they
 happen live, not just the final state.
 
+**Sync mechanism: short-interval REST polling, not Realtime.** This
+page went through two earlier rounds built on Supabase Realtime
+(`postgres_changes` subscriptions to `tournament_draft_state`/
+`tournament_matches`), each fixing a real but different failure mode
+(oversized broadcast payloads, stale/duplicate channels on reconnect, a
+"premature SUBSCRIBED" race) — none of which fixed the actual reported
+symptom: an already-open Spectator tab simply never received a single
+live event for the rest of its session, confirmed by testing that a
+plain REST read always showed the correct, current state right next to
+a realtime channel that just never fired. That matches a documented,
+still-open Supabase Realtime platform gap (a channel can report
+"subscribed" without its backend replication listener ever actually
+going live for that session — see github.com/supabase/supabase-js#1599,
+closed "not planned," plus the identical symptom independently reported
+in supabase/ssr#122 and supabase/realtime#370) — not something fixable
+from this file's own subscription/reconnect logic.
+
+So this page doesn't use Realtime at all anymore. `useLiveRow`/
+`usePolledRow` (in `SpectatorPage.jsx`) re-reads `tournament_draft_state`
+and `tournament_matches` via a plain REST call (`fetchDraftState()`/
+`fetchFinalMatchups()`, same functions used elsewhere) on a fixed
+1.5s interval (`POLL_MS`) for as long as the page stays open — the exact
+operation already confirmed reliable, just repeated. Worst-case
+staleness is bounded by that interval rather than indefinite. **This
+only changes how the Spectator Page gets its data** — `sync_draft_state`/
+`clear_draft_state` on the write side (Section 6c) and
+`subscribeFinalMatchups()`'s Realtime subscription on the Admin's own
+Draft Arena (`DraftArenaPage`'s Final Matchups effect) are both
+unchanged; `subscribeDraftState()` still exists in `tournamentApi.js`
+but nothing calls it anymore now that this page doesn't. If polling
+interval or Supabase request volume ever becomes a concern with many
+concurrent spectators, that's the number to tune (`POLL_MS`) — this
+page does not need Realtime to meet its actual requirement ("Admin
+changes state → an already-open Spectator sees it soon after"), and
+re-introducing it is not a straightforward win given the above.
+
 Views, switched purely by what's currently in the database:
 - **waiting placeholder** — no draft in progress and no Final Matchups
   yet: a minimal "选秀尚未开始" message.
@@ -560,8 +596,9 @@ Views, switched purely by what's currently in the database:
   fed a `tournament` object built from that broadcast.
 - **`final`** — a `tournament_matches` row exists: `<FinalMatchupsStage>`
   with its own back button suppressed (this page's header already has
-  an exit button). Ending the tournament sends spectators back to the
-  Lobby too, same as every other connected client.
+  an exit button). Ending the tournament (row deleted) is noticed on
+  the next poll tick and sends spectators back to the Lobby too, same
+  as every other connected client.
 
 ## 10. Not Yet Built / Known Limitations
 
