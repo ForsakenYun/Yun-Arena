@@ -452,56 +452,25 @@ very first sync on mount) snaps immediately.
 The Captain assignment / Teammate draft phases are still 100% local
 React state (`tournament` in `DraftArenaPage`) while actively being
 driven. In parallel, every time that state actually changes (while an
-Admin/Developer is on the draft stage), it's mirrored to two singleton
-tables via `sync_draft_state(p_token, p_state, p_history)`:
+Admin/Developer is on the draft stage), it's mirrored to
+`public.tournament_draft_state` (structural singleton, public-read,
+Realtime-enabled) via `sync_draft_state()` — this is what feeds the
+Spectator Page's live view (Section 9). A failed/slow write here can
+never block or alter the admin's own drafting experience.
 
-- `public.tournament_draft_state` (public-read, **Realtime-enabled**) —
-  `teams`/`pool`/`captainCandidates`/`pickIndex`/`draftPhase`/
-  `roundOrders`/`selectedCaptainId`/names only. This is what feeds the
-  Spectator Page's live view (Section 9).
-- `public.tournament_draft_history` (public-read, **deliberately NOT
-  Realtime-enabled**) — just the Undo stack (`draftHistory`), read back
-  only via a plain REST fetch (`fetchDraftHistory()`), only by
-  `DraftArenaPage`'s own resume flow below.
-
-**Why the split — real, previously diagnosed bug, don't re-merge these:**
-the Undo stack only ever grows over a draft (every entry is a
-deep-cloned snapshot of `teams`/`pool`), and Supabase Realtime enforces
-a default ~1MiB per-row payload cap on `postgres_changes` broadcasts.
-Once `tournament_draft_state.state` used to include the Undo stack too,
-a realistic full 8×5 draft's worth of history (~3MB serialized) crossed
-that cap partway through Team Player Drafting (never during Captain
-assignment, when history is still short) — Realtime responded by
-silently stripping the oversized `state` field from every further
-change payload ("Error 413: Payload Too Large") instead of delivering
-it, so the Spectator Page stopped receiving usable updates for the rest
-of that draft and appeared permanently stuck (a fresh page load still
-worked, since a plain REST read has no such cap — that mismatch was the
-key diagnostic clue). Keeping `tournament_draft_state` small and
-bounded by roster size — never by Undo-stack size — is the fix; do not
-put `draftHistory` (or anything else unbounded) back into that table's
-Realtime-published payload.
-
-A failed/slow write to either table can never block or alter the
-admin's own drafting experience — both writes happen inside
-`sync_draft_state()` itself; the client only ever calls it once,
-fire-and-forget, passing `state`/`history` as two separate arguments.
-
-**Watch out — the client-side broadcast is debounced (200ms) on purpose,
-and needs to stay that way:** the dedupe/change-detection check still
-`JSON.stringify`s the combined `{ payload, draftHistory }` (to notice
-when either changed), and that gets measurably more expensive the
-deeper into a draft this runs (measured: ~12ms for a realistic full 8×5
-draft's worth of history — cheap once, but a rapid click burst that
-recomputes it **on every single click** adds up fast: a 20-click burst
-measured at ~220ms of blocking main-thread work undebounced vs. ~11ms
-debounced). This was a real, measured cause of lag when spam-clicking
-Undo (and to a lesser extent, rapid picks) late in a draft — unrelated
-to the Realtime payload-size issue above (this cost is purely local
-`JSON.stringify` CPU time on the admin's own machine, independent of
-what ends up split across the wire into two RPC arguments). The
-debounce means a rapid burst only pays this cost once, right after it
-settles — since the broadcast was already fire-and-forget/
+**Watch out — this broadcast is debounced (200ms) on purpose, and needs
+to stay that way:** its payload includes the full Undo stack
+(`draftHistory` — every entry itself a deep-cloned snapshot of `teams`/
+`pool`) plus the current `teams`/`pool`/`captainCandidates` again, so
+`JSON.stringify`-ing it gets measurably more expensive the deeper into
+a draft this runs (measured: ~12ms for a realistic full 8×5 draft's
+worth of history, ~3MB serialized — cheap once, but a rapid click burst
+that recomputes it **on every single click** adds up fast: a 20-click
+burst measured at ~220ms of blocking main-thread work undebounced vs.
+~11ms debounced). This was a real, measured cause of lag when
+spam-clicking Undo (and to a lesser extent, rapid picks) late in a
+draft. The debounce means a rapid burst only pays this cost once, right
+after it settles — since the broadcast was already fire-and-forget/
 eventually-consistent by design, this doesn't change what eventually
 gets persisted, just skips the redundant mid-burst recomputation. A
 matching "flush on unmount" effect exists alongside it specifically so
@@ -510,31 +479,13 @@ state instead of silently dropping it — keep both effects together if
 this code is ever touched again.
 
 **Resuming a paused draft:** `DraftArenaPage`'s mount effect checks for
-an existing `tournament_draft_state` row first and, if one exists, seeds
-`tournament` from it and separately fetches `tournament_draft_history`
-(`fetchDraftHistory()`) to seed the Undo stack, instead of starting
-fresh. A history-fetch failure degrades to resuming with an empty Undo
-stack rather than losing the whole resumed draft. Both rows are only
-cleared when the draft actually reaches Final Matchups or the
-tournament ends — leaving the page mid-draft no longer loses progress.
-The ephemeral "captain clicked but not yet assigned" highlight is
-intentionally **not** restored on resume (would read as a click that
-never happened).
-
-**Realtime reconnect robustness:** `tournament_matches` -- the one
-table still read via Realtime (`subscribeFinalMatchups()`, used by
-`DraftArenaPage`'s own Final Matchups effect; the Spectator Page reads
-it by polling instead, Section 9) -- is subscribed to with a unique
-topic name per connection attempt (`uniqueChannelName()` in
-`tournamentApi.js`), not a fixed hardcoded string. `@supabase/realtime-js`
-has an open bug (supabase/supabase-js#1722) where calling
-`.channel(sameTopicName)` again before a previous channel for that exact
-topic has fully torn down can hand back a stale/duplicate channel that
-never cleanly re-subscribes — indistinguishable, from the outside, from
-"the page is stuck, needs a full reload." Giving every reconnect attempt
-its own topic name sidesteps this instead of depending on the client
-library's own topic de-duplication. Keep this if this subscription is
-ever rewritten.
+an existing `tournament_draft_state` row first and, if one exists,
+seeds both `tournament` and the Undo stack from it instead of starting
+fresh. The row is only cleared when the draft actually reaches Final
+Matchups or the tournament ends — leaving the page mid-draft no longer
+loses progress. The ephemeral "captain clicked but not yet assigned"
+highlight is intentionally **not** restored on resume (would read as a
+click that never happened).
 
 ## 9. Spectator Page
 
@@ -555,44 +506,32 @@ but visually nothing is missing: both stages' spectator-replay paths
 (Section 8) fire the identical animations for every pick/roll as they
 happen live, not just the final state.
 
-**Sync mechanism: short-interval REST polling, deliberately not
-Realtime.** `usePolledRow` (in `SpectatorPage.jsx`) re-reads
-`tournament_draft_state` and `tournament_matches` via a plain REST call
-(`fetchDraftState()`/`fetchFinalMatchups()` — the same functions used
-elsewhere in the app) on a fixed 1.5s interval (`POLL_MS`) for as long
-as the page stays open, fully replacing whatever was on screen each
-tick — a REST read is always the complete, current row, so there's no
-partial-payload merging to reason about. No `postgres_changes`
-subscription, no channel, no reconnect logic, on this page. Worst-case
-staleness is bounded by `POLL_MS`, not indefinite.
+**Persistence-first, not connection-first.** This page's job is to
+render whatever is currently *saved* in Supabase — it never depends on
+an Admin/Developer being on the Draft Arena at the same time, being
+online, or having any live connection at all. On open it reads
+`tournament_draft_state`/`tournament_matches` directly (the same
+persisted rows described in Section 8's "Live Draft State" and Final
+Matchups sections), so an Admin can draft, close the browser entirely,
+and anyone opening Spectator later still sees everything that already
+happened. A Realtime subscription on top of that initial read is a pure
+enhancement for anyone who already has the page open — if it drops, the
+page just keeps showing the last state it read/received until it
+reconnects (same reconnect-and-refetch pattern `DraftArenaPage` itself
+uses for `tournament_matches`, Section 8); it never gates or blocks what
+gets displayed.
 
-This is a deliberate choice, not an oversight: Realtime delivery to an
-already-open Spectator tab was extensively tested and did not work
-reliably in this project's environment, while a plain REST read has
-been repeatedly confirmed correct. If that ever needs revisiting,
-verify Realtime delivery independently first (e.g. a bare test
-subscription against `tournament_draft_state` in an idle tab, confirmed
-against Admin actions from a second tab) before reintroducing it here —
-don't assume it works because `tournament_matches` uses it elsewhere
-(Section 8's `subscribeFinalMatchups`, still Realtime-based and
-unaffected by this).
-
-This only concerns how the *Spectator Page* gets its data —
-`sync_draft_state`/`clear_draft_state` on the write side (Section 6c)
-and `DraftArenaPage`'s own Final Matchups subscription are unchanged. If
-polling interval or Supabase request volume ever becomes a concern with
-many concurrent spectators, `POLL_MS` is the number to tune.
-
-Views, switched purely by what's currently in the database:
-- **waiting placeholder** — no draft in progress and no Final Matchups
-  yet: a minimal "选秀尚未开始" message.
+Views, switched purely by what's currently saved:
+- **empty placeholder** — neither a `tournament_draft_state` row nor a
+  `tournament_matches` row has ever been saved: a minimal "暂无选秀数据"
+  message. Not a "waiting for the admin to connect" state — it renders
+  the same whether or not anyone is currently online.
 - **`drafting`** — a `tournament_draft_state` row exists: `<DraftArena>`
-  fed a `tournament` object built from that broadcast.
+  fed a `tournament` object built from that saved state.
 - **`final`** — a `tournament_matches` row exists: `<FinalMatchupsStage>`
   with its own back button suppressed (this page's header already has
-  an exit button). Ending the tournament (row deleted) is noticed on
-  the next poll tick and sends spectators back to the Lobby too, same
-  as every other connected client.
+  an exit button). Ending the tournament sends spectators back to the
+  Lobby too, same as every other connected client.
 
 ## 10. Not Yet Built / Known Limitations
 

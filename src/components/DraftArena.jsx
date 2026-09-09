@@ -4,7 +4,6 @@ import {
   fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchupsPool,
   lockTournamentMatchup, resetTournamentMatchups, endTournament, toFinalMatchupTeam,
   createManualMatchup, removeTournamentMatchup, syncDraftState, fetchDraftState,
-  fetchDraftHistory,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import AppShell from "./AppShell.jsx";
@@ -1622,14 +1621,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
             captainCandidates: Array.isArray(existing.captainCandidates) ? existing.captainCandidates : [],
             roundOrders: Array.isArray(existing.roundOrders) ? existing.roundOrders : [],
           })
-          // The Undo stack lives in its own table now (tournament_draft_history,
-          // never Realtime-published -- see schema.sql), specifically so the
-          // live-broadcast row above stays small. A failure here degrades to
-          // "resume with an empty Undo stack" rather than losing the whole
-          // resumed draft.
-          fetchDraftHistory()
-            .then((history) => { if (!cancelled) setSeededDraftHistory(Array.isArray(history) ? history : []) })
-            .catch(() => { if (!cancelled) setSeededDraftHistory([]) })
+          setSeededDraftHistory(Array.isArray(existing.draftHistory) ? existing.draftHistory : [])
           setReady(true)
           return
         }
@@ -1691,14 +1683,6 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
     // the latest state instead of silently dropping it -- the old
     // synchronous version never had a "pending" state that could be lost.
     const run = () => {
-      // `payload` is the small, Realtime-published snapshot the Spectator
-      // Page renders -- deliberately excludes draftHistory (see
-      // schema.sql's tournament_draft_history comment: that's what used
-      // to grow this broadcast past Supabase Realtime's per-row payload
-      // cap and stall the Spectator Page mid-draft). draftHistory is
-      // still sent every time, just as a separate argument the server
-      // writes to its own, non-Realtime table -- purely for the Admin's
-      // own "resume a paused draft" flow.
       const payload = {
         tournamentName,
         teamCount: settingsMeta.teamCount,
@@ -1710,30 +1694,12 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
         pickIndex: tournament.pickIndex,
         roundOrders: tournament.roundOrders,
         selectedCaptainId,
+        draftHistory,
       }
-      // Dedupe against both pieces together -- either one changing on its
-      // own (e.g. a pick changes `payload` but not `draftHistory` timing-
-      // wise, or an Undo replays `draftHistory` without a net change to
-      // `payload`) still needs to broadcast.
-      const json = JSON.stringify({ payload, draftHistory })
+      const json = JSON.stringify(payload)
       if (draftBroadcastRef.current === json) return
       draftBroadcastRef.current = json
-      syncDraftState(payload, draftHistory).catch((err) => {
-        // Deliberately still fire-and-forget (never blocks/alters the
-        // admin's own drafting experience -- see the comment above this
-        // effect) but no longer silent: this call failing outright is
-        // exactly what makes the Spectator Page appear permanently stuck
-        // on "选秀尚未开始" even while a draft is actively running --
-        // nothing on the Admin's own screen would otherwise indicate a
-        // problem, since `tournament` here is 100% local state and never
-        // reads this write back. If this logs a 404 / "Could not find
-        // the function public.sync_draft_state(...)", the live Supabase
-        // project is still running an older schema.sql than this
-        // client's code expects (most commonly: an out-of-date
-        // sync_draft_state signature) -- re-run the full current
-        // schema.sql in the SQL Editor and retest.
-        console.error('[live draft broadcast] sync_draft_state failed -- the Spectator Page will not see this update:', err)
-      })
+      syncDraftState(payload).catch(() => {})
     }
 
     if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
