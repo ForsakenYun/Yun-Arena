@@ -58,9 +58,24 @@ import AppShell from './AppShell.jsx'
        reconnect), re-fetch once via the same plain REST read the initial
        load uses, so anything that happened while disconnected is never
        silently lost
-   No polling on top of this -- the Draft page's own version of this sync
-   doesn't poll, and doesn't need to; a realtime channel that reconnects
-   and re-fetches on every reconnect already covers "missed an update."
+     - PLUS a low-frequency REST reconciliation poll (~4s) alongside all
+       of the above. This page originally shipped without one, on the
+       (reasonable-looking, but incomplete) theory that mirroring the
+       Draft page's realtime-only pattern would be enough. It isn't, for
+       this page specifically: Supabase Realtime has a documented,
+       still-open platform gap where a channel reports SUBSCRIBED before
+       its backend replication listener has actually finished starting
+       up, silently dropping every event for that channel's remaining
+       lifetime with no error to react to (see the comment on `pollMs` in
+       useLiveRow below for sources). A passive, possibly long-idle
+       listener -- exactly what the Spectator Page is, sitting on
+       "waiting" until an admin happens to start a draft -- is precisely
+       the scenario that gap bites. The poll is a bounded worst-case
+       latency guarantee sitting alongside Realtime, which still applies
+       everything instantly when it does arrive; it is not a replacement
+       for the above, and it is not "unnecessary" complexity re-added out
+       of caution -- it's the standard mitigation for a specific, named
+       external limitation this page cannot avoid any other way.
 
    The one thing this page must never do: turn a partial/malformed
    realtime payload into "nothing is happening" (i.e. wipe good state
@@ -140,7 +155,26 @@ function noop() {}
 // applied directly, never through mergeRow. `onDelete` (optional) fires
 // once per genuine DELETE event, for callers that need to react to it
 // (e.g. leaving the page), in addition to the row itself being cleared.
-function useLiveRow(fetchFn, subscribeFn, mergeRow, onDelete) {
+// `pollMs` (optional): a low-frequency REST reconciliation fetch running
+// alongside the realtime subscription above -- NOT a replacement for it,
+// and not "unnecessary" polling. It exists specifically because of a
+// documented, still-open Supabase Realtime platform gap: the client's
+// 'SUBSCRIBED' status fires as soon as the WebSocket channel joins, but
+// the backend's actual logical-replication listener for that channel
+// finishes initializing separately and can take several seconds --worse
+// on a connection that's been sitting idle, which describes a Spectator
+// tab opened before a draft starts almost exactly. Any change to the
+// table inside that window is silently dropped, permanently, for that
+// channel's remaining lifetime -- no error, no close event, nothing this
+// hook (or any purely-event-driven client) could ever react to on its
+// own (see github.com/supabase/supabase-js#1599, closed "not planned" as
+// an accepted platform limitation, plus independent reports of the exact
+// same "subscribes fine, zero events delivered until the page is
+// reloaded" symptom in supabase/ssr#122 and supabase/realtime#370). A
+// realtime event, when it does arrive, still applies instantly through
+// `mergeRow` above -- this poll only bounds the worst case for whenever
+// it doesn't.
+function useLiveRow(fetchFn, subscribeFn, mergeRow, onDelete, pollMs = 4000) {
   const [data, setData] = useState(null)
 
   useEffect(() => {
@@ -162,8 +196,11 @@ function useLiveRow(fetchFn, subscribeFn, mergeRow, onDelete) {
         (status) => {
           if (cancelled) return
           if (status === 'SUBSCRIBED') {
-            fetchFn().then((row) => { if (!cancelled) setData(row) }).catch(() => {})
+            fetchFn()
+              .then((row) => { if (!cancelled) setData(row) })
+              .catch((err) => console.error('[spectator sync] refetch-on-subscribe failed:', err))
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.error(`[spectator sync] realtime channel ${status.toLowerCase()}, reconnecting in 2s…`)
             unsubscribe?.()
             unsubscribe = null
             if (!cancelled) retryTimer = setTimeout(connect, 2000)
@@ -176,12 +213,40 @@ function useLiveRow(fetchFn, subscribeFn, mergeRow, onDelete) {
     // channel has necessarily finished subscribing yet) -- the same
     // 'SUBSCRIBED' handler above will also fire this once the channel
     // itself connects, so nothing that happened in between is missed.
-    fetchFn().then((row) => { if (!cancelled) setData(row) }).catch(() => {})
+    fetchFn()
+      .then((row) => { if (!cancelled) setData(row) })
+      .catch((err) => console.error('[spectator sync] initial fetch failed:', err))
     connect()
+
+    // See the comment on `pollMs` above -- this is the actual mitigation
+    // for a channel that's silently stopped delivering events. A plain
+    // REST read is always the complete row, so it's applied directly,
+    // same as the initial load and every refetch-on-resubscribe above.
+    const pollTimer = pollMs
+      ? setInterval(() => {
+          fetchFn()
+            .then((row) => { if (!cancelled) setData(row) })
+            .catch(() => {})
+        }, pollMs)
+      : null
+
+    // The other common trigger for the same platform gap: a backgrounded
+    // tab's realtime connection going quiet, then the tab regaining focus
+    // long after. Reconcile immediately instead of waiting out the poll
+    // interval.
+    function onVisible() {
+      if (document.visibilityState !== 'visible') return
+      fetchFn()
+        .then((row) => { if (!cancelled) setData(row) })
+        .catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVisible)
 
     return () => {
       cancelled = true
       if (retryTimer) clearTimeout(retryTimer)
+      if (pollTimer) clearInterval(pollTimer)
+      document.removeEventListener('visibilitychange', onVisible)
       unsubscribe?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

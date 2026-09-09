@@ -1718,7 +1718,22 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       const json = JSON.stringify({ payload, draftHistory })
       if (draftBroadcastRef.current === json) return
       draftBroadcastRef.current = json
-      syncDraftState(payload, draftHistory).catch(() => {})
+      syncDraftState(payload, draftHistory).catch((err) => {
+        // Deliberately still fire-and-forget (never blocks/alters the
+        // admin's own drafting experience -- see the comment above this
+        // effect) but no longer silent: this call failing outright is
+        // exactly what makes the Spectator Page appear permanently stuck
+        // on "选秀尚未开始" even while a draft is actively running --
+        // nothing on the Admin's own screen would otherwise indicate a
+        // problem, since `tournament` here is 100% local state and never
+        // reads this write back. If this logs a 404 / "Could not find
+        // the function public.sync_draft_state(...)", the live Supabase
+        // project is still running an older schema.sql than this
+        // client's code expects (most commonly: an out-of-date
+        // sync_draft_state signature) -- re-run the full current
+        // schema.sql in the SQL Editor and retest.
+        console.error('[live draft broadcast] sync_draft_state failed -- the Spectator Page will not see this update:', err)
+      })
     }
 
     if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
