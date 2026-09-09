@@ -452,25 +452,56 @@ very first sync on mount) snaps immediately.
 The Captain assignment / Teammate draft phases are still 100% local
 React state (`tournament` in `DraftArenaPage`) while actively being
 driven. In parallel, every time that state actually changes (while an
-Admin/Developer is on the draft stage), it's mirrored to
-`public.tournament_draft_state` (structural singleton, public-read,
-Realtime-enabled) via `sync_draft_state()` — this is what feeds the
-Spectator Page's live view (Section 9). A failed/slow write here can
-never block or alter the admin's own drafting experience.
+Admin/Developer is on the draft stage), it's mirrored to two singleton
+tables via `sync_draft_state(p_token, p_state, p_history)`:
 
-**Watch out — this broadcast is debounced (200ms) on purpose, and needs
-to stay that way:** its payload includes the full Undo stack
-(`draftHistory` — every entry itself a deep-cloned snapshot of `teams`/
-`pool`) plus the current `teams`/`pool`/`captainCandidates` again, so
-`JSON.stringify`-ing it gets measurably more expensive the deeper into
-a draft this runs (measured: ~12ms for a realistic full 8×5 draft's
-worth of history, ~3MB serialized — cheap once, but a rapid click burst
-that recomputes it **on every single click** adds up fast: a 20-click
-burst measured at ~220ms of blocking main-thread work undebounced vs.
-~11ms debounced). This was a real, measured cause of lag when
-spam-clicking Undo (and to a lesser extent, rapid picks) late in a
-draft. The debounce means a rapid burst only pays this cost once, right
-after it settles — since the broadcast was already fire-and-forget/
+- `public.tournament_draft_state` (public-read, **Realtime-enabled**) —
+  `teams`/`pool`/`captainCandidates`/`pickIndex`/`draftPhase`/
+  `roundOrders`/`selectedCaptainId`/names only. This is what feeds the
+  Spectator Page's live view (Section 9).
+- `public.tournament_draft_history` (public-read, **deliberately NOT
+  Realtime-enabled**) — just the Undo stack (`draftHistory`), read back
+  only via a plain REST fetch (`fetchDraftHistory()`), only by
+  `DraftArenaPage`'s own resume flow below.
+
+**Why the split — real, previously diagnosed bug, don't re-merge these:**
+the Undo stack only ever grows over a draft (every entry is a
+deep-cloned snapshot of `teams`/`pool`), and Supabase Realtime enforces
+a default ~1MiB per-row payload cap on `postgres_changes` broadcasts.
+Once `tournament_draft_state.state` used to include the Undo stack too,
+a realistic full 8×5 draft's worth of history (~3MB serialized) crossed
+that cap partway through Team Player Drafting (never during Captain
+assignment, when history is still short) — Realtime responded by
+silently stripping the oversized `state` field from every further
+change payload ("Error 413: Payload Too Large") instead of delivering
+it, so the Spectator Page stopped receiving usable updates for the rest
+of that draft and appeared permanently stuck (a fresh page load still
+worked, since a plain REST read has no such cap — that mismatch was the
+key diagnostic clue). Keeping `tournament_draft_state` small and
+bounded by roster size — never by Undo-stack size — is the fix; do not
+put `draftHistory` (or anything else unbounded) back into that table's
+Realtime-published payload.
+
+A failed/slow write to either table can never block or alter the
+admin's own drafting experience — both writes happen inside
+`sync_draft_state()` itself; the client only ever calls it once,
+fire-and-forget, passing `state`/`history` as two separate arguments.
+
+**Watch out — the client-side broadcast is debounced (200ms) on purpose,
+and needs to stay that way:** the dedupe/change-detection check still
+`JSON.stringify`s the combined `{ payload, draftHistory }` (to notice
+when either changed), and that gets measurably more expensive the
+deeper into a draft this runs (measured: ~12ms for a realistic full 8×5
+draft's worth of history — cheap once, but a rapid click burst that
+recomputes it **on every single click** adds up fast: a 20-click burst
+measured at ~220ms of blocking main-thread work undebounced vs. ~11ms
+debounced). This was a real, measured cause of lag when spam-clicking
+Undo (and to a lesser extent, rapid picks) late in a draft — unrelated
+to the Realtime payload-size issue above (this cost is purely local
+`JSON.stringify` CPU time on the admin's own machine, independent of
+what ends up split across the wire into two RPC arguments). The
+debounce means a rapid burst only pays this cost once, right after it
+settles — since the broadcast was already fire-and-forget/
 eventually-consistent by design, this doesn't change what eventually
 gets persisted, just skips the redundant mid-burst recomputation. A
 matching "flush on unmount" effect exists alongside it specifically so
@@ -479,13 +510,29 @@ state instead of silently dropping it — keep both effects together if
 this code is ever touched again.
 
 **Resuming a paused draft:** `DraftArenaPage`'s mount effect checks for
-an existing `tournament_draft_state` row first and, if one exists,
-seeds both `tournament` and the Undo stack from it instead of starting
-fresh. The row is only cleared when the draft actually reaches Final
-Matchups or the tournament ends — leaving the page mid-draft no longer
-loses progress. The ephemeral "captain clicked but not yet assigned"
-highlight is intentionally **not** restored on resume (would read as a
-click that never happened).
+an existing `tournament_draft_state` row first and, if one exists, seeds
+`tournament` from it and separately fetches `tournament_draft_history`
+(`fetchDraftHistory()`) to seed the Undo stack, instead of starting
+fresh. A history-fetch failure degrades to resuming with an empty Undo
+stack rather than losing the whole resumed draft. Both rows are only
+cleared when the draft actually reaches Final Matchups or the
+tournament ends — leaving the page mid-draft no longer loses progress.
+The ephemeral "captain clicked but not yet assigned" highlight is
+intentionally **not** restored on resume (would read as a click that
+never happened).
+
+**Realtime reconnect robustness:** every channel this project subscribes
+to (`tournament_draft_state`, `tournament_matches`) is created with a
+unique topic name per connection attempt (`uniqueChannelName()` in
+`tournamentApi.js`), not a fixed hardcoded string. `@supabase/realtime-js`
+has an open bug (supabase/supabase-js#1722) where calling
+`.channel(sameTopicName)` again before a previous channel for that exact
+topic has fully torn down can hand back a stale/duplicate channel that
+never cleanly re-subscribes — indistinguishable, from the outside, from
+"the page is stuck, needs a full reload." Giving every reconnect attempt
+its own topic name sidesteps this instead of depending on the client
+library's own topic de-duplication. Keep this if either subscription is
+ever rewritten.
 
 ## 9. Spectator Page
 
