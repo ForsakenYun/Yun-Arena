@@ -673,6 +673,35 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const { roundOrderValid, customSnakeOrder, allCaptainsAssigned, draftFinished, currentPick, activeTeamIdx, roundLabel } = meta;
   const allDrafted = draftFinished;
 
+  // "Whose turn is it" -- the *visual* team highlight (TeamCard's glow,
+  // the header's "队 N 的选人回合" name, and scrolling that team into
+  // view) intentionally lags one step behind `activeTeamIdx` above during
+  // the teammate/player draft: `activeTeamIdx` is derived straight from
+  // `pickIndex`, which already advances to the next team the instant a
+  // pick commits (pickPlayer(), same render as the flying-card animation
+  // starts) -- so without this, the next team's box started glowing
+  // before the current pick's card had finished flying into its slot, a
+  // real, reported bug. `hiddenKeys` already tracks exactly which flights
+  // (by key, "slot:teamIdx:slotIdx") are still mid-animation -- so: keep
+  // `visualActiveTeamIdx` synced to the real `activeTeamIdx` at all times
+  // EXCEPT while a teammate pick's flight is still in `hiddenKeys`: hold
+  // it at whatever it last was (the team that just picked) until that
+  // flight's own `settle()` clears its key, then this effect re-fires and
+  // catches up to the (by-then-correct) real `activeTeamIdx`. Captain
+  // assignment is unaffected either way -- `activeTeamIdx` is always -1
+  // during that phase (see computeDraftMeta above; there's no sequential
+  // "whose turn" there, any unfilled team is a valid click target), and
+  // captain flights use `cap:` keys, which this deliberately ignores.
+  // Game logic (which slot a pick fills, the snake order, progress %)
+  // still reads the real, immediate `activeTeamIdx`/`pickIndex` elsewhere
+  // in this file, completely unaffected -- only these display-only
+  // "whose turn" indicators wait for the animation.
+  const [visualActiveTeamIdx, setVisualActiveTeamIdx] = useState(activeTeamIdx);
+  useEffect(() => {
+    const slotFlightPending = [...hiddenKeys].some((k) => k.startsWith("slot:"));
+    if (!slotFlightPending) setVisualActiveTeamIdx(activeTeamIdx);
+  }, [activeTeamIdx, hiddenKeys]);
+
   // Keep the current picker's team card in view. The team strip is a
   // single horizontal line (see the container below) that can need its
   // own scrolling once there are enough teams to overflow it -- nothing
@@ -687,12 +716,15 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   // glow's box-shadow reach beyond that box. This only scrolls within the
   // strip's own overflow-x-auto ancestor (see below); it never touches
   // the browser's own scroll position, since nothing above that container
-  // is actually scrollable on desktop.
+  // is actually scrollable on desktop. Scrolls to `visualActiveTeamIdx`,
+  // not the real `activeTeamIdx`, for the same reason as above -- jumping
+  // the viewport to the next team before its box actually lights up would
+  // be its own version of the same "got ahead of the animation" bug.
   useEffect(() => {
-    if (activeTeamIdx < 0) return;
-    const el = document.querySelector(`[data-team-panel="${activeTeamIdx}"]`);
+    if (visualActiveTeamIdx < 0) return;
+    const el = document.querySelector(`[data-team-panel="${visualActiveTeamIdx}"]`);
     if (el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-  }, [activeTeamIdx]);
+  }, [visualActiveTeamIdx]);
 
   const saveSnapshot = () => ({ teams: JSON.parse(JSON.stringify(teams)), pool: pool ? [...pool] : null, captainCandidates: [...captainCandidates], selectedCaptain, pickIndex, draftPhase, lastPick });
 
@@ -792,7 +824,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
       <div className="flex flex-row gap-2.5 overflow-x-auto pb-1">
         {teams.map((team, i) => (
           <div key={i} className="shrink-0" style={{ width: 220 }}>
-            <TeamCard team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
+            <TeamCard team={team} activeTeamIdx={visualActiveTeamIdx} teamIdx={i}
               assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
               onAssignCaptain={handleTeamSlotClick}
               hiddenKeys={hiddenKeys} />
@@ -829,12 +861,12 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
             ) : allDrafted ? (
               <GlowHeading size="text-xl" className="truncate block">全部选手已选完 🏆</GlowHeading>
             ) : (
-              <GlowHeading size="text-xl" className="truncate block">{teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合</GlowHeading>
+              <GlowHeading size="text-xl" className="truncate block">{teams[visualActiveTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合</GlowHeading>
             )}
             <div className="text-[10.5px] text-white/40 truncate mt-0.5">
               {draftPhase === "captain"
                 ? (effectiveSelectedCaptain ? "现在点击上方一张空战队卡片 →" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
-                : (!allDrafted && <>第{roundLabel}轮，共{roundOrders.length}轮 · 战队{activeTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</>)}
+                : (!allDrafted && <>第{roundLabel}轮，共{roundOrders.length}轮 · 战队{visualActiveTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</>)}
             </div>
           </div>
         </div>

@@ -374,6 +374,30 @@ order) → Final Matchups.**
   read this map. Skipping this guard was a real, measured cause of lag
   under rapid/spam-clicking (invisible on one click, compounds directly
   with how many renders happen in a short window).
+- **`visualActiveTeamIdx` vs. `activeTeamIdx` — don't conflate these.**
+  `activeTeamIdx` (from `computeDraftMeta`) is derived straight from
+  `pickIndex`, which advances to the next team the instant a teammate
+  pick commits — same render the flying-card animation *starts*, well
+  before it visually lands. Using `activeTeamIdx` directly for "whose
+  turn is it" UI (TeamCard's glow, the header's team name, scrolling
+  the active team into view) was a real, reported bug: the next team's
+  box lit up before the current pick's card had finished flying into
+  its slot. `visualActiveTeamIdx` is a separate state that mirrors
+  `activeTeamIdx` at all times *except* while a teammate pick's flight
+  is still open in `hiddenKeys` (checked by `slot:` key prefix,
+  captain-phase `cap:` flights don't gate it — there's no sequential
+  "whose turn" during captain assignment) — it only catches up once
+  that flight's own `settle()` clears the key. TeamCard's `isActive`,
+  the scroll-into-view target, and the header's "队 X 的选人回合"/
+  "战队 N" text all read `visualActiveTeamIdx`; `pickPlayer()`,
+  `handlePlayerCardClick()`, the snake-order math, and the progress
+  ring all still read the real, immediate `activeTeamIdx`/`pickIndex`
+  — game logic was never the problem, only the display lagging behind
+  it was the fix. Known simplification: rapid multi-click (a second
+  pick committed before the first one's flight settles) coalesces —
+  the highlight jumps straight to the latest team once every pending
+  flight has settled, rather than visiting each intermediate team in
+  turn. Not addressed since it wasn't part of what was reported.
 - The 4 stat values on player cards (胜率/冠军/擅长位置/天梯分) are
   deterministic placeholders derived from player id — not real data.
 - **Performance note:** the "card slide" flight animation moves via
