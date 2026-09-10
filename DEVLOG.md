@@ -343,9 +343,14 @@ order) → Final Matchups.**
   strip (`TeamCard`s, one continuous horizontal line, `overflow-x-auto`
   if it doesn't fit — filmstrip pattern, same as FinalMatchupsStage's
   own match-chip strip) sitting directly above whichever pool is
-  relevant to the current phase (队长候选池 / 待选选手); a pick-by-pick
-  sequence strip once teammate drafting starts. Same composition for
-  both phases, not two separate layouts.
+  relevant to the current phase (队长候选池 / 待选选手): 战队总览 first,
+  then (Teammate draft only) the pick-by-pick sequence strip (Draft
+  Order, `DraftSequenceStrip`), then the pool. Same `teamOverviewStrip`
+  JSX both phases, declared once — the two phases previously had this
+  order swapped (Draft Order before 战队总览 in Teammate draft) per an
+  explicit request, then swapped back per a follow-up request — if
+  asked to swap these again, that's a real, repeatable request, not a
+  sign something's already wrong.
 - `isStaff` prop (default `true`): when `false` (the Spectator Page's
   only use of this component, Section 9), every admin-only control is
   not rendered at all, and every click handler that would mutate the

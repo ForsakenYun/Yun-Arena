@@ -780,6 +780,28 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 
   if (teams.length === 0) return <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>;
 
+  // Team overview strip (战队总览) -- one shared block for both phases so
+  // there's exactly one place that renders it, not two. Captain
+  // assignment keeps it above the pool (团队卡片 is literally what you
+  // click during that phase); Teammate draft places it *below* the Draft
+  // Order strip instead, at the user's explicit request -- see where each
+  // is used in the BODY section below.
+  const teamOverviewStrip = (
+    <div className="shrink-0 border-b border-panel-line/80 px-4 sm:px-5 lg:px-6 py-3.5">
+      <p className="eyebrow px-1 mb-2">战队总览 · {teams.length}</p>
+      <div className="flex flex-row gap-2.5 overflow-x-auto pb-1">
+        {teams.map((team, i) => (
+          <div key={i} className="shrink-0" style={{ width: 220 }}>
+            <TeamCard team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
+              assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
+              onAssignCaptain={handleTeamSlotClick}
+              hiddenKeys={hiddenKeys} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
       {/* ═══ STATUS STRIP — flush under the shared AppShell bar, not a
@@ -811,7 +833,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
             )}
             <div className="text-[10.5px] text-white/40 truncate mt-0.5">
               {draftPhase === "captain"
-                ? (effectiveSelectedCaptain ? "现在点击左侧一张空战队卡片 →" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
+                ? (effectiveSelectedCaptain ? "现在点击上方一张空战队卡片 →" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
                 : (!allDrafted && <>第{roundLabel}轮，共{roundOrders.length}轮 · 战队{activeTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</>)}
             </div>
           </div>
@@ -848,30 +870,16 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
         </div>
       </div>
 
-      {/* ═══ BODY — team overview strip on top, the draftable pool as the
-          dominant content directly below it. A single-line horizontal
-          strip (filmstrip pattern, same as FinalMatchupsStage's own
-          match-chip strip below) rather than the previous side-by-side
-          rail+content split -- the captain group reads as one continuous
-          line the eye can scan across, sitting immediately above whichever
-          pool is relevant to the current phase, instead of competing with
-          it for horizontal space. Same for both Captain assignment and
-          Teammate draft -- this is one composition reused for both
-          phases, not two. ═══ */}
+      {/* ═══ BODY — team overview strip + Draft Order strip + the
+          draftable pool. Both phases share the exact same
+          `teamOverviewStrip` JSX (declared once, above), placed directly
+          above whichever pool is relevant to the current phase: Captain
+          assignment puts it above 队长候选池 (team cards are literally
+          what you click that phase); Teammate draft puts it above
+          Draft Order (`DraftSequenceStrip`), which sits directly above
+          待选选手 last. ═══ */}
       <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
-        <div className="shrink-0 border-b border-panel-line/80 px-4 sm:px-5 lg:px-6 py-3.5">
-          <p className="eyebrow px-1 mb-2">战队总览 · {teams.length}</p>
-          <div className="flex flex-row gap-2.5 overflow-x-auto pb-1">
-            {teams.map((team, i) => (
-              <div key={i} className="shrink-0" style={{ width: 220 }}>
-                <TeamCard team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
-                  assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
-                  onAssignCaptain={handleTeamSlotClick}
-                  hiddenKeys={hiddenKeys} />
-              </div>
-            ))}
-          </div>
-        </div>
+        {teamOverviewStrip}
 
         <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
           {draftPhase === "teammate" && (
