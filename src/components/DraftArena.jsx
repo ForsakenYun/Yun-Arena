@@ -872,14 +872,16 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 
       {/* ═══ BODY — team overview strip + Draft Order strip + the
           draftable pool. Both phases share the exact same
-          `teamOverviewStrip` JSX (declared once, above), placed directly
-          above whichever pool is relevant to the current phase: Captain
-          assignment puts it above 队长候选池 (team cards are literally
-          what you click that phase); Teammate draft puts it above
-          Draft Order (`DraftSequenceStrip`), which sits directly above
-          待选选手 last. ═══ */}
+          `teamOverviewStrip` JSX (declared once, above) -- only *where*
+          it's placed differs, not what it renders. Captain assignment:
+          战队总览 sits directly above 队长候选池 (team cards are literally
+          what you click that phase). Teammate draft: Draft Order
+          (`DraftSequenceStrip`) comes first, 战队总览 second, 待选选手
+          last -- confirmed against an actual screenshot of the rendered
+          page, so if this ever looks unswapped again, check whether a
+          stale build/cache is being viewed before changing this code. ═══ */}
       <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
-        {teamOverviewStrip}
+        {draftPhase === "captain" && teamOverviewStrip}
 
         <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
           {draftPhase === "teammate" && (
@@ -887,6 +889,8 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
               <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
             </div>
           )}
+
+          {draftPhase === "teammate" && teamOverviewStrip}
 
           {draftPhase === "captain" && (
             <div className="flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden px-5 sm:px-6 py-4">

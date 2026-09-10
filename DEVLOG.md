@@ -343,14 +343,17 @@ order) → Final Matchups.**
   strip (`TeamCard`s, one continuous horizontal line, `overflow-x-auto`
   if it doesn't fit — filmstrip pattern, same as FinalMatchupsStage's
   own match-chip strip) sitting directly above whichever pool is
-  relevant to the current phase (队长候选池 / 待选选手): 战队总览 first,
-  then (Teammate draft only) the pick-by-pick sequence strip (Draft
-  Order, `DraftSequenceStrip`), then the pool. Same `teamOverviewStrip`
-  JSX both phases, declared once — the two phases previously had this
-  order swapped (Draft Order before 战队总览 in Teammate draft) per an
-  explicit request, then swapped back per a follow-up request — if
-  asked to swap these again, that's a real, repeatable request, not a
-  sign something's already wrong.
+  relevant to the current phase. Same `teamOverviewStrip` JSX both
+  phases, declared once — but its *position* differs on purpose:
+  **Captain assignment** puts it first, directly above 队长候选池 (team
+  cards are literally what you click that phase). **Teammate draft**
+  puts the pick-by-pick sequence strip (Draft Order,
+  `DraftSequenceStrip`) first instead, 战队总览 second, 待选选手 last —
+  confirmed correct against an actual screenshot of the rendered page.
+  This one order flip-flopped across several requests in a row before
+  landing here — if asked to swap it again, treat it as a real,
+  repeatable request and check a fresh screenshot/build rather than
+  assuming the code must already be right.
 - `isStaff` prop (default `true`): when `false` (the Spectator Page's
   only use of this component, Section 9), every admin-only control is
   not rendered at all, and every click handler that would mutate the
