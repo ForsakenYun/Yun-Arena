@@ -66,6 +66,29 @@ Development rules:
 - Design new systems to be easy to expand later (e.g. the dashboard's
   tab navigation).
 - Keep the UI simple; don't add unrequested features.
+- **Draft Arena and the Spectator Page are one system, not two —
+  treat them that way in every change.** The Spectator Page
+  (`SpectatorPage.jsx`, Section 9) renders live off exactly what Draft
+  Arena (`DraftArena.jsx`, Section 8) persists — same components
+  (`<DraftArena>`/`<FinalMatchupsStage>` themselves, mounted
+  `isStaff={false}`), same tables, same payload shapes, same timing.
+  There is no independent Spectator implementation to "forget about."
+  Whenever *any* change to Draft Arena — adding, removing, refactoring,
+  or otherwise modifying anything in it — could affect the Spectator
+  Page's UI, state shape, persisted data, animations, timing, sync
+  behavior, or failure modes, the Spectator Page MUST be inspected and
+  updated in the same change, not as a follow-up. This is not a
+  suggestion: two real, shipped bugs (Section 9's persistence-vs-
+  connection rework, and the `tournament_draft_state`/
+  `tournament_draft_history` payload-size split) both came from this
+  link being treated as incidental instead of load-bearing. Concretely,
+  before merging any Draft Arena change, check whether it touches: the
+  shape of anything written to `tournament_draft_state`/
+  `tournament_draft_history` or `tournament_matches`; the debounce/
+  coalescing/timing of when those writes happen; the `isStaff={false}`
+  rendering path in `<DraftArena>`/`<FinalMatchupsStage>` (admin-only
+  controls, spectator-replay animations); or anything
+  `SpectatorPage.jsx` itself reads, subscribes to, or assumes.
 
 **Browser Layout Standard** (permanent — applies to main pages only,
 not dialogs/modals):
@@ -286,6 +309,12 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
 
 ## 8. Draft Arena
 
+**⚠ Before changing anything in this section: see Section 3's "Draft
+Arena and the Spectator Page are one system" rule. Any change here that
+touches persisted data shape, timing, or the `isStaff={false}` path also
+needs Section 9 (Spectator Page) inspected and updated in the same
+change.**
+
 Reached via 开始比赛 from the Tournament Lobby (validated, see Section
 7). `src/components/DraftArena.jsx` — its own self-contained visual
 system (Orbitron/Cinzel display fonts, dark radial background,
@@ -310,9 +339,13 @@ order) → Final Matchups.**
   has a captain and the draft order validates, a locked custom
   snake-order teammate draft begins; clicking a pool player commits the
   pick to whichever team is on the clock, same flight animation.
-- Full undo stack (`draftHistory`) across both phases; a live team grid
-  (`TeamCard`s); a pick-by-pick sequence strip once teammate drafting
-  starts.
+- Full undo stack (`draftHistory`) across both phases; a live team
+  strip (`TeamCard`s, one continuous horizontal line, `overflow-x-auto`
+  if it doesn't fit — filmstrip pattern, same as FinalMatchupsStage's
+  own match-chip strip) sitting directly above whichever pool is
+  relevant to the current phase (队长候选池 / 待选选手); a pick-by-pick
+  sequence strip once teammate drafting starts. Same composition for
+  both phases, not two separate layouts.
 - `isStaff` prop (default `true`): when `false` (the Spectator Page's
   only use of this component, Section 9), every admin-only control is
   not rendered at all, and every click handler that would mutate the
@@ -526,6 +559,11 @@ but not yet assigned" highlight is intentionally **not** restored on
 resume (would read as a click that never happened).
 
 ## 9. Spectator Page
+
+**⚠ This page is not independent of Draft Arena (Section 8) — see
+Section 3's "one system" rule. If you're here because you just changed
+something in Draft Arena, that's correct; check this whole section
+against that change before considering it done.**
 
 `src/components/SpectatorPage.jsx`, reached via a **观赛** button (open
 to every logged-in account, staff or not) on the Tournament Lobby,

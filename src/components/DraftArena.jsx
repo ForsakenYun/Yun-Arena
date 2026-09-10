@@ -171,7 +171,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
     <div
       data-team-panel={teamIdx}
       onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}
-      className={`relative rounded-xl border px-3 py-3 transition-all duration-300 ${canAssign ? "cursor-pointer" : ""}`}
+      className={`relative rounded-xl border px-3 py-3 transition-all duration-300 scroll-m-8 ${canAssign ? "cursor-pointer" : ""}`}
       style={{
         background: isActive ? "linear-gradient(160deg, rgba(34,229,255,0.12), rgba(14,16,32,0.96))" : "linear-gradient(160deg, rgba(22,26,51,0.85), rgba(14,16,32,0.9))",
         borderColor: isActive ? TEAL : canAssign ? "#22c55e" : "rgba(43,49,89,0.7)",
@@ -673,20 +673,21 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const { roundOrderValid, customSnakeOrder, allCaptainsAssigned, draftFinished, currentPick, activeTeamIdx, roundLabel } = meta;
   const allDrafted = draftFinished;
 
-  // Keep the current picker's team card in view. Once the team panel is
-  // tall enough to need its own internal scrolling (see the container
-  // below), nothing else would otherwise bring a newly-active team back
-  // into view when the turn passes to it -- it could sit scrolled off-
-  // screen indefinitely, and any pick that lands on it would fly its card
-  // to a destination the user can't see. TeamCard carries scroll-m-8 (see
-  // below) so scrollIntoView leaves the same 32px of clearance around the
-  // card that its container's own padding already guarantees at rest --
-  // block:"nearest" alone only guarantees the card's bare box is visible
-  // and can flush it right against the container's edge, which wouldn't
-  // leave room for the glow's box-shadow reach beyond that box. This only
-  // scrolls within the card's own overflow-y-auto ancestor (see below);
-  // it never touches the browser's own scroll position, since nothing
-  // above that container is actually scrollable on desktop.
+  // Keep the current picker's team card in view. The team strip is a
+  // single horizontal line (see the container below) that can need its
+  // own scrolling once there are enough teams to overflow it -- nothing
+  // else would otherwise bring a newly-active team back into view when
+  // the turn passes to it -- it could sit scrolled off to the side
+  // indefinitely, and any pick that lands on it would fly its card to a
+  // destination the user can't see. TeamCard carries scroll-m-8 so
+  // scrollIntoView leaves the same clearance around the card that its
+  // container's own padding already guarantees at rest -- inline:"nearest"
+  // alone only guarantees the card's bare box is visible and can flush it
+  // right against the strip's edge, which wouldn't leave room for the
+  // glow's box-shadow reach beyond that box. This only scrolls within the
+  // strip's own overflow-x-auto ancestor (see below); it never touches
+  // the browser's own scroll position, since nothing above that container
+  // is actually scrollable on desktop.
   useEffect(() => {
     if (activeTeamIdx < 0) return;
     const el = document.querySelector(`[data-team-panel="${activeTeamIdx}"]`);
@@ -847,24 +848,32 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
         </div>
       </div>
 
-      {/* ═══ BODY — same rail + main composition used by Lobby (roster +
-          action rail) and Admin (section nav + table): a team-overview
-          rail on the left, the draftable pool as the dominant content on
-          the right. Reversed from Lobby/Admin (rail-left here since teams
-          are reference context for the pool, not the primary action
-          surface) but built from the same shared shapes. ═══ */}
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row lg:overflow-hidden">
-        <aside className="lg:w-[280px] shrink-0 lg:h-full lg:overflow-y-auto px-4 sm:px-5 lg:px-4 py-4 flex flex-col gap-2.5">
-          <p className="eyebrow px-1">战队总览 · {teams.length}</p>
-          {teams.map((team, i) => (
-            <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
-              assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
-              onAssignCaptain={handleTeamSlotClick}
-              hiddenKeys={hiddenKeys} />
-          ))}
-        </aside>
+      {/* ═══ BODY — team overview strip on top, the draftable pool as the
+          dominant content directly below it. A single-line horizontal
+          strip (filmstrip pattern, same as FinalMatchupsStage's own
+          match-chip strip below) rather than the previous side-by-side
+          rail+content split -- the captain group reads as one continuous
+          line the eye can scan across, sitting immediately above whichever
+          pool is relevant to the current phase, instead of competing with
+          it for horizontal space. Same for both Captain assignment and
+          Teammate draft -- this is one composition reused for both
+          phases, not two. ═══ */}
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
+        <div className="shrink-0 border-b border-panel-line/80 px-4 sm:px-5 lg:px-6 py-3.5">
+          <p className="eyebrow px-1 mb-2">战队总览 · {teams.length}</p>
+          <div className="flex flex-row gap-2.5 overflow-x-auto pb-1">
+            {teams.map((team, i) => (
+              <div key={i} className="shrink-0" style={{ width: 220 }}>
+                <TeamCard team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
+                  assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
+                  onAssignCaptain={handleTeamSlotClick}
+                  hiddenKeys={hiddenKeys} />
+              </div>
+            ))}
+          </div>
+        </div>
 
-        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-panel-line/80">
+        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
           {draftPhase === "teammate" && (
             <div className="shrink-0 px-5 sm:px-6 pt-3">
               <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
