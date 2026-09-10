@@ -491,22 +491,30 @@ call/transaction, so they can never drift apart. `enter_final_matchups()`
 and `end_tournament()` both clear both tables together for the same
 reason.
 
-**Watch out — the write is debounced (200ms) on purpose, and needs to
-stay that way:** `JSON.stringify`-ing `draftHistory` gets measurably more
-expensive the deeper into a draft this runs (measured: ~12ms for a
-realistic full 8×5 draft's worth of history — cheap once, but a rapid
-click burst that recomputes it **on every single click** adds up fast: a
-20-click burst measured at ~220ms of blocking main-thread work
-undebounced vs. ~11ms debounced). This was a real, measured cause of lag
-when spam-clicking Undo (and to a lesser extent, rapid picks) late in a
-draft. The debounce means a rapid burst only pays this cost once, right
-after it settles — since the write was already fire-and-forget/
-eventually-consistent by design, this doesn't change what eventually
-gets persisted, just skips the redundant mid-burst recomputation. A
-matching "flush on unmount" effect exists alongside it specifically so
-navigating away *during* the debounce window still persists the latest
-state instead of silently dropping it — keep both effects together if
-this code is ever touched again.
+**Watch out — the write is leading-edge-immediate + trailing-edge-coalesced
+(200ms window) on purpose, and needs to stay that way:** an isolated
+change (an isolated pick, which is most of a real draft) is written the
+instant it happens, with no artificial delay, because the Spectator
+Page's whole value is showing what just happened as fast as possible.
+The 200ms window only exists to protect against a genuine rapid click
+burst (spam-clicking Undo, and to a lesser extent rapid picks) recomputing
+`JSON.stringify(draftHistory)` on every single click — `draftHistory`
+gets measurably more expensive to serialize the deeper into a draft this
+runs (measured: ~12ms for a realistic full 8×5 draft's worth of history —
+cheap once, but a 20-click burst measured at ~220ms of blocking
+main-thread work if every click recomputed it). So: if no window is
+already open, write immediately and open a short window purely to catch
+anything landing in the next instant; if a change arrives while a window
+is already open, coalesce it into that window's trailing fire instead of
+writing again right away. A rapid burst still only pays the recomputation
+cost twice (once immediately for the first click, once for the trailing
+fire with the final state) instead of once per click — same protection as
+a plain debounce, but a quiet draft is never held back by a fixed delay
+that only ever existed to protect against bursts. A matching "flush on
+unmount" effect exists alongside it specifically so navigating away
+*during* an open window still persists the latest state instead of
+silently dropping it — keep both effects together if this code is ever
+touched again.
 
 **Resuming a paused draft:** `DraftArenaPage`'s mount effect fetches
 `tournament_draft_state` and `tournament_draft_history` together and, if

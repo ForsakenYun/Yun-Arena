@@ -1657,18 +1657,18 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
     return () => { cancelled = true }
   }, [])
 
-  // Live Draft State broadcast (Phase 6 -- Spectator Page; also now the
-  // persistence layer a resume reads back from, see the mount effect
-  // above): every time this admin/developer's local `tournament` (or the
-  // Undo stack / ephemeral captain selection reported up from
-  // DraftArena) actually changes during the draft, save a snapshot of it
-  // to the database. Fire-and-forget by design -- a slow or failed write
-  // here must never block or alter the admin's own drafting experience
-  // (all of this stays 100% local `DraftArena` state first; this is only
-  // ever a mirror of it, never the other way around while actively
-  // drafting). A non-staff account that somehow reaches this page
-  // (Section 8's pre-existing, unrelated known gap) simply has every call
-  // rejected server-side, same as any other admin-only RPC -- harmless.
+  // Live Draft State persistence (also the layer a resume reads back
+  // from, see the mount effect above): every time this admin/developer's
+  // local `tournament` (or the Undo stack / ephemeral captain selection
+  // reported up from DraftArena) actually changes during the draft, save
+  // a snapshot of it to the database. Fire-and-forget by design -- a slow
+  // or failed write here must never block or alter the admin's own
+  // drafting experience (all of this stays 100% local `DraftArena` state
+  // first; this is only ever a mirror of it, never the other way around
+  // while actively drafting). A non-staff account that somehow reaches
+  // this page (Section 8's pre-existing, unrelated known gap) simply has
+  // every call rejected server-side, same as any other admin-only RPC --
+  // harmless.
   //
   // `state` and `history` (draftHistory) are sent as two separate
   // payloads to syncDraftState() -- not one -- because folding
@@ -1685,6 +1685,27 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   // never by the Spectator Page, and is written to a table that isn't on
   // the Realtime publication at all, so it can never trigger that failure
   // again regardless of how large a draft's Undo stack grows.
+  //
+  // Leading-edge immediate + trailing-edge coalesced, not a plain
+  // trailing debounce -- this distinction matters and is the whole point:
+  // a plain trailing debounce (the previous version of this effect) waits
+  // out the full window on *every single change*, even an isolated pick
+  // with nothing else happening around it -- so the Spectator Page was
+  // never less than ~200ms behind the real draft, by design, all the
+  // time. That 200ms only ever existed to protect against a *rapid click
+  // burst* recomputing this payload once per click (see the cost note
+  // below) -- it was never meant to delay the common case of one pick at
+  // a time, which is most of a real draft. So: if no window is currently
+  // open, run immediately (nothing to protect against yet) and open a
+  // window purely to catch anything that lands in the next instant; if a
+  // change arrives while a window is already open (an actual burst),
+  // coalesce it into that window's trailing fire instead of running again
+  // right away. A quiet draft (the common case) now reaches Supabase --
+  // and therefore the Spectator Page -- with no artificial delay at all;
+  // a rapid burst (e.g. spam-clicking Undo late in a draft, when
+  // draftHistory is longest and JSON.stringify-ing it is most expensive)
+  // still only pays that recomputation cost once per window instead of
+  // once per click, same protection as before.
   const draftBroadcastRef = useRef(null)
   const draftBroadcastTimerRef = useRef(null)
   const pendingBroadcastRef = useRef(null)
@@ -1692,21 +1713,6 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
     if (!isStaff || stage !== 'draft') return
     if (!tournament.teams || tournament.teams.length === 0) return
 
-    // Debounced on purpose: draftHistory (every entry itself a
-    // deep-cloned snapshot of teams/pool) plus the current
-    // teams/pool/captainCandidates again means JSON.stringify-ing this
-    // gets more expensive the deeper into the draft this runs -- doing
-    // that synchronously on every single change meant a rapid click burst
-    // (e.g. spam-clicking Undo late in a draft, when draftHistory is
-    // longest) recomputed it once per click. Deferring it means a burst
-    // only pays that cost once, after the last change settles -- since this
-    // was already fire-and-forget/eventually-consistent (see comment
-    // above), the eventual saved content and this admin's own drafting
-    // experience are both unchanged; only the redundant mid-burst
-    // recomputation is removed. `pendingBroadcastRef` + the unmount effect
-    // right below exist so that navigating away mid-debounce still flushes
-    // the latest state instead of silently dropping it -- the old
-    // synchronous version never had a "pending" state that could be lost.
     const run = () => {
       const state = {
         tournamentName,
@@ -1726,19 +1732,32 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       syncDraftState(state, draftHistory).catch(() => {})
     }
 
-    if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
-    pendingBroadcastRef.current = run
+    if (draftBroadcastTimerRef.current) {
+      // A coalescing window from a very recent change is already open --
+      // queue this one for the trailing fire at the end of it instead of
+      // running again immediately.
+      pendingBroadcastRef.current = run
+      return
+    }
+
+    // No window open: the common case. Run immediately, then open a
+    // short window purely to coalesce anything that arrives right behind
+    // it (the actual burst-protection case).
+    run()
     draftBroadcastTimerRef.current = setTimeout(() => {
       draftBroadcastTimerRef.current = null
+      const pending = pendingBroadcastRef.current
       pendingBroadcastRef.current = null
-      run()
+      pending?.()
     }, 200)
   }, [isStaff, stage, tournamentName, settingsMeta, tournament, selectedCaptainId, draftHistory])
 
-  // Flush any still-pending debounced broadcast on unmount (leaving this
-  // page) so the very last change before navigating away is never silently
-  // dropped -- a `[]`-deps effect so this runs exactly once, on true
-  // unmount, not on every dependency change above.
+  // Flush any still-pending coalesced write on unmount (leaving this page
+  // mid-burst) so the very last change before navigating away is never
+  // silently dropped -- a `[]`-deps effect so this runs exactly once, on
+  // true unmount, not on every dependency change above. Harmless no-op in
+  // the common case: outside of a burst, nothing is ever left pending
+  // since the leading edge above already ran synchronously.
   useEffect(() => {
     return () => {
       if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
