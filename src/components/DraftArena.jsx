@@ -3,7 +3,7 @@ import {
   fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby,
   fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchupsPool,
   lockTournamentMatchup, resetTournamentMatchups, endTournament, toFinalMatchupTeam,
-  createManualMatchup, removeTournamentMatchup, syncDraftState, fetchDraftState,
+  createManualMatchup, removeTournamentMatchup, syncDraftState, fetchDraftState, fetchDraftHistory,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import AppShell from "./AppShell.jsx";
@@ -1591,23 +1591,33 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   const isStaff = account && (account.permission_role === 'admin' || account.permission_role === 'developer')
 
   // Seeds `tournament` (and `seededDraftHistory`) on mount. Resuming an
-  // in-progress draft (Live Draft State, Phase 6's `tournament_draft_state`
-  // -- originally added only as a one-way broadcast for the Spectator
-  // Page) now takes priority: if a row already exists there, this admin
-  // (or a different one) started a draft that hasn't reached Final
-  // Matchups or been abandoned via 结束锦标赛/重置 yet, so pick it up
-  // exactly where it was left -- teams, every pick so far (including the
-  // Undo stack behind them), and the current phase, all read straight
-  // from that persisted snapshot rather than reconstructing from current
-  // Tournament Settings/roster (which keeps a resumed draft internally
-  // consistent even if either changed while nobody was actively at this
-  // page). Falls through to the original from-scratch seed
+  // in-progress draft (Live Draft State's `tournament_draft_state` +
+  // `tournament_draft_history` -- see their split, and why, in
+  // tournamentApi.js's own comment above fetchDraftState/fetchDraftHistory)
+  // now takes priority: if a row already exists there, this admin (or a
+  // different one) started a draft that hasn't reached Final Matchups or
+  // been abandoned via 结束锦标赛/重置 yet, so pick it up exactly where it
+  // was left -- teams, every pick so far (including the Undo stack behind
+  // them), and the current phase, all read straight from that persisted
+  // snapshot rather than reconstructing from current Tournament
+  // Settings/roster (which keeps a resumed draft internally consistent
+  // even if either changed while nobody was actively at this page). Falls
+  // through to the original from-scratch seed
   // (fetchTournamentSettings()+fetchLobby() -> seedTournament(), empty
   // Undo stack) only when there's genuinely no draft in progress yet.
+  // Both persisted pieces are fetched together up front (cheap either
+  // way -- fetchDraftHistory() just returns `[]` when nothing's saved)
+  // rather than one gating the other, so this stays a single round trip
+  // pair instead of a waterfall.
   useEffect(() => {
     let cancelled = false
-    fetchDraftState()
-      .then((existing) => {
+    // fetchDraftHistory() is allowed to fail independently of
+    // fetchDraftState() -- a hiccup fetching the (larger, REST-only)
+    // Undo stack shouldn't discard a perfectly valid resumed board; it
+    // just resumes with an empty Undo stack instead (Undo simply has
+    // nothing to undo until a new pick happens).
+    Promise.all([fetchDraftState(), fetchDraftHistory().catch(() => [])])
+      .then(([existing, history]) => {
         if (cancelled) return
         if (existing && Array.isArray(existing.teams) && existing.teams.length > 0) {
           setTournamentName(existing.tournamentName || '')
@@ -1621,7 +1631,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
             captainCandidates: Array.isArray(existing.captainCandidates) ? existing.captainCandidates : [],
             roundOrders: Array.isArray(existing.roundOrders) ? existing.roundOrders : [],
           })
-          setSeededDraftHistory(Array.isArray(existing.draftHistory) ? existing.draftHistory : [])
+          setSeededDraftHistory(history)
           setReady(true)
           return
         }
@@ -1651,15 +1661,30 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   // persistence layer a resume reads back from, see the mount effect
   // above): every time this admin/developer's local `tournament` (or the
   // Undo stack / ephemeral captain selection reported up from
-  // DraftArena) actually changes during the draft, mirror a snapshot of
-  // it to the database. Fire-and-forget by design -- a slow or failed
-  // write here must never block or alter the admin's own drafting
-  // experience (all of this stays 100% local `DraftArena` state first;
-  // this is only ever a mirror of it, never the other way around while
-  // actively drafting). A non-staff account that somehow reaches this
-  // page (Section 8's pre-existing, unrelated known gap) simply has every
-  // call rejected server-side, same as any other admin-only RPC --
-  // harmless.
+  // DraftArena) actually changes during the draft, save a snapshot of it
+  // to the database. Fire-and-forget by design -- a slow or failed write
+  // here must never block or alter the admin's own drafting experience
+  // (all of this stays 100% local `DraftArena` state first; this is only
+  // ever a mirror of it, never the other way around while actively
+  // drafting). A non-staff account that somehow reaches this page
+  // (Section 8's pre-existing, unrelated known gap) simply has every call
+  // rejected server-side, same as any other admin-only RPC -- harmless.
+  //
+  // `state` and `history` (draftHistory) are sent as two separate
+  // payloads to syncDraftState() -- not one -- because folding
+  // draftHistory into the same payload/row that Realtime broadcasts to
+  // the Spectator Page was a real, shipped bug: draftHistory alone was
+  // measured at ~3MB for a full 8x5 draft, and once that combined row
+  // crossed Supabase Realtime's 1,024 KB Postgres Changes payload cap,
+  // Realtime silently dropped the entire `state` field from the change
+  // event (see tournament_draft_history's comment in schema.sql), so the
+  // Spectator Page saw a row with no state and rendered its "nothing
+  // saved" placeholder -- reliably around the 6th teammate pick -- even
+  // though the correct state was sitting in Postgres. `history` is only
+  // ever read back by this same page's own resume-on-mount (see above),
+  // never by the Spectator Page, and is written to a table that isn't on
+  // the Realtime publication at all, so it can never trigger that failure
+  // again regardless of how large a draft's Undo stack grows.
   const draftBroadcastRef = useRef(null)
   const draftBroadcastTimerRef = useRef(null)
   const pendingBroadcastRef = useRef(null)
@@ -1667,23 +1692,23 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
     if (!isStaff || stage !== 'draft') return
     if (!tournament.teams || tournament.teams.length === 0) return
 
-    // Debounced on purpose: this payload includes the full draftHistory
-    // array (every entry itself a deep-cloned snapshot of teams/pool) plus
-    // the current teams/pool/captainCandidates again, so JSON.stringify-ing
-    // it gets more expensive the deeper into the draft this runs -- doing
+    // Debounced on purpose: draftHistory (every entry itself a
+    // deep-cloned snapshot of teams/pool) plus the current
+    // teams/pool/captainCandidates again means JSON.stringify-ing this
+    // gets more expensive the deeper into the draft this runs -- doing
     // that synchronously on every single change meant a rapid click burst
     // (e.g. spam-clicking Undo late in a draft, when draftHistory is
     // longest) recomputed it once per click. Deferring it means a burst
     // only pays that cost once, after the last change settles -- since this
     // was already fire-and-forget/eventually-consistent (see comment
-    // above), the eventual broadcast content and this admin's own drafting
+    // above), the eventual saved content and this admin's own drafting
     // experience are both unchanged; only the redundant mid-burst
     // recomputation is removed. `pendingBroadcastRef` + the unmount effect
     // right below exist so that navigating away mid-debounce still flushes
     // the latest state instead of silently dropping it -- the old
     // synchronous version never had a "pending" state that could be lost.
     const run = () => {
-      const payload = {
+      const state = {
         tournamentName,
         teamCount: settingsMeta.teamCount,
         playersPerTeam: settingsMeta.playersPerTeam,
@@ -1694,12 +1719,11 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
         pickIndex: tournament.pickIndex,
         roundOrders: tournament.roundOrders,
         selectedCaptainId,
-        draftHistory,
       }
-      const json = JSON.stringify(payload)
+      const json = JSON.stringify({ state, draftHistory })
       if (draftBroadcastRef.current === json) return
       draftBroadcastRef.current = json
-      syncDraftState(payload).catch(() => {})
+      syncDraftState(state, draftHistory).catch(() => {})
     }
 
     if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)

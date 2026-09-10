@@ -464,6 +464,31 @@ export async function endTournament() {
 // admin/developer is currently online). Absence of a row means no draft
 // has been started yet, or it already reached Final Matchups or the
 // tournament ended (both clear this row server-side).
+//
+// Split across two tables on purpose -- root-caused a real bug, not a
+// style choice, so don't recombine them:
+//   - tournament_draft_state (`fetchDraftState`/`subscribeDraftState`
+//     below) -- everything the Spectator Page and a resumed draft's
+//     *current* board need (teams/pool/phase/pickIndex/etc). Always
+//     small (bounded by team/pool size, not by how many picks have
+//     happened), so it always fits Supabase Realtime's 1,024 KB Postgres
+//     Changes payload cap.
+//   - tournament_draft_history (`fetchDraftHistory` below) -- just the
+//     Undo stack (draftHistory), which grows every pick and was measured
+//     at ~3MB for a realistic full 8x5 draft (Section 8, DEVLOG.md). With
+//     this folded into the same row as the state above, crossing that
+//     1,024 KB cap made Supabase Realtime silently drop the entire
+//     `state` field from the change payload (fields over 64 bytes are
+//     dropped once the cap is hit -- see
+//     https://supabase.com/docs/guides/realtime/limits#postgres-changes-payload-limit),
+//     which the Spectator Page's realtime handler read as "nothing saved"
+//     and blanked the screen to its empty placeholder -- reliably around
+//     the 6th teammate pick in a default 8x5 draft, even though Postgres
+//     had the correct data the whole time. tournament_draft_history is
+//     deliberately NOT on the Realtime publication (nothing needs to
+//     subscribe to it -- only DraftArenaPage's own resume-on-mount reads
+//     it, via a plain REST fetch, which has no such cap), so the
+//     Spectator Page never touches it at all.
 function normalizeDraftStateRow(row) {
   if (!row || !row.state || typeof row.state !== 'object') return null
   return { ...row.state, updatedAt: row.updated_at ?? null }
@@ -483,16 +508,29 @@ export function subscribeDraftState(onChange, onStatus) {
   return () => supabase.removeChannel(channel)
 }
 
+// Admin/Developer only. Used only by DraftArenaPage's own resume-on-mount
+// -- the Spectator Page never needs the Undo stack (isStaff={false} never
+// renders an Undo control), so it never calls this. Deliberately a plain
+// REST read, not a Realtime subscription -- see the comment block above.
+export async function fetchDraftHistory() {
+  const { data, error } = await supabase.from('tournament_draft_history').select('history').maybeSingle()
+  if (error) throw new Error(friendlyError(error, '获取选秀历史记录失败'))
+  return Array.isArray(data?.history) ? data.history : []
+}
+
 // Admin/Developer only. Fire-and-forget -- called by DraftArenaPage every
 // time its local `tournament` state actually changes, so this must never
 // be awaited for correctness by the Draft Arena itself; a failed/late
 // write here can never block or alter the admin's own drafting
 // experience. Rejected server-side for any non-staff caller, same as
-// every other admin-only RPC.
-export async function syncDraftState(state) {
+// every other admin-only RPC. `history` is optional (defaults to `[]`
+// server-side) -- always pass the current Undo stack from DraftArenaPage
+// so a resumed draft never loses it.
+export async function syncDraftState(state, history = []) {
   const { data, error } = await supabase.rpc('sync_draft_state', {
     p_token: requireToken(),
     p_state: state,
+    p_history: history,
   })
   if (error) throw new Error(friendlyError(error, '同步选秀状态失败'))
   return normalizeDraftStateRow(data)

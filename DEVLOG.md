@@ -447,30 +447,60 @@ identical countdown->flicker->reveal sequence instead of snapping
 straight to the result. A non-append change (removal/reset, or the
 very first sync on mount) snaps immediately.
 
-### Live Draft State broadcast, and resuming a paused draft
+### Live Draft State persistence, and resuming a paused draft
 
 The Captain assignment / Teammate draft phases are still 100% local
 React state (`tournament` in `DraftArenaPage`) while actively being
 driven. In parallel, every time that state actually changes (while an
-Admin/Developer is on the draft stage), it's mirrored to
-`public.tournament_draft_state` (structural singleton, public-read,
-Realtime-enabled) via `sync_draft_state()` — this is what feeds the
-Spectator Page's live view (Section 9). A failed/slow write here can
-never block or alter the admin's own drafting experience.
+Admin/Developer is on the draft stage), it's saved via `sync_draft_state()`
+— this is what feeds both the Spectator Page's view (Section 9) and
+resuming a paused draft, below. A failed/slow write here can never block
+or alter the admin's own drafting experience.
 
-**Watch out — this broadcast is debounced (200ms) on purpose, and needs
-to stay that way:** its payload includes the full Undo stack
-(`draftHistory` — every entry itself a deep-cloned snapshot of `teams`/
-`pool`) plus the current `teams`/`pool`/`captainCandidates` again, so
-`JSON.stringify`-ing it gets measurably more expensive the deeper into
-a draft this runs (measured: ~12ms for a realistic full 8×5 draft's
-worth of history, ~3MB serialized — cheap once, but a rapid click burst
-that recomputes it **on every single click** adds up fast: a 20-click
-burst measured at ~220ms of blocking main-thread work undebounced vs.
-~11ms debounced). This was a real, measured cause of lag when
-spam-clicking Undo (and to a lesser extent, rapid picks) late in a
+**Split across two tables — `tournament_draft_state` and
+`tournament_draft_history` — and this split is load-bearing, not
+cosmetic; don't recombine them.** `tournament_draft_state` (public-read,
+Realtime-enabled) holds everything the current board needs
+(teams/pool/phase/pickIndex/captainCandidates/roundOrders/etc) and stays
+small — bounded by team/pool size, not by how many picks have happened.
+`tournament_draft_history` (public-read, **not** Realtime-enabled) holds
+only the Undo stack (`draftHistory` — every entry itself a deep-cloned
+snapshot of `teams`/`pool`), which grows every pick and was measured at
+~3MB serialized for a realistic full 8×5 draft.
+
+This used to be one field on one broadcast row, and it was a real shipped
+bug: Supabase Realtime's Postgres Changes feature caps a change payload
+at 1,024 KB — past that, Realtime doesn't error, it silently drops every
+field over 64 bytes from that event
+(https://supabase.com/docs/guides/realtime/limits#postgres-changes-payload-limit).
+With `draftHistory` folded into the same row Spectator subscribes to,
+crossing that cap meant the *entire* `state` field vanished from the
+Realtime event the moment a draft's combined payload passed ~1MB —
+reliably around the 6th teammate pick in a default 8×5 draft — even
+though Postgres still had the correct row the whole time. The Spectator
+Page's realtime handler saw a row with no `state` and rendered its empty
+placeholder, which looked exactly like "sync randomly breaks mid-draft."
+The fix is structural: `draftHistory` only has one real reader
+(`DraftArenaPage`'s own resume-on-mount, via a plain REST `fetchDraftHistory()`
+— no such payload cap applies to REST), so it lives in a table that was
+never added to the `supabase_realtime` publication at all. The Spectator
+Page never fetches it and has no reason to.
+
+`sync_draft_state(p_token, p_state, p_history)` writes both tables in one
+call/transaction, so they can never drift apart. `enter_final_matchups()`
+and `end_tournament()` both clear both tables together for the same
+reason.
+
+**Watch out — the write is debounced (200ms) on purpose, and needs to
+stay that way:** `JSON.stringify`-ing `draftHistory` gets measurably more
+expensive the deeper into a draft this runs (measured: ~12ms for a
+realistic full 8×5 draft's worth of history — cheap once, but a rapid
+click burst that recomputes it **on every single click** adds up fast: a
+20-click burst measured at ~220ms of blocking main-thread work
+undebounced vs. ~11ms debounced). This was a real, measured cause of lag
+when spam-clicking Undo (and to a lesser extent, rapid picks) late in a
 draft. The debounce means a rapid burst only pays this cost once, right
-after it settles — since the broadcast was already fire-and-forget/
+after it settles — since the write was already fire-and-forget/
 eventually-consistent by design, this doesn't change what eventually
 gets persisted, just skips the redundant mid-burst recomputation. A
 matching "flush on unmount" effect exists alongside it specifically so
@@ -478,14 +508,14 @@ navigating away *during* the debounce window still persists the latest
 state instead of silently dropping it — keep both effects together if
 this code is ever touched again.
 
-**Resuming a paused draft:** `DraftArenaPage`'s mount effect checks for
-an existing `tournament_draft_state` row first and, if one exists,
-seeds both `tournament` and the Undo stack from it instead of starting
-fresh. The row is only cleared when the draft actually reaches Final
-Matchups or the tournament ends — leaving the page mid-draft no longer
-loses progress. The ephemeral "captain clicked but not yet assigned"
-highlight is intentionally **not** restored on resume (would read as a
-click that never happened).
+**Resuming a paused draft:** `DraftArenaPage`'s mount effect fetches
+`tournament_draft_state` and `tournament_draft_history` together and, if
+a state row exists, seeds both `tournament` and the Undo stack from them
+instead of starting fresh. Both rows are only cleared when the draft
+actually reaches Final Matchups or the tournament ends — leaving the
+page mid-draft no longer loses progress. The ephemeral "captain clicked
+but not yet assigned" highlight is intentionally **not** restored on
+resume (would read as a click that never happened).
 
 ## 9. Spectator Page
 
@@ -538,7 +568,7 @@ Views, switched purely by what's currently saved:
 - If two Admin/Developer accounts ran separate drafts concurrently
   before Final Matchups, the snapshot taken on 进入最终对阵 is whichever
   draft called it most recently — an accepted, unaddressed edge case.
-  The Live Draft State broadcast has the same "last writer wins"
+  The Live Draft State write has the same "last writer wins"
   behavior for the Spectator Page's `drafting` view, and for resuming a
   paused draft.
 - Sessions are bearer tokens, not JWTs — no Supabase-Auth-based RLS
