@@ -14,6 +14,7 @@ import AppShell from "./AppShell.jsx";
 const TEAL = "#22E5FF";
 const TEAL_DIM = "#2B3159";
 const TEAL_SOFT = "#8FEEFF";
+const ACCENT = "#7C5CFF";
 const VIOLET = "#7C5CFF";
 
 const POSITIONS = [
@@ -105,7 +106,7 @@ function CaptainBadge() {
   );
 }
 
-function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glow = false }) {
+function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glow = false, glowColor = TEAL }) {
   const fallbackColor = DEFAULT_AVATAR.color;
   // Border-radius is proportional to size (not a fixed px value) so it
   // scales correctly for every avatar size this component is used at.
@@ -120,8 +121,8 @@ function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glo
     return (
       <div style={{
         width: size, height: size, borderRadius: `${radius}px`, flexShrink: 0,
-        border: glow ? `1.5px solid ${TEAL}` : `1px solid ${TEAL_DIM}`,
-        boxShadow: glow ? `0 0 12px ${TEAL}66` : "none",
+        border: glow ? `1.5px solid ${glowColor}` : `1px solid ${TEAL_DIM}`,
+        boxShadow: glow ? `0 0 12px ${glowColor}66` : "none",
         overflow: "hidden", background: "#000",
       }}>
         <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -1170,12 +1171,14 @@ function RosterRow({ team, status, selected, onClick }) {
   return (
     <Tag type={clickable ? "button" : undefined} onClick={onClick}
       className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors duration-500 text-left ${
-        selected ? "border-accent2 bg-accent2/15 shadow-accent-glow"
+        selected ? "border-accent bg-accent/15 shadow-accent-glow"
           : isUsed ? "border-accent2/35 bg-accent2/5"
           : "border-panel-line bg-void/30"
       } ${clickable ? "cursor-pointer hover:border-accent2/40" : ""}`}>
-      <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed || selected} />
-      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${isUsed || selected ? "text-accent2" : "text-ink-muted"}`}>
+      <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed || selected} glowColor={selected ? ACCENT : TEAL} />
+      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${
+        selected ? "text-accent-soft" : isUsed ? "text-accent2" : "text-ink-muted"
+      }`}>
         {teamLabel(team)}
       </span>
       {status === "bye" && (
