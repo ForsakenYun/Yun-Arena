@@ -1,21 +1,18 @@
-import React, { useState, useLayoutEffect, useEffect, useRef, useMemo } from "react";
+import React, { useState, useLayoutEffect, useEffect, useRef } from "react";
 import {
   fetchTournamentSettings, draftRoundCount, generateSnakeDraft, fetchLobby,
   fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchupsPool,
   lockTournamentMatchup, resetTournamentMatchups, endTournament, toFinalMatchupTeam,
-  createManualMatchup, removeTournamentMatchup, syncDraftState, fetchDraftState, fetchDraftHistory,
+  createManualMatchup, removeTournamentMatchup, syncDraftState, fetchDraftState,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
-import AppShell from "./AppShell.jsx";
 
 /* ════════════════════════════════════════════════════════════════════════
    CONSTANTS & THEME (unchanged from Dashboard.jsx)
    ════════════════════════════════════════════════════════════════════════ */
-const TEAL = "#22E5FF";
-const TEAL_DIM = "#2B3159";
-const TEAL_SOFT = "#8FEEFF";
-const ACCENT = "#7C5CFF";
-const VIOLET = "#7C5CFF";
+const TEAL = "#00f5d4";
+const TEAL_DIM = "#0d3b38";
+const TEAL_SOFT = "#7df3e1";
 
 const POSITIONS = [
   { id: 1, label: "1号位", name: "Carry" },
@@ -42,7 +39,7 @@ const HEADER_H = 160;
 
 const DEFAULT_AVATAR_ID = 0;
 const DEFAULT_AVATAR = {
-  id: 0, label: "Hex", color: "#22E5FF",
+  id: 0, label: "Hex", color: "#00f5d4",
   render: (size, color) => (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none">
       <path d="M20 4 L34 12 L34 28 L20 36 L6 28 L6 12 Z" stroke={color} strokeWidth="2" fill={`${color}20`}/>
@@ -106,7 +103,7 @@ function CaptainBadge() {
   );
 }
 
-function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glow = false, glowColor = TEAL }) {
+function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glow = false }) {
   const fallbackColor = DEFAULT_AVATAR.color;
   // Border-radius is proportional to size (not a fixed px value) so it
   // scales correctly for every avatar size this component is used at.
@@ -121,8 +118,8 @@ function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glo
     return (
       <div style={{
         width: size, height: size, borderRadius: `${radius}px`, flexShrink: 0,
-        border: glow ? `1.5px solid ${glowColor}` : `1px solid ${TEAL_DIM}`,
-        boxShadow: glow ? `0 0 12px ${glowColor}66` : "none",
+        border: glow ? `1.5px solid ${TEAL}` : `1px solid ${TEAL_DIM}`,
+        boxShadow: glow ? `0 0 12px ${TEAL}66` : "none",
         overflow: "hidden", background: "#000",
       }}>
         <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -144,8 +141,8 @@ function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glo
 
 function GlowHeading({ children, size = "text-2xl", className = "" }) {
   return (
-    <h1 className={`${size} font-display font-black tracking-wide text-gradient ${className}`}
-      style={{ filter: "drop-shadow(0 0 18px rgba(124,92,255,0.45)) drop-shadow(0 0 34px rgba(34,229,255,0.25))", letterSpacing: "0.04em" }}>
+    <h1 className={`${size} font-black tracking-wide text-white ${className}`}
+      style={{ textShadow: "0 0 6px rgba(0,245,212,0.9), 0 0 18px rgba(0,245,212,0.55), 0 0 42px rgba(0,245,212,0.3)", letterSpacing: "0.04em" }}>
       {children}
     </h1>
   );
@@ -153,8 +150,8 @@ function GlowHeading({ children, size = "text-2xl", className = "" }) {
 
 function PanelFrame({ children, className = "", onClick, style, ...rest }) {
   return (
-    <div className={`relative rounded-2xl border backdrop-blur-sm ${className}`} onClick={onClick}
-      style={{ background: "linear-gradient(160deg, rgba(22,26,51,0.92), rgba(14,16,32,0.96))", borderColor: "rgba(124,92,255,0.22)", boxShadow: "0 0 0 1px rgba(124,92,255,0.06), 0 0 30px rgba(124,92,255,0.10)", ...style }}
+    <div className={`relative rounded-2xl border ${className}`} onClick={onClick}
+      style={{ background: "linear-gradient(to bottom, #0a1414, #060a0a)", borderColor: "rgba(0,245,212,0.25)", boxShadow: "0 0 0 1px rgba(0,245,212,0.06), 0 0 24px rgba(0,245,212,0.08)", ...style }}
       {...rest}>
       {children}
     </div>
@@ -166,83 +163,78 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
   const displayName = useCaptainName && team.captain ? `${team.captain.name}的战队` : `${teamIdx + 1}号战队`;
   const canAssign = assignable && !team.captain;
   const captainHidden = !!hiddenKeys && hiddenKeys.has(`cap:${teamIdx}`);
-  const filled = team.slots.filter(Boolean).length + (team.captain ? 1 : 0);
-  const total = team.slots.length + 1;
   return (
-    <div
+    <PanelFrame
+      className={`p-3 flex-shrink-0 scroll-m-8 transition-all duration-300 ${isActive ? "scale-[1.03]" : ""} ${canAssign ? "cursor-pointer hover:brightness-125" : ""}`}
+      style={{ width: TEAM_CARD_W }}
       data-team-panel={teamIdx}
-      onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}
-      className={`relative rounded-xl border px-3 py-3 transition-all duration-300 scroll-m-8 ${canAssign ? "cursor-pointer" : ""}`}
-      style={{
-        background: isActive ? "linear-gradient(160deg, rgba(34,229,255,0.12), rgba(14,16,32,0.96))" : "linear-gradient(160deg, rgba(22,26,51,0.85), rgba(14,16,32,0.9))",
-        borderColor: isActive ? TEAL : canAssign ? "#22c55e" : "rgba(43,49,89,0.7)",
-        borderStyle: canAssign ? "dashed" : "solid",
-        boxShadow: isActive ? `0 0 0 1px ${TEAL}55, 0 0 22px ${TEAL}33` : canAssign ? "0 0 14px rgba(34,197,94,0.2)" : "none",
-      }}>
-      {/* header row: name + fill progress + live indicator, all on one line */}
-      <div className="flex items-center gap-2 mb-2.5">
-        <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0"
-          style={{ background: isActive ? TEAL : "rgba(255,255,255,0.06)", color: isActive ? "#06070F" : "rgba(255,255,255,0.4)" }}>
-          {teamIdx + 1}
-        </span>
-        <span className="text-[11px] font-bold tracking-wide truncate flex-1" style={{ color: isActive ? TEAL : "rgba(255,255,255,0.85)" }}>{displayName}</span>
-        {isActive && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 animate-pulse" style={{ background: "linear-gradient(135deg,#7C5CFF,#22E5FF)", color: "#06070F" }}>选人中</span>}
-        <span className="text-[9px] font-mono text-white/30 shrink-0">{filled}/{total}</span>
+      onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}>
+      <div className="absolute inset-0 rounded-2xl pointer-events-none"
+        style={{ boxShadow: isActive ? `0 0 0 2px ${TEAL}, 0 0 26px ${TEAL}99` : canAssign ? `0 0 0 2px #22c55e, 0 0 18px #22c55e66` : "none", transition: "box-shadow 0.3s" }} />
+      <div className="relative mb-2">
+        <div className="text-center px-6">
+          <span className="text-[11px] font-black tracking-widest truncate inline-block max-w-full" style={{ color: TEAL, textShadow: `0 0 8px ${TEAL}99`, textTransform: useCaptainName ? "none" : "uppercase" }}>{displayName}</span>
+        </div>
+        {isActive && <span className="absolute top-1/2 right-0 -translate-y-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full animate-pulse flex-shrink-0" style={{ background: TEAL, color: "#000" }}>选人中</span>}
       </div>
-
-      {/* captain slot */}
-      <div className="flex items-center gap-2 mb-1.5 px-2 rounded-lg w-full"
+      <div className="flex items-center gap-2 mb-2 p-1.5 rounded-lg w-full"
         data-slot-key={`cap:${teamIdx}`}
         style={{
-          height: CAPTAIN_SLOT_H, boxSizing: "border-box", overflow: "hidden", opacity: captainHidden ? 0 : 1,
-          background: canAssign ? "rgba(34,197,94,0.08)" : "rgba(0,0,0,0.3)",
-          border: canAssign ? "1px dashed #22c55e" : "1px solid rgba(255,255,255,0.04)",
+          height: CAPTAIN_SLOT_H,
+          boxSizing: "border-box",
+          overflow: "hidden",
+          opacity: captainHidden ? 0 : 1,
+          background: canAssign ? "rgba(34,197,94,0.08)" : "rgba(0,0,0,0.4)",
+          borderWidth: 1,
+          borderStyle: canAssign ? "dashed" : "solid",
+          borderColor: canAssign ? "#22c55e" : "rgba(255,255,255,0.05)",
+          boxShadow: canAssign ? "0 0 12px rgba(34,197,94,0.35)" : "none",
         }}>
         {canAssign ? (
           <>
-            <div className="w-[26px] h-[26px] rounded-md border border-dashed flex items-center justify-center text-xs flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
-            <span className="text-[10px] font-bold italic" style={{ color: "#22c55e" }}>点击分配队长</span>
+            <div className="w-[34px] h-[34px] rounded-lg border border-dashed flex items-center justify-center text-sm flex-shrink-0" style={{ borderColor: "#22c55e", color: "#22c55e" }}>+</div>
+            <span className="text-[11px] font-bold italic" style={{ color: "#22c55e" }}>→ 分配队长</span>
           </>
         ) : team.captain ? (
           <>
-            <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={26} glow />
+            <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={34} glow />
             <div className="min-w-0 flex-1">
-              <div className="text-[10.5px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
+              <div className="text-[11px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
+              <div className="mt-0.5"><CaptainBadge /></div>
             </div>
-            <CaptainBadge />
           </>
         ) : (
           <div className="flex items-center gap-2 w-full">
-            <div className="w-[26px] h-[26px] rounded-md border border-dashed border-white/15 flex items-center justify-center text-white/20 text-[10px] flex-shrink-0">?</div>
-            <span className="text-[10px] italic text-white/25">等待队长</span>
+            <div className="w-[34px] h-[34px] rounded-lg border border-dashed border-white/15 flex items-center justify-center text-white/20 text-xs flex-shrink-0">?</div>
+            <span className="text-[11px] italic text-white/25">等待队长</span>
           </div>
         )}
       </div>
-
-      {/* player slots -- compact single-line rows, each a real flight target */}
       <div className="space-y-1">
         {team.slots.map((slot, i) => {
           const slotKey = `slot:${teamIdx}:${i}`;
           const slotHidden = !!hiddenKeys && hiddenKeys.has(slotKey);
           return (
             <div key={i} data-slot-key={slotKey}
-              className={`flex items-center gap-1.5 px-1.5 py-1 rounded-md border text-[10px] ${slot ? "bg-black/25" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
+              className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] ${slot ? "bg-black/30" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
               style={{ ...(slot ? { borderColor: TEAL_DIM } : {}), opacity: slotHidden ? 0 : 1 }}>
-              <span className="w-4 h-4 flex items-center justify-center rounded text-[8px] font-bold flex-shrink-0"
+              <span className="w-6 h-5 flex items-center justify-center rounded text-[9px] font-bold flex-shrink-0"
                 style={{ background: slot ? `${TEAL}22` : "transparent", color: slot ? TEAL : "#3a4a4a", border: `1px solid ${slot ? TEAL+"55" : "#1c2b2e"}` }}>
                 {POSITIONS[i % 5]?.id ?? "?"}
               </span>
               {slot ? (
                 <>
-                  <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={17} />
-                  <div className="min-w-0 flex-1 truncate font-semibold text-white text-[10px]">{slot.name}</div>
+                  <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={20} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-white text-[10px]">{slot.name}</div>
+                  </div>
                 </>
               ) : <span className="italic">空位</span>}
             </div>
           );
         })}
       </div>
-    </div>
+    </PanelFrame>
   );
 }
 
@@ -269,12 +261,12 @@ const PLAYER_CARD_NAME_FONT = 13;
 const PLAYER_CARD_LABEL_FONT = 9;
 const PLAYER_CARD_VALUE_FONT = 13;
 const PLAYER_CARD_STAT_PAD = 7;
-const PLAYER_CARD_BG = "linear-gradient(155deg, #1B2040 0%, #12142A 100%)";
-const PLAYER_CARD_BORDER = "rgba(124,92,255,0.4)";
-const PLAYER_CARD_STAT_BG = "rgba(6,7,15,0.55)";
-const PLAYER_CARD_STAT_BORDER = "rgba(124,92,255,0.2)";
-const PLAYER_CARD_TEXT = "#F4F2FF";
-const STAT_PILL_COLORS = { winRate: "#2B7FB8", champion: "#C9862B", position: "#5B4FCF", rating: "#B84FA0" };
+const PLAYER_CARD_BG = "linear-gradient(to bottom, #bfe6de 0%, #97cfc2 100%)";
+const PLAYER_CARD_BORDER = "#5aa696";
+const PLAYER_CARD_STAT_BG = "#d3ece5";
+const PLAYER_CARD_STAT_BORDER = "#a9d9cc";
+const PLAYER_CARD_TEXT = "#16232b";
+const STAT_PILL_COLORS = { winRate: "#2f7a80", champion: "#c97a3f", position: "#3f6fca", rating: "#7c5cc9" };
 
 function hashSeed(str) {
   let h = 0;
@@ -323,42 +315,32 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
   const stats = placeholderStats(player.id);
   return (
     <button onClick={onClick} disabled={disabled} type="button" data-card-id={player.id}
-      className={`relative text-left rounded-xl transition-all duration-200 w-full ${disabled ? "" : "hover:-translate-y-0.5"}`}
+      className={`relative flex-shrink-0 text-left rounded-2xl transition-all duration-200 ${disabled ? "" : "hover:scale-[1.03]"}`}
       style={{
-        padding: PLAYER_CARD_PAD,
+        width: PLAYER_CARD_W, padding: PLAYER_CARD_PAD,
         background: PLAYER_CARD_BG, border: `2px solid ${selected ? "#22c55e" : PLAYER_CARD_BORDER}`,
-        boxShadow: selected ? "0 0 0 3px rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35)" : "0 0 0 1px rgba(124,92,255,0.08), 0 6px 16px rgba(4,3,15,0.4)",
+        boxShadow: selected ? "0 0 0 3px rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35), 0 4px 14px rgba(0,0,0,0.25)" : "0 4px 14px rgba(0,0,0,0.25)",
+        transform: selected ? "scale(1.035)" : "scale(1)",
+        transitionTimingFunction: "cubic-bezier(.2,.8,.2,1)",
         opacity: disabled ? 0.35 : 1, cursor: disabled ? "not-allowed" : "pointer",
       }}>
       {badge && (
         <span className="absolute z-10 font-black rounded-full"
-          style={{ top: 6, right: 6, background: "#22c55e", color: "#04150a", fontSize: 8, padding: "2px 6px" }}>
+          style={{ top: 8, right: 8, background: "#22c55e", color: "#04150a", fontSize: 9, padding: "2px 7px", boxShadow: "0 2px 6px rgba(0,0,0,0.35)" }}>
           {badge}
         </span>
       )}
-      {/* header row: avatar + name side-by-side, not stacked -- shorter
-          card, better information density in a grid at 1920px */}
-      <div className="flex items-center gap-2.5" style={{ marginBottom: PLAYER_CARD_GAP }}>
-        <SquareAvatar avatarId={player.avatarId ?? DEFAULT_AVATAR_ID} avatarUrl={player.avatarUrl} size={PLAYER_CARD_AVATAR} />
-        <div className="min-w-0 flex-1 font-black truncate" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_NAME_FONT }}>{player.name}</div>
-      </div>
-      {/* single stat row, four compact chips instead of a boxed 2x2 well */}
-      <div className="grid grid-cols-4 gap-1">
-        <MiniStat label="胜率" value={`${stats.winRate}%`} color={STAT_PILL_COLORS.winRate} />
-        <MiniStat label="冠军" value={stats.champion} color={STAT_PILL_COLORS.champion} />
-        <MiniStat label="位置" value={stats.position} color={STAT_PILL_COLORS.position} />
-        <MiniStat label="分数" value={stats.rating} color={STAT_PILL_COLORS.rating} />
+      <SquareAvatar avatarId={player.avatarId ?? DEFAULT_AVATAR_ID} avatarUrl={player.avatarUrl} size={PLAYER_CARD_AVATAR} />
+      <div className="text-center font-black truncate" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_NAME_FONT, marginTop: PLAYER_CARD_GAP }}>{player.name}</div>
+      <div className="rounded-xl" style={{ background: PLAYER_CARD_STAT_BG, border: `1px solid ${PLAYER_CARD_STAT_BORDER}`, padding: PLAYER_CARD_STAT_PAD, marginTop: PLAYER_CARD_GAP }}>
+        <div className="grid grid-cols-2" style={{ rowGap: PLAYER_CARD_GAP, columnGap: PLAYER_CARD_PAD * 0.4 }}>
+          <StatPill label="胜率" value={`${stats.winRate}%`} color={STAT_PILL_COLORS.winRate} />
+          <StatPill label="冠军" value={stats.champion} color={STAT_PILL_COLORS.champion} />
+          <StatPill label="擅长位置" value={stats.position} color={STAT_PILL_COLORS.position} />
+          <StatPill label="天梯分" value={stats.rating} color={STAT_PILL_COLORS.rating} />
+        </div>
       </div>
     </button>
-  );
-}
-
-function MiniStat({ label, value, color }) {
-  return (
-    <div className="flex flex-col items-center gap-0.5 rounded-md py-1" style={{ background: PLAYER_CARD_STAT_BG, border: `1px solid ${PLAYER_CARD_STAT_BORDER}` }}>
-      <span className="font-black leading-none" style={{ color, fontSize: PLAYER_CARD_VALUE_FONT * 0.78 }}>{value}</span>
-      <span className="leading-none opacity-60" style={{ color: PLAYER_CARD_TEXT, fontSize: PLAYER_CARD_LABEL_FONT * 0.9 }}>{label}</span>
-    </div>
   );
 }
 
@@ -368,10 +350,10 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&display=swap');
       .font-display { font-family: 'Orbitron', sans-serif; }
-      ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #06070F; }
-      ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7C5CFF, #22E5FF); border-radius: 4px; }
+      ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #060a0a; }
+      ::-webkit-scrollbar-thumb { background: ${TEAL_DIM}; border-radius: 4px; }
       input::placeholder { color: rgba(255,255,255,0.2); }
-      input:focus { outline: none; border-color: ${TEAL} !important; box-shadow: 0 0 10px rgba(34,229,255,0.4); }
+      input:focus { outline: none; border-color: ${TEAL} !important; box-shadow: 0 0 10px rgba(0,245,212,0.4); }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -380,7 +362,7 @@ function GlobalStyle() {
         position: fixed; z-index: 999; display: flex; align-items: center; gap: 8px;
         padding: 4px 10px 4px 4px; border-radius: 10px;
         background: rgba(10,20,20,0.95); border: 1px solid ${TEAL};
-        box-shadow: 0 0 16px rgba(34,229,255,0.5);
+        box-shadow: 0 0 16px rgba(0,245,212,0.5);
         pointer-events: none; will-change: transform, opacity;
       }
       .df-ghost-avatar {
@@ -391,7 +373,7 @@ function GlobalStyle() {
       .df-ghost-name { font-size: 11.5px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       @keyframes dfSettle { 0% { transform: scale(1.15); } 100% { transform: scale(1); } }
       .df-settle { animation: dfSettle 0.2s ease-out; }
-      @keyframes dfHit { 0% { box-shadow: 0 0 0 0 rgba(34,229,255,0.5); } 100% { box-shadow: 0 0 0 12px rgba(34,229,255,0); } }
+      @keyframes dfHit { 0% { box-shadow: 0 0 0 0 rgba(0,245,212,0.5); } 100% { box-shadow: 0 0 0 12px rgba(0,245,212,0); } }
       .df-hit { animation: dfHit 0.45s ease-out; }
     `}</style>
   );
@@ -406,13 +388,13 @@ function DraftSequenceStrip({ customSnakeOrder, pickIndex, roundOrders, draftFin
           const isRoundStart = idx === 0 || pick.round !== customSnakeOrder[idx-1].round;
           return (
             <React.Fragment key={idx}>
-              {isRoundStart && idx > 0 && <div className="flex items-center mx-1"><div className="w-px h-7" style={{ background: "rgba(34,229,255,0.2)" }} /></div>}
+              {isRoundStart && idx > 0 && <div className="flex items-center mx-1"><div className="w-px h-7" style={{ background: "rgba(0,245,212,0.2)" }} /></div>}
               <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                <span className="text-[7px] font-black tracking-wider" style={{ color: isRoundStart ? "rgba(34,229,255,0.45)" : "transparent" }}>{isRoundStart ? `R${pick.round}` : "."}</span>
+                <span className="text-[7px] font-black tracking-wider" style={{ color: isRoundStart ? "rgba(0,245,212,0.45)" : "transparent" }}>{isRoundStart ? `R${pick.round}` : "."}</span>
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black transition-all duration-200"
                   style={isCurrent ? { background: "rgba(74,222,128,0.18)", color: "#4ade80", border: "1.5px solid rgba(74,222,128,0.75)", boxShadow: "0 0 10px rgba(74,222,128,0.8)", transform: "scale(1.25)" }
                     : isPast ? { background: "transparent", color: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.04)" }
-                    : { background: "rgba(34,229,255,0.03)", color: "rgba(34,229,255,0.3)", border: "1px solid rgba(34,229,255,0.1)" }}>
+                    : { background: "rgba(0,245,212,0.03)", color: "rgba(0,245,212,0.3)", border: "1px solid rgba(0,245,212,0.1)" }}>
                   {pick.teamIdx+1}
                 </div>
               </div>
@@ -489,12 +471,6 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const [hiddenKeys, setHiddenKeys] = useState(() => new Set());
   const flightsMeta = useRef({});
   const startedFlights = useRef(new Set());
-  // Every currently-in-flight clone + its live Animation object, purely so
-  // they can be torn down cleanly if this component ever unmounts while
-  // one is still running (see the cleanup effect below `runFlight`) --
-  // normal completion (settle()) already removes its own entry here, same
-  // as it already does for flightsMeta/startedFlights.
-  const activeFlights = useRef(new Map());
 
   const beginFlight = (key, meta) => {
     if (!meta || !meta.srcRect) return;
@@ -538,7 +514,6 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
       if (settled) return;
       settled = true;
       clone.remove();
-      activeFlights.current.delete(key);
       reveal();
       cleanupRefs();
       destEl.classList.add("df-settle");
@@ -566,34 +541,9 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
     );
     anim.onfinish = settle;
     anim.oncancel = settle;
-    activeFlights.current.set(key, { clone, anim });
     // Hard safety net in case the animation lifecycle is ever interrupted.
     setTimeout(settle, 700);
   };
-
-  // Defense in depth alongside `readyToProceed` above: if this component
-  // ever unmounts while a flight is still active (readyToProceed is meant
-  // to make that unreachable via 进入最终对阵 specifically, but this stays
-  // safe regardless of *why* an unmount happened to race a flight) settle
-  // every one immediately rather than leaving a raw `document.body`-
-  // attached clone element and a live Web Animations API `Animation`
-  // object dangling with callbacks that reach back into this now-gone
-  // component's closures -- `settle()`'s own guard (`if (settled) return`)
-  // makes this safe to call even if the animation's own `onfinish` fires
-  // around the same moment. `anim.cancel()` itself is wrapped in try/catch
-  // since cancelling an animation whose target has already left the
-  // document is exactly the kind of call that can throw inside the
-  // browser's own WAAPI implementation -- the goal here is a clean
-  // teardown, not one more uncaught exception during it.
-  useEffect(() => {
-    return () => {
-      activeFlights.current.forEach(({ clone, anim }) => {
-        try { anim.cancel(); } catch { /* target may already be detached */ }
-        clone.remove();
-      });
-      activeFlights.current.clear();
-    };
-  }, []);
 
   useLayoutEffect(() => {
     hiddenKeys.forEach((key) => {
@@ -706,82 +656,25 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const { roundOrderValid, customSnakeOrder, allCaptainsAssigned, draftFinished, currentPick, activeTeamIdx, roundLabel } = meta;
   const allDrafted = draftFinished;
 
-  // 进入最终对阵 must wait for `hiddenKeys` to be empty too, not just
-  // `allDrafted` -- this is the actual root cause of a real, reported bug
-  // (`sync_draft_state` 500s, a 404, and an uncaught
-  // "Cannot read properties of undefined (reading 'startTime')" the
-  // instant this button was clicked). `allDrafted` flips true the instant
-  // the *last* pick commits -- the same render the last flying-card
-  // animation *starts*, up to ~550-700ms before it actually finishes (see
-  // runFlight below). Clicking 进入最终对阵 during that window used to be
-  // possible, and its success handler flips `stage` to 'final'
-  // synchronously -- which unmounts this entire `DraftArena` component,
-  // including the still-live flight animation: a raw DOM clone appended
-  // straight to `document.body` (outside React's tree, so unmounting
-  // doesn't clean it up), a still-running Web Animations API `Animation`
-  // object, and a pending `settle()` callback that reaches back into a
-  // now-unmounted component's closures. Ripping a WAAPI animation's
-  // context out mid-flight like that is exactly the kind of thing that
-  // throws that "startTime" TypeError. Gating the button on
-  // `hiddenKeys.size === 0` means the click that unmounts this component
-  // can only ever happen once every flight has already cleanly finished
-  // and cleaned up after itself via its own `settle()` -- see the
-  // matching unmount-safety effect further down for the defense-in-depth
-  // half of this fix.
-  const readyToProceed = allDrafted && hiddenKeys.size === 0;
-
-  // "Whose turn is it" -- the *visual* team highlight (TeamCard's glow,
-  // the header's "队 N 的选人回合" name, and scrolling that team into
-  // view) intentionally lags one step behind `activeTeamIdx` above during
-  // the teammate/player draft: `activeTeamIdx` is derived straight from
-  // `pickIndex`, which already advances to the next team the instant a
-  // pick commits (pickPlayer(), same render as the flying-card animation
-  // starts) -- so without this, the next team's box started glowing
-  // before the current pick's card had finished flying into its slot, a
-  // real, reported bug. `hiddenKeys` already tracks exactly which flights
-  // (by key, "slot:teamIdx:slotIdx") are still mid-animation -- so: keep
-  // `visualActiveTeamIdx` synced to the real `activeTeamIdx` at all times
-  // EXCEPT while a teammate pick's flight is still in `hiddenKeys`: hold
-  // it at whatever it last was (the team that just picked) until that
-  // flight's own `settle()` clears its key, then this effect re-fires and
-  // catches up to the (by-then-correct) real `activeTeamIdx`. Captain
-  // assignment is unaffected either way -- `activeTeamIdx` is always -1
-  // during that phase (see computeDraftMeta above; there's no sequential
-  // "whose turn" there, any unfilled team is a valid click target), and
-  // captain flights use `cap:` keys, which this deliberately ignores.
-  // Game logic (which slot a pick fills, the snake order, progress %)
-  // still reads the real, immediate `activeTeamIdx`/`pickIndex` elsewhere
-  // in this file, completely unaffected -- only these display-only
-  // "whose turn" indicators wait for the animation.
-  const [visualActiveTeamIdx, setVisualActiveTeamIdx] = useState(activeTeamIdx);
+  // Keep the current picker's team card in view. Once the team panel is
+  // tall enough to need its own internal scrolling (see the container
+  // below), nothing else would otherwise bring a newly-active team back
+  // into view when the turn passes to it -- it could sit scrolled off-
+  // screen indefinitely, and any pick that lands on it would fly its card
+  // to a destination the user can't see. TeamCard carries scroll-m-8 (see
+  // below) so scrollIntoView leaves the same 32px of clearance around the
+  // card that its container's own padding already guarantees at rest --
+  // block:"nearest" alone only guarantees the card's bare box is visible
+  // and can flush it right against the container's edge, which wouldn't
+  // leave room for the glow's box-shadow reach beyond that box. This only
+  // scrolls within the card's own overflow-y-auto ancestor (see below);
+  // it never touches the browser's own scroll position, since nothing
+  // above that container is actually scrollable on desktop.
   useEffect(() => {
-    const slotFlightPending = [...hiddenKeys].some((k) => k.startsWith("slot:"));
-    if (!slotFlightPending) setVisualActiveTeamIdx(activeTeamIdx);
-  }, [activeTeamIdx, hiddenKeys]);
-
-  // Keep the current picker's team card in view. The team strip is a
-  // single horizontal line (see the container below) that can need its
-  // own scrolling once there are enough teams to overflow it -- nothing
-  // else would otherwise bring a newly-active team back into view when
-  // the turn passes to it -- it could sit scrolled off to the side
-  // indefinitely, and any pick that lands on it would fly its card to a
-  // destination the user can't see. TeamCard carries scroll-m-8 so
-  // scrollIntoView leaves the same clearance around the card that its
-  // container's own padding already guarantees at rest -- inline:"nearest"
-  // alone only guarantees the card's bare box is visible and can flush it
-  // right against the strip's edge, which wouldn't leave room for the
-  // glow's box-shadow reach beyond that box. This only scrolls within the
-  // strip's own overflow-x-auto ancestor (see below); it never touches
-  // the browser's own scroll position, since nothing above that container
-  // is actually scrollable on desktop. Scrolls to `visualActiveTeamIdx`,
-  // not the real `activeTeamIdx`, for the same reason as above -- jumping
-  // the viewport to the next team before its box actually lights up would
-  // be its own version of the same "got ahead of the animation" bug.
-  useEffect(() => {
-    if (visualActiveTeamIdx < 0) return;
-    const el = document.querySelector(`[data-team-panel="${visualActiveTeamIdx}"]`);
+    if (activeTeamIdx < 0) return;
+    const el = document.querySelector(`[data-team-panel="${activeTeamIdx}"]`);
     if (el) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-  }, [visualActiveTeamIdx]);
+  }, [activeTeamIdx]);
 
   const saveSnapshot = () => ({ teams: JSON.parse(JSON.stringify(teams)), pool: pool ? [...pool] : null, captainCandidates: [...captainCandidates], selectedCaptain, pickIndex, draftPhase, lastPick });
 
@@ -869,178 +762,210 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 
   if (teams.length === 0) return <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>;
 
-  // Team overview strip (战队总览) -- one shared block for both phases so
-  // there's exactly one place that renders it, not two. Captain
-  // assignment keeps it above the pool (团队卡片 is literally what you
-  // click during that phase); Teammate draft places it *below* the Draft
-  // Order strip instead, at the user's explicit request -- see where each
-  // is used in the BODY section below.
-  const teamOverviewStrip = (
-    <div className="shrink-0 border-b border-panel-line/80 px-4 sm:px-5 lg:px-6 py-3.5">
-      <p className="eyebrow px-1">战队总览 · {teams.length}</p>
-      {/* pt-3 here (in place of the eyebrow's old mb-2) puts headroom
-          *inside* this overflow-x-auto row's own clip box -- setting
-          overflow-x without overflow-y forces the used value of
-          overflow-y to auto too (per the CSS overflow spec), so without
-          this the row clips TeamCard's isActive glow and its df-hit
-          assignment-ripple flush against its own top edge. */}
-      <div className="flex flex-row gap-2.5 overflow-x-auto pb-1 pt-3">
-        {teams.map((team, i) => (
-          <div key={i} className="shrink-0" style={{ width: 220 }}>
-            <TeamCard team={team} activeTeamIdx={visualActiveTeamIdx} teamIdx={i}
-              assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
-              onAssignCaptain={handleTeamSlotClick}
-              hiddenKeys={hiddenKeys} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
   return (
-    <div className="w-full flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
-      {/* ═══ STATUS STRIP — flush under the shared AppShell bar, not a
-          floating card. This is the "what's happening right now" line:
-          phase → who's on the clock → progress → the one action that
-          matters. Back/exit lives in AppShell now (backAction), so this
-          strip only carries draft-specific controls (Undo, Proceed). ═══ */}
-      <div className="shrink-0 border-b border-panel-line/80 bg-void/30 backdrop-blur-sm px-5 sm:px-8 h-20 flex items-center gap-6">
-        <div className="flex-1 min-w-0 flex items-center gap-4">
-          <span
-            className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full tracking-widest"
-            style={{
-              background: draftPhase === "captain" ? "rgba(34,197,94,0.12)" : "rgba(34,229,255,0.12)",
-              color: draftPhase === "captain" ? "#22c55e" : TEAL,
-              border: `1px solid ${draftPhase === "captain" ? "rgba(34,197,94,0.4)" : TEAL + "55"}`,
-            }}
-          >
-            {draftPhase === "captain" ? "第一阶段 · 队长分配" : "第二阶段 · 队员选秀"}
-          </span>
-          <div className="min-w-0">
-            {draftPhase === "captain" ? (
-              <GlowHeading size="text-xl" className="truncate block">
-                {effectiveSelectedCaptain ? `将 ${effectiveSelectedCaptain.name.toUpperCase()} 分配到战队` : "选择一名队长"}
-              </GlowHeading>
-            ) : allDrafted ? (
-              <GlowHeading size="text-xl" className="truncate block">全部选手已选完 🏆</GlowHeading>
-            ) : (
-              <GlowHeading size="text-xl" className="truncate block">{teams[visualActiveTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合</GlowHeading>
+    <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-4 lg:overflow-hidden">
+      <PanelFrame className="shrink-0" style={{ height: HEADER_H, boxSizing: "border-box", overflow: "hidden" }}>
+        <div className="h-full flex items-stretch">
+          {/* Nav column -- same back/undo handlers, disabled state, and
+              history-count badge as before, just restyled as a compact
+              ghost-button pair instead of one large button + one chip.
+              Undo is Admin-only -- not rendered at all (not merely
+              disabled) for non-staff viewers (e.g. the Spectator Page,
+              Phase 6). The back button itself is controlled separately
+              via `showBackButton` (defaults to `isStaff`, so admin usage
+              here is unchanged) -- Phase 6's Spectator Page sets it to
+              `true` even though isStaff=false, with its own `backLabel`,
+              so its exit button sits in this exact same position/style
+              as the admin's, instead of a separate page-level header. */}
+          {(showBackButton || isStaff) && (
+            <div className="flex-shrink-0 flex flex-col justify-center gap-2.5 px-5" style={{ borderRight: "1px solid rgba(0,245,212,0.16)" }}>
+              {showBackButton && (
+                <button onClick={onBack}
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
+                  style={{ background: "rgba(0,245,212,0.05)", borderColor: "rgba(0,245,212,0.28)", color: TEAL_SOFT }}>
+                  {backLabel}
+                </button>
+              )}
+              {isStaff && (
+                <button onClick={undoLastPick} disabled={draftHistory.length === 0}
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
+                  style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgba(0,0,0,0.2)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgba(255,255,255,0.06)", color: draftHistory.length > 0 ? "#fbbf24" : "rgba(255,255,255,0.15)", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer", boxShadow: draftHistory.length > 0 ? "0 0 10px rgba(251,191,36,0.2)" : "none" }}>
+                  ↩ 撤销上一次选择
+                  {draftHistory.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Masthead -- tournament name (teal glow, the event's identity)
+              stacked above the phase pill + current-turn headline (white
+              glow, the primary focus), same data/branches as before. */}
+          <div className="flex-1 min-w-0 flex flex-col justify-center px-8 gap-1.5">
+            {tournamentName && (
+              <div className="font-display font-extrabold text-2xl truncate"
+                style={{ color: TEAL, textShadow: "0 0 14px rgba(0,245,212,0.45), 0 0 34px rgba(0,245,212,0.2)" }}>
+                {tournamentName}
+              </div>
             )}
-            <div className="text-[10.5px] text-white/40 truncate mt-0.5">
+            <div className="flex flex-col items-start gap-2 min-w-0">
+              <span
+                className="text-[11px] font-black px-3 py-0.5 rounded-full tracking-widest"
+                style={{
+                  background:
+                    draftPhase === "captain"
+                      ? "rgba(34,197,94,0.12)"
+                      : "rgba(0,245,212,0.12)",
+                  color: draftPhase === "captain" ? "#22c55e" : TEAL,
+                  border: `1px solid ${
+                    draftPhase === "captain"
+                      ? "rgba(34,197,94,0.4)"
+                      : TEAL + "55"
+                  }`,
+                }}
+              >
+                {draftPhase === "captain"
+                  ? "第一阶段 —— 队长分配"
+                  : "第二阶段 —— 队员选秀"}
+              </span>
+
+              {draftPhase === "captain" ? (
+                <GlowHeading size="text-3xl" className="font-display">
+                  {effectiveSelectedCaptain
+                    ? `将 ${effectiveSelectedCaptain.name.toUpperCase()} 分配到战队`
+                    : "选择一名队长"}
+                </GlowHeading>
+              ) : allDrafted ? (
+                <GlowHeading size="text-3xl" className="font-display">
+                  全部选手已选完 🏆
+                </GlowHeading>
+              ) : (
+                <GlowHeading size="text-3xl" className="font-display">
+                  {teams[activeTeamIdx]?.captain?.name?.toUpperCase()} 的选人回合
+                </GlowHeading>
+              )}
+            </div>
+            <div className="text-[11px] text-white/40 truncate">
               {draftPhase === "captain"
-                ? (effectiveSelectedCaptain ? "现在点击上方一张空战队卡片 →" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
-                : (!allDrafted && <>第{roundLabel}轮，共{roundOrders.length}轮 · 战队{visualActiveTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</>)}
+                ? (effectiveSelectedCaptain ? "现在点击下方一张空战队卡片（点击整张卡片即可）→" : `剩余${captainCandidates.length}人 · 已分配${8-captainCandidates.length}/8`)
+                : (!allDrafted && <>第{roundLabel}轮，共{roundOrders.length}轮 · 战队{activeTeamIdx+1} · 第{pickIndex+1}/{customSnakeOrder.length}顺位</>)}
             </div>
           </div>
-        </div>
 
-        {isStaff && (
-          <button onClick={undoLastPick} disabled={draftHistory.length === 0}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
-            style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgba(0,0,0,0.2)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgba(255,255,255,0.06)", color: draftHistory.length > 0 ? "#fbbf24" : "rgba(255,255,255,0.15)", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer" }}>
-            ↩ 撤销
-            {draftHistory.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
-          </button>
+          {/* Progress + final-bracket action -- same two handlers/values
+              feeding a single ring (see headerProgressPct above) instead
+              of two separate bars, and the same onProceed/disabled logic
+              on the button, restyled to match the ghost-button language
+              used everywhere else in this header. */}
+          <div className="flex-shrink-0 flex items-center gap-6 px-8" style={{ borderLeft: "1px solid rgba(0,245,212,0.16)" }}>
+            <div className="relative flex-shrink-0" style={{ width: 78, height: 78 }}>
+              <svg width="78" height="78" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="39" cy="39" r={HEADER_RING_R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
+                <circle cx="39" cy="39" r={HEADER_RING_R} fill="none" stroke={headerRingColor} strokeWidth="7"
+                  strokeDasharray={HEADER_RING_CIRC} strokeDashoffset={headerRingOffset} strokeLinecap="round"
+                  style={{ transition: "stroke-dashoffset 500ms" }} />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center font-display font-bold" style={{ color: headerRingColor }}>
+                <span className="text-base leading-none">{Math.round(headerProgressPct)}%</span>
+                <span className="text-[9px] font-semibold text-white/40 tracking-wider mt-0.5">进度</span>
+              </div>
+            </div>
+            {isStaff && (
+              <button onClick={onProceed} disabled={!allDrafted}
+                className="font-bold text-sm px-5 py-2.5 rounded-xl border whitespace-nowrap transition-all"
+                style={{ background: "rgba(0,245,212,0.07)", borderColor: allDrafted ? TEAL : "rgba(255,255,255,0.08)", color: allDrafted ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: allDrafted ? "0 0 18px rgba(0,245,212,0.28)" : "none", cursor: allDrafted ? "pointer" : "not-allowed" }}>
+                进入最终对阵 →
+              </button>
+            )}
+          </div>
+        </div>
+      </PanelFrame>
+
+      {/* Team panels (top) + candidate/draft pool (bottom) stack vertically,
+          sharing the rest of the browser height on desktop. Each section
+          scrolls internally on its own (overflow-y-auto on its own content
+          area) instead of the whole page growing taller, per the Full
+          Browser Layout Standard. Below lg, this falls back to a plain
+          stacked column with normal page scroll, same as the rest of the
+          project's main pages. */}
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
+        {draftPhase === "teammate" && (
+          <div className="shrink-0">
+            <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
+          </div>
         )}
 
-        <div className="shrink-0 flex items-center gap-4">
-          <div className="relative" style={{ width: 52, height: 52 }}>
-            <svg width="52" height="52" style={{ transform: "rotate(-90deg)" }}>
-              <circle cx="26" cy="26" r={HEADER_RING_R * 0.7} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
-              <circle cx="26" cy="26" r={HEADER_RING_R * 0.7} fill="none" stroke={headerRingColor} strokeWidth="5"
-                strokeDasharray={HEADER_RING_CIRC * 0.7} strokeDashoffset={headerRingOffset * 0.7} strokeLinecap="round"
-                style={{ transition: "stroke-dashoffset 500ms" }} />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center font-display font-bold text-[11px]" style={{ color: headerRingColor }}>
-              {Math.round(headerProgressPct)}%
-            </div>
-          </div>
-          {isStaff && draftPhase === "captain" && (
-            <button onClick={startTeammateDraft} disabled={!(allCaptainsAssigned && roundOrderValid.every(Boolean))}
-              className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
-              style={{ background: "rgba(34,229,255,0.07)", borderColor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? TEAL : "rgba(255,255,255,0.08)", color: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "pointer" : "not-allowed" }}>
-              开始队员选秀 →
-            </button>
-          )}
-          {isStaff && draftPhase === "teammate" && (
-            <button onClick={onProceed} disabled={!readyToProceed}
-              className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
-              style={{ background: "rgba(34,229,255,0.07)", borderColor: readyToProceed ? TEAL : "rgba(255,255,255,0.08)", color: readyToProceed ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: readyToProceed ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: readyToProceed ? "pointer" : "not-allowed" }}>
-              进入最终对阵 →
-            </button>
-          )}
-        </div>
-      </div>
+        {/* Sized to its own content (no forced flex-basis): with only
+            flex-shrink + min-h-0 + max-height set, this box is exactly as
+            tall as the team-card row(s) actually are. It only shrinks (and
+            only then does overflow-y-auto start a scrollbar) once real
+            content — enough rows of teams — doesn't fit in the space below
+            the header/sequence strip; a single row never triggers a
+            scrollbar or leaves unused space below it. The lg:max-h-[55%]
+            cap just keeps a pathological number of rows from squeezing the
+            candidate/draft pool panel below it down to nothing.
 
-      {/* ═══ BODY — team overview strip + Draft Order strip + the
-          draftable pool. Both phases share the exact same
-          `teamOverviewStrip` JSX (declared once, above) -- only *where*
-          it's placed differs, not what it renders. Captain assignment:
-          战队总览 sits directly above 队长候选池 (team cards are literally
-          what you click that phase). Teammate draft: Draft Order
-          (`DraftSequenceStrip`) comes first, 战队总览 second, 待选选手
-          last -- confirmed against an actual screenshot of the rendered
-          page, so if this ever looks unswapped again, check whether a
-          stale build/cache is being viewed before changing this code. ═══ */}
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
-        {draftPhase === "captain" && teamOverviewStrip}
+            p-8 is one fixed value for both phases (not phase-conditional
+            like an earlier pass of this fix) so Captain and Player Draft
+            look the same. It's sized for the bigger of the two glows this
+            section can ever paint -- the Player Draft phase's current-
+            picker glow (2px ring + 26px blur ≈ 28px reach) -- which also
+            comfortably covers the Captain phase's smaller canAssign glow
+            (2px ring + 18px blur ≈ 20px reach), so one value is safe for
+            both with no clipping either way. items-start stops the default
+            flex cross-axis stretch from ever growing a sibling to match
+            another card's box (see PlayerStatCard below for why that
+            matters). */}
+        <div className="lg:max-h-[55%] lg:shrink lg:min-h-0 overflow-y-auto pt-2 px-8 pb-5">
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-6 pb-1">
+            {teams.map((team, i) => (
+              <TeamCard key={i} team={team} activeTeamIdx={activeTeamIdx} teamIdx={i}
+                assignable={draftPhase === "captain" && !!effectiveSelectedCaptain}
+                onAssignCaptain={handleTeamSlotClick}
+                hiddenKeys={hiddenKeys} />
+            ))}
+          </div>
+        </div>
 
         <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden">
-          {draftPhase === "teammate" && (
-            <div className="shrink-0 px-5 sm:px-6 pt-3">
-              <DraftSequenceStrip customSnakeOrder={customSnakeOrder} pickIndex={pickIndex} roundOrders={roundOrders} draftFinished={allDrafted} />
-            </div>
-          )}
-
-          {draftPhase === "teammate" && teamOverviewStrip}
-
           {draftPhase === "captain" && (
-            <div className="flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden px-5 sm:px-6 py-4">
-              {/* mb-3 moved off this header and onto the scroll container
-                  below as pt-3 (same 12px total gap) so that 12px sits
-                  *inside* the scroll container's own clip box instead of
-                  outside it -- giving PlayerStatCard's hover/selected glow
-                  room to bleed upward without being clipped by the
-                  container's own top edge (its first row otherwise sits
-                  flush against it). */}
-              <div className="flex items-center justify-between shrink-0">
-                <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: "#22c55e" }}>队长候选池</h2>
-                <span className="text-xs font-mono text-white/30">{captainCandidates.length} 人未分配</span>
-              </div>
-              <div className="flex-1 lg:min-h-0 overflow-y-auto pt-3">
-                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+            <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
+              <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: "#22c55e" }}>队长候选池（{captainCandidates.length}人未分配）</h2>
+              <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
+                <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
                   {captainCandidates.map((c) => (
                     <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={effectiveSelectedCaptain?.id === c.id} badge="队长" />
                   ))}
-                  {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center col-span-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
+                  {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center w-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
                 </div>
               </div>
-            </div>
+              {isStaff && allCaptainsAssigned && (
+                <button onClick={startTeammateDraft} disabled={!roundOrderValid.every(Boolean)}
+                  className="w-full mt-4 py-3 rounded-xl font-extrabold tracking-widest text-sm uppercase border transition-all shrink-0"
+                  style={{ background: roundOrderValid.every(Boolean) ? `linear-gradient(to bottom,${TEAL},#00c2a8)` : "rgba(0,0,0,0.3)", color: roundOrderValid.every(Boolean) ? "#000" : "rgba(255,255,255,0.2)", borderColor: roundOrderValid.every(Boolean) ? TEAL : "rgba(255,255,255,0.08)", boxShadow: roundOrderValid.every(Boolean) ? "0 0 22px rgba(0,245,212,0.65)" : "none", cursor: roundOrderValid.every(Boolean) ? "pointer" : "not-allowed" }}>
+                  {roundOrderValid.every(Boolean) ? "🚀 锁定并开始队员选秀 →" : "⚠ 请先修正轮次顺序"}
+                </button>
+              )}
+            </PanelFrame>
           )}
 
           {draftPhase === "teammate" && (
-            <div className="flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden px-5 sm:px-6 py-4">
-              {/* Same mb-3-to-pt-3 headroom fix as the captain pool grid
-                  above -- see the comment there. */}
-              <div className="flex items-center justify-between shrink-0">
-                <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>待选选手</h2>
-                <span className="text-xs font-mono text-white/30">{pool?.length ?? 0} 人待选</span>
-              </div>
+            <PanelFrame className="p-4 flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
+              <h2 className="shrink-0 font-display text-sm font-bold tracking-widest mb-3" style={{ color: TEAL }}>待选选手（{pool?.length ?? 0}）</h2>
               {pool && pool.length > 0 ? (
-                <div className="flex-1 lg:min-h-0 overflow-y-auto pt-3">
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+                <div className="flex-1 lg:min-h-0 overflow-y-auto p-8">
+                  <div className="flex flex-wrap items-start gap-x-4 gap-y-4">
                     {pool.map((p) => (
                       <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
                     ))}
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center py-10 text-white/30 pt-3">
+                <div className="flex-1 flex flex-col items-center justify-center py-10 text-white/30">
                   <div className="text-4xl mb-2">🏆</div>
                   <div className="font-display text-sm tracking-widest">选秀完成</div>
                 </div>
               )}
-            </div>
+            </PanelFrame>
           )}
         </div>
       </div>
@@ -1049,16 +974,60 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   FINAL MATCHUPS STAGE — "Broadcast Bracket Reveal"
+   FINAL MATCHUPS STAGE — "01 冠军海报版" (Movie Poster Premiere)
 
-   Ground-up visual/interaction redesign (see the fuller comment directly
-   above the FinalMatchupsStage component below for the full rationale
-   and composition). The data/logic layer this stage renders is entirely
-   unchanged: `teams`/`matchups` props, kept live via this project's
-   existing Realtime subscription, and the same RPC-backed mutation
-   functions (createManualMatchup / rollTournamentMatchupsPool /
-   removeTournamentMatchup / resetTournamentMatchups / endTournament)
-   imported at the top of this file.
+   This is a DIRECT COPY of the HTML / CSS / JS for concept "01 冠军海报版"
+   from final_matchups_concept3_variants_v2.html -- not a React
+   reimplementation of it. The markup below (FMP_HTML) is the reference
+   file's own `.stage` innerHTML for that concept, unedited. The stylesheet
+   below (FMP_CSS) is the reference's own shared `.pv-*` rules plus its
+   `.h1-*` / `[data-c="1"]` rules, unedited except that every selector is
+   prefixed with `#fmpStage` so it can't leak onto the rest of this app's
+   pages (the reference relied on a `[data-c="1"]` ancestor for the same
+   scoping job; `#fmpStage` does the same job here). The script below
+   (inside the mount effect) is the reference's own `makeModel`,
+   `initials`, `renderFilmstrip`, `renderCasting`, `runRollSequence`, and
+   its Variant-1 IIFE -- same functions, same variable names, same
+   choreography (3-2-1 countdown, 7-tick flicker at 150ms, 1200ms pause
+   between reveals, identical CSS class toggling for every animation).
+
+   The only edits are the minimum wiring called for so this can run inside
+   a React app against real data instead of the reference's standalone
+   demo page (see Section 8 below for the fuller backend rewrite this
+   grew into once real Random Pool / bye / lock-unlock-remove behavior
+   was required):
+     1. `TEAMS` (a hardcoded 8-name array in the reference) is built from
+        this tournament's real captain names instead.
+     2. `lockBtn` (定角锁定) still does exactly what the reference's own
+        button did -- hand-pick 2 teams, lock them together immediately --
+        just persisted via createManualMatchup() instead of only mutating
+        an in-memory model. `rollBtn` (开幕！随机生成剩余对阵) is now
+        scoped to whatever the admin has selected from the casting pool
+        (any number of teams, no cap) and calls the real
+        roll_tournament_matchups_pool RPC (see Section 8) -- the pool's
+        teams only, nothing else. `reset1` / `end1` call
+        resetTournamentMatchups / endTournament. `runRollSequence` itself
+        is never touched; only `computeRollPlan()` is told the server's
+        actual result (via `model._pendingPlan`, set right before it
+        runs) instead of computing its own client-only shuffle, since a
+        real roll must reveal what the server actually assigned.
+     3. A small amount of chrome the reference didn't need (it was never
+        embedded in a larger app, and its demo had no way to undo
+        anything): a plain "back" control and an error banner above the
+        poster, admin/developer-only visibility for the casting pool +
+        action bar, and (appended by script, not by editing FMP_HTML) a
+        lock/unlock + dissolve control pair on the featured spotlight
+        card plus a small pool-size hint. None of this touches the
+        poster's own markup (FMP_HTML), CSS (FMP_CSS), or the
+        countdown/flicker/reveal script -- all of it lives outside
+        `#fmpStage`'s copied nodes, styled by a separate FMP_WIRE_CSS
+        stylesheet.
+     4. A sync effect so that when another connected admin locks / rolls /
+        removes / resets / ends from their own client, this client's
+        `model` (and therefore the on-screen poster) picks it up via this
+        project's existing Realtime subscription (`matchups`/`teams`
+        props), the same live-sync guarantee every other stage in this
+        app already has.
    ════════════════════════════════════════════════════════════════════════ */
 
 function teamLabel(team) {
@@ -1066,512 +1035,840 @@ function teamLabel(team) {
 }
 
 // ---------------------------------------------------------------------
-// FINAL MATCHUPS -- "Broadcast Bracket Reveal"
-//
-// Ground-up redesign (visual + interaction only). The data/logic layer
-// is unchanged from the rest of the app's conventions: `teams` is an
-// array of {idx, captainName, captainAvatarUrl} snapshots and `matchups`
-// is an array of {a, b, locked} entries (a/b are team idx, b is null for
-// a bye), both persisted server-side and delivered as props (with
-// Realtime keeping every connected client in sync) exactly like every
-// other stage in this app. Every mutation still goes through the same
-// RPC-backed functions imported at the top of this file
-// (createManualMatchup / rollTournamentMatchupsPool /
-// removeTournamentMatchup / resetTournamentMatchups / endTournament) --
-// nothing about how matchups are generated, stored, loaded, or updated
-// has changed, only how that data is presented.
-//
-// Composition mirrors the rail + main pattern used by the Tournament
-// Lobby, Admin Dashboard, and Draft Arena: a team roster/pairing rail on
-// the left, a large "spotlight" reveal card as the dominant surface on
-// the right, with a filmstrip to browse every match already generated
-// and an action bar for staff. A slim status strip sits on top, flush
-// under the shared AppShell bar, the same idiom Draft Arena's own status
-// strip uses.
-//
-// The reveal itself is a new concept: a countdown -> name-shuffle
-// flicker -> settle sequence played inside the spotlight card using
-// plain React state (no manual DOM manipulation), reusing this file's
-// own Avatar component so captains render with their real photos, VS
-// duels instead of a gold movie-poster. Once every team has a matchup,
-// the spotlight becomes a clean scoreboard-style lineup grid.
+// FMP_CSS -- copied from final_matchups_concept3_variants_v2.html's
+// shared `.pv-*` block and its `.h1-*` / `[data-c="1"]` VARIANT 1 block,
+// verbatim, with every selector prefixed `#fmpStage ` for page-scoping
+// (see note above) and `[data-c="1"]` folded into `#fmpStage` itself
+// since this page only ever renders this one concept.
 // ---------------------------------------------------------------------
+const FMP_CSS = `
+#fmpStage{--ac:#e8b45a;--ac2:#8a6a1e;--ac-a:rgba(232,180,90,.45);--ac-a2:rgba(232,180,90,.12);}
 
-function computeUsedIdxs(matches) {
-  const s = new Set();
-  matches.forEach((m) => { if (m.a != null) s.add(m.a); if (m.b != null) s.add(m.b); });
-  return s;
-}
-function computeComplete(matches, teamsArr) {
-  if (matches.length === 0 || teamsArr.length === 0) return false;
-  const used = computeUsedIdxs(matches);
-  return teamsArr.every((t) => used.has(t.idx));
-}
-const fmpWait = (ms) => new Promise((r) => setTimeout(r, ms));
+#fmpStage .pv-filmstrip{margin-top:14px;height:78px;display:flex;gap:8px;align-items:center;overflow-x:auto;padding:4px 2px;}
+#fmpStage .pv-frame{flex-shrink:0;width:100px;height:64px;border-radius:7px;border:2px solid rgba(255,255,255,.1);background:rgba(255,255,255,.02);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:all .15s ease;}
+#fmpStage .pv-frame:hover{border-color:var(--ac);}
+#fmpStage .pv-frame.active{border-color:var(--ac);box-shadow:0 0 14px var(--ac-a,rgba(232,180,90,.4));}
+#fmpStage .pv-frame .fn{font-family:'Orbitron',sans-serif;font-size:9px;color:rgba(255,255,255,.35);}
+#fmpStage .pv-frame .ft{font-family:'Cinzel',serif;font-size:10px;color:#f3dfb0;text-align:center;padding:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:92px;}
+#fmpStage .pv-frame .fe{font-family:'Rajdhani',sans-serif;font-size:9px;color:rgba(255,255,255,.25);}
+#fmpStage .pv-casting{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px;min-height:66px;align-content:flex-start;}
+#fmpStage .pv-castcard{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.02);cursor:pointer;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12.5px;color:#fff;transition:all .15s ease;}
+#fmpStage .pv-castcard:hover{border-color:var(--ac);}
+#fmpStage .pv-castcard.sel{border-color:var(--ac);background:var(--ac-a2,rgba(232,180,90,.12));box-shadow:0 0 14px var(--ac-a,rgba(232,180,90,.35));}
+#fmpStage .pv-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
+#fmpStage .pv-btn{font-family:'Orbitron',sans-serif;font-weight:800;font-size:11px;letter-spacing:.03em;padding:12px 20px;border-radius:10px;border:1px solid;cursor:pointer;transition:all .16s ease;}
+#fmpStage .pv-btn:disabled{opacity:.3;cursor:not-allowed;}
+#fmpStage .pv-btn.gold{background:linear-gradient(135deg,var(--ac),var(--ac2,#8a6a1e));color:#160f04;border-color:transparent;}
+#fmpStage .pv-btn.ghost{background:rgba(255,255,255,.03);color:rgba(255,255,255,.6);border-color:rgba(255,255,255,.16);}
+#fmpStage .pv-btn.danger{background:rgba(255,59,59,.08);color:#ff6b6b;border-color:#5a1414;}
 
-const FMP_ANIM_CSS = `
-@keyframes fmpCountPulse{0%{transform:scale(2.3);opacity:0;}25%{opacity:1;}100%{transform:scale(.65);opacity:0;}}
-@keyframes fmpRingPulse{0%{transform:scale(.5);opacity:.9;}100%{transform:scale(1.7);opacity:0;}}
-@keyframes fmpFlicker{0%,100%{opacity:1;filter:none;}20%{opacity:.22;filter:blur(1.5px);}45%{opacity:1;filter:none;}70%{opacity:.32;filter:blur(2px) hue-rotate(25deg);}100%{opacity:1;filter:none;}}
-@keyframes fmpNameSlam{0%{opacity:0;letter-spacing:.6em;filter:blur(12px);transform:scale(.8);}55%{opacity:1;}100%{opacity:1;letter-spacing:normal;filter:blur(0);transform:scale(1);}}
-@keyframes fmpVsPop{0%{opacity:0;transform:scale(.3) rotate(-10deg);}55%{opacity:1;transform:scale(1.35) rotate(5deg);}100%{opacity:1;transform:scale(1) rotate(0deg);}}
-@keyframes fmpSlamIn{0%{opacity:0;transform:translateY(16px) scale(.94);filter:blur(6px);}60%{opacity:1;filter:blur(0);}100%{opacity:1;transform:translateY(0) scale(1);}}
-@keyframes fmpRowIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-@keyframes fmpFlashBurst{0%{opacity:0;}10%{opacity:1;}100%{opacity:0;}}
-@keyframes fmpFrameGlow{0%{box-shadow:0 0 0 0 rgba(124,92,255,0);}35%{box-shadow:0 0 70px rgba(124,92,255,.6),0 0 120px rgba(34,229,255,.32);}100%{box-shadow:0 0 0 0 rgba(124,92,255,0);}}
+#fmpStage .h1{position:relative;height:620px;border-radius:14px;overflow:hidden;border:1px solid rgba(232,180,90,.22);
+  background:radial-gradient(ellipse at 50% 0%, rgba(232,180,90,.14), transparent 55%), linear-gradient(180deg,#1a1206,#070502 75%);}
+#fmpStage .h1-rays{position:absolute;left:50%;top:-10%;width:900px;height:900px;transform:translateX(-50%);background:conic-gradient(from 0deg, transparent 0deg, rgba(232,180,90,.06) 6deg, transparent 14deg);animation:fmpH1Spin 40s linear infinite;}
+@keyframes fmpH1Spin{to{transform:translateX(-50%) rotate(360deg);}}
+#fmpStage .h1-grain{position:absolute;inset:0;opacity:.045;background-image:radial-gradient(circle,#fff 1px,transparent 1px);background-size:3px 3px;pointer-events:none;}
+#fmpStage .h1-title{position:relative;z-index:3;text-align:center;padding-top:38px;}
+#fmpStage .h1-t-orn{color:#e8b45a;font-size:14px;opacity:.6;letter-spacing:.5em;margin-bottom:6px;}
+#fmpStage .h1-t-main{font-family:'Cinzel',serif;font-weight:900;font-size:40px;color:#f3dfb0;letter-spacing:.12em;text-shadow:0 0 30px rgba(232,180,90,.5);}
+#fmpStage .h1-t-sub{margin-top:8px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12px;letter-spacing:.35em;color:rgba(232,180,90,.55);}
+#fmpStage .h1-badge{position:absolute;top:20px;right:20px;z-index:5;font-family:'Orbitron',sans-serif;font-size:10px;font-weight:800;letter-spacing:.08em;padding:6px 12px;border:1px solid #e8b45a;border-radius:5px;color:#f3dfb0;background:rgba(0,0,0,.4);}
+#fmpStage .h1-cast{position:relative;z-index:3;display:flex;justify-content:center;gap:14px;margin-top:34px;flex-wrap:wrap;padding:0 30px;}
+#fmpStage .h1-portrait{width:56px;height:56px;border-radius:50%;border:2px solid rgba(232,180,90,.3);background:radial-gradient(circle at 35% 30%, #3a2f16, #16110a 75%);display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-weight:700;font-size:19px;color:rgba(232,180,90,.5);transition:all .5s ease;}
+#fmpStage .h1-portrait.used{border-color:#e8b45a;color:#f3dfb0;box-shadow:0 0 16px rgba(232,180,90,.5);}
+#fmpStage .h1-portrait.dim{opacity:.3;}
+#fmpStage .h1-portrait.bye{border-color:#c9ced6;color:#eef1f4;box-shadow:0 0 16px rgba(201,206,214,.5);}
+#fmpStage .h1-feature{position:relative;z-index:3;height:230px;display:flex;flex-direction:column;align-items:center;justify-content:center;margin-top:14px;}
+#fmpStage .h1-feature-idle{font-family:'Rajdhani',sans-serif;font-size:13px;color:rgba(255,255,255,.3);letter-spacing:.05em;}
+#fmpStage .h1-feature-pair{display:none;flex-direction:column;align-items:center;gap:14px;}
+#fmpStage .h1-feature-pair.show{display:flex;}
+#fmpStage .h1-finale{display:none;flex-direction:column;align-items:center;gap:14px;width:100%;}
+#fmpStage .h1-finale.show{display:flex;animation:fmpH1FinaleIn 1s ease forwards;}
+@keyframes fmpH1FinaleIn{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:scale(1);}}
+#fmpStage .h1-finale-title{font-family:'Cinzel',serif;font-weight:900;font-size:20px;letter-spacing:.1em;color:#f3dfb0;text-shadow:0 0 20px rgba(232,180,90,.6);}
+#fmpStage .h1-finale-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px 26px;margin-top:6px;}
+#fmpStage .h1-finale-row{display:flex;align-items:center;gap:10px;font-family:'Cinzel',serif;font-size:13px;color:#f3dfb0;opacity:0;}
+#fmpStage .h1-finale-row.in{animation:fmpH1FrIn .5s ease forwards;}
+@keyframes fmpH1FrIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+#fmpStage .h1-finale-row .vs{color:#e8b45a;font-family:'Orbitron',sans-serif;font-size:10px;}
+#fmpStage .h1-finale-row .no{color:rgba(232,180,90,.5);font-family:'Orbitron',sans-serif;font-size:9px;width:26px;}
+#fmpStage .h1-fp-frame{position:relative;display:flex;align-items:center;justify-content:center;gap:30px;padding:22px 40px;border:1.5px solid #e8b45a;border-radius:8px;background:rgba(0,0,0,.3);box-shadow:0 0 40px rgba(232,180,90,.25), inset 0 0 30px rgba(232,180,90,.08);}
+#fmpStage .h1-fp-frame::before,#fmpStage .h1-fp-frame::after{content:'';position:absolute;width:14px;height:14px;border:2px solid #f3dfb0;}
+#fmpStage .h1-fp-frame::before{top:-2px;left:-2px;border-right:none;border-bottom:none;}
+#fmpStage .h1-fp-frame::after{bottom:-2px;right:-2px;border-left:none;border-top:none;}
+#fmpStage .h1-fp-name{font-family:'Cinzel',serif;font-weight:800;font-size:28px;color:#f3dfb0;opacity:0;text-shadow:0 0 20px rgba(232,180,90,.6);}
+#fmpStage .h1-fp-name.in{animation:fmpH1NameIn .8s ease forwards;}
+@keyframes fmpH1NameIn{from{opacity:0;letter-spacing:.5em;filter:blur(8px);}to{opacity:1;letter-spacing:.03em;filter:blur(0);}}
+#fmpStage .h1-fp-vs{font-family:'Orbitron',sans-serif;font-weight:900;font-size:16px;color:#e8b45a;}
+#fmpStage .h1-fp-tag{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:.3em;color:rgba(232,180,90,.5);}
+#fmpStage .h1-countdown{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+#fmpStage .h1-countdown span{font-family:'Cinzel',serif;font-weight:900;font-size:130px;color:#f3dfb0;text-shadow:0 0 50px rgba(232,180,90,.8);display:none;}
+#fmpStage .h1-countdown span.go{display:block;animation:fmpH1Count 1s cubic-bezier(.2,.8,.3,1) forwards;}
+@keyframes fmpH1Count{0%{transform:scale(2.6);opacity:0;}30%{opacity:1;}100%{transform:scale(.6);opacity:0;}}
+#fmpStage .h1-flash{position:absolute;inset:0;background:radial-gradient(circle at 50% 40%, rgba(255,240,210,.85), transparent 62%);opacity:0;z-index:7;pointer-events:none;}
+#fmpStage .h1-flash.go{animation:fmpH1Flash .8s ease;}
+@keyframes fmpH1Flash{0%{opacity:.8;}100%{opacity:0;}}
+
+/* This project has a global prefers-reduced-motion rule (src/index.css)
+   that collapses every animation/transition on the page to ~0ms for
+   accessibility. The reference file has no such rule and always plays
+   its animations at full speed/timing regardless of that OS setting.
+   To render #fmpStage identically to the reference in every environment,
+   its own animations are exempted from that collapse -- this changes
+   nothing about the animations themselves (names/keyframes/durations
+   above are untouched), it only stops something outside the copied CSS
+   from truncating them. */
 @media (prefers-reduced-motion: reduce) {
-  #fmpStage2, #fmpStage2 * { animation-duration: 0.001ms !important; }
+  #fmpStage, #fmpStage * {
+    animation-duration: revert !important;
+    animation-iteration-count: revert !important;
+    transition-duration: revert !important;
+  }
 }
 `;
 
-// Ornate corner-bracket "broadcast frame" around a featured VS pair --
-// purely decorative chrome around content that's already centered in the
-// spotlight card; doesn't add or move any layout region. `pulse` plays a
-// one-shot glow burst (keyed by the caller) the instant a match locks in.
-function BroadcastFrame({ children, pulse = false, glowColor = "rgba(34,229,255,.9)" }) {
-  return (
-    <div className="relative px-10 py-8 sm:px-16 sm:py-10 rounded-2xl"
-      style={{
-        border: "1px solid rgba(124,92,255,.35)",
-        background: "rgba(6,7,15,.35)",
-        animation: pulse ? "fmpFrameGlow 1s ease-out" : undefined,
-      }}>
-      {[
-        "-top-1 -left-1 border-t-2 border-l-2 rounded-tl-md",
-        "-top-1 -right-1 border-t-2 border-r-2 rounded-tr-md",
-        "-bottom-1 -left-1 border-b-2 border-l-2 rounded-bl-md",
-        "-bottom-1 -right-1 border-b-2 border-r-2 rounded-br-md",
-      ].map((cls, i) => (
-        <span key={i} className={`absolute ${cls} w-5 h-5 pointer-events-none`} style={{ borderColor: glowColor }} />
-      ))}
-      {children}
-    </div>
-  );
-}
-
-
-function TeamFace({ team, dim = false, animateIn = false }) {
-  const name = team ? teamLabel(team) : "？？？";
-  return (
-    <div className={`flex flex-col items-center gap-3 transition-opacity ${dim ? "opacity-40" : ""}`} style={{ minWidth: 112 }}>
-      <Avatar avatarUrl={team?.captainAvatarUrl} size={72} glow />
-      <span className="font-display font-bold text-xl sm:text-2xl text-ink-primary text-center leading-tight max-w-[220px] truncate"
-        style={animateIn ? { animation: "fmpNameSlam .6s cubic-bezier(.2,.8,.2,1) forwards", textShadow: "0 0 26px rgba(34,229,255,.55)" } : undefined}>
-        {name}
-      </span>
-      <span className="text-[9px] font-heading font-semibold tracking-[0.3em] text-ink-faint uppercase">Captain</span>
-    </div>
-  );
-}
-
-function RosterRow({ team, status, selected, onClick }) {
-  const isUsed = status !== "idle";
-  const clickable = !!onClick;
-  const Tag = clickable ? "button" : "div";
-  return (
-    <Tag type={clickable ? "button" : undefined} onClick={onClick}
-      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors duration-500 text-left ${
-        selected ? "border-accent bg-accent/15 shadow-accent-glow"
-          : isUsed ? "border-accent2/35 bg-accent2/5"
-          : "border-panel-line bg-void/30"
-      } ${clickable ? "cursor-pointer hover:border-accent2/40" : ""}`}>
-      <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed || selected} glowColor={selected ? ACCENT : TEAL} />
-      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${
-        selected ? "text-accent-soft" : isUsed ? "text-accent2" : "text-ink-muted"
-      }`}>
-        {teamLabel(team)}
-      </span>
-      {status === "bye" && (
-        <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white/50">轮空</span>
-      )}
-    </Tag>
-  );
-}
-
-
-
-function FilmChip({ idx, match, teamByIdx, active, onClick }) {
-  const a = teamByIdx.get(match.a);
-  const b = match.b != null ? teamByIdx.get(match.b) : null;
-  return (
-    <button type="button" onClick={onClick}
-      className={`shrink-0 w-[140px] px-2.5 py-2 rounded-lg border text-left transition-all ${
-        active ? "border-accent2 shadow-accent-glow bg-accent2/10" : "border-panel-line bg-void/30 hover:border-panel-line/60 hover:bg-panel-alt/40"
-      }`}>
-      <div className="text-[8px] font-mono text-ink-faint mb-0.5 tracking-wider">MATCH {String(idx + 1).padStart(2, "0")}</div>
-      <div className="text-[11px] font-heading font-semibold text-ink-primary truncate">
-        {b ? `${a?.captainName ?? "?"} / ${b.captainName ?? "?"}` : `${a?.captainName ?? "?"} 轮空`}
+// ---------------------------------------------------------------------
+// FMP_HTML -- copied verbatim from the reference's
+// <section data-c="1"> > <div class="stage"> innerHTML (i.e. everything
+// except the demo-file's own concept-picker chrome -- the "01 冠军海报版"
+// title/description blurb above the stage -- which belongs to the
+// reference file's showcase wrapper, not to the page itself). Every id
+// (hero1, h1Cast, h1Idle, fs1, lock1, roll1, ...) is unchanged so the
+// script below can address these exact elements exactly like the
+// reference's own script did.
+// ---------------------------------------------------------------------
+const FMP_HTML = `
+<div class="h1" id="hero1">
+  <div class="h1-rays"></div>
+  <div class="h1-grain"></div>
+  <div class="h1-badge" id="h1Badge">ROUND 1 · PREMIERE</div>
+  <div class="h1-title">
+    <div class="h1-t-orn">✦ ✦ ✦</div>
+    <div class="h1-t-main" id="h1TitleMain">冠军之战</div>
+    <div class="h1-t-sub">FINAL MATCHUPS · WORLD CHAMPIONSHIP</div>
+  </div>
+  <div class="h1-cast" id="h1Cast"></div>
+  <div class="h1-feature" id="h1Feature">
+    <div class="h1-feature-idle" id="h1Idle">敬请期待首个对阵公布 · 手动配对或随机生成开启序幕</div>
+    <div class="h1-feature-pair" id="h1Pair">
+      <div class="h1-fp-frame">
+        <span class="h1-fp-name" id="h1NameA">—</span>
+        <span class="h1-fp-vs">VS</span>
+        <span class="h1-fp-name" id="h1NameB">—</span>
       </div>
-    </button>
-  );
-}
+      <div class="h1-fp-tag" id="h1Tag">MATCH 01</div>
+    </div>
+    <div class="h1-finale" id="h1Finale">
+      <div class="h1-finale-title">对阵表已揭晓 · FINAL LINEUP</div>
+      <div class="h1-finale-grid" id="h1FinaleGrid"></div>
+    </div>
+  </div>
+  <div class="h1-countdown" id="h1Countdown"><span id="h1CNum">3</span></div>
+  <div class="h1-flash" id="h1Flash"></div>
+</div>
+<div class="pv-filmstrip" id="fs1"></div>
+<div class="pv-casting" id="cast1"></div>
+<div class="pv-actions" id="actions1">
+  <button class="pv-btn gold" id="lock1" disabled>🎬 定角锁定</button>
+  <button class="pv-btn gold" id="roll1" style="background:linear-gradient(135deg,#2a8f8a,#e8b45a)">🎞️ 开幕！随机生成剩余对阵</button>
+  <button class="pv-btn ghost" id="reset1">🔄 重置</button>
+  <button class="pv-btn danger" id="end1">🏁 结束锦标赛</button>
+</div>
+`;
 
-export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onEnded = () => {} }) {
-  const initialMatches = useMemo(() => matchups.map((m) => ({ a: m.a, b: m.b, locked: !!m.locked })), []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [displayTeams, setDisplayTeams] = useState(teams);
-  const [displayMatches, setDisplayMatches] = useState(initialMatches);
-  const [selected, setSelected] = useState([]);
-  const [featuredIdx, setFeaturedIdx] = useState(() => {
-    if (initialMatches.length === 0) return null;
-    return computeComplete(initialMatches, teams) ? null : initialMatches.length - 1;
-  });
-  const [reveal, setReveal] = useState(null); // { idx, phase: 'countdown'|'flicker'|'reveal', n, flickerA, flickerB }
-  const [busyAction, setBusyAction] = useState(null);
-  const [error, setError] = useState(null);
+// ---------------------------------------------------------------------
+// FMP_WIRE_CSS -- NOT from the reference. A small, separate stylesheet
+// (deliberately kept apart from FMP_CSS above, which stays byte-for-byte
+// identical to the reference) for the two elements the reference's demo
+// never needed: per-match lock/unlock/dissolve controls, and a pool-size
+// hint. Same gold/Rajdhani vocabulary as the rest of the card so it
+// doesn't visually clash, but these are new nodes appended by the script
+// below -- FMP_HTML itself is never edited.
+// ---------------------------------------------------------------------
+const FMP_WIRE_CSS = `
+.fmpwire-pairctl{display:flex;gap:10px;align-self:center;}
+.fmpwire-btn{font-family:'Orbitron',sans-serif;font-weight:800;font-size:11px;letter-spacing:.03em;padding:12px 20px;border-radius:10px;border:1px solid #e8b45a;background:rgba(0,0,0,.3);color:#ff8f8f;cursor:pointer;transition:all .16s ease;}
+.fmpwire-btn:hover{border-color:#f3dfb0;color:#ffb3b3;}
+.fmpwire-btn:disabled{opacity:.3;cursor:not-allowed;}
+.fmpwire-hint{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;color:rgba(255,255,255,.4);align-self:center;}
+`;
+
+// Exported (Phase 6) so the read-only Spectator Page can reuse this exact
+// stage -- with isStaff={false} -- for a genuinely live, real-data view of
+// Final Matchups, instead of reimplementing this poster/roll/reveal
+// animation a second time. Nothing about how it's used from DraftArenaPage
+// below (isStaff=true/false there too) changes.
+export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onBack, backLabel = "← 返回选手管理", showBackButton = true }) {
+  const containerRef = useRef(null);
+  const modelRef = useRef(null);
+  const activeIdxRef = useRef(-1);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [busyAction, setBusyAction] = useState(null);
+  const [error, setError] = useState(null);
+  const stateRef = useRef({ teams, matchups, isStaff }); // always-current props for handlers below
+  stateRef.current = { teams, matchups, isStaff };
+  const pendingActionRef = useRef({ reset: null, end: null }); // holds the fn a confirm dialog will run
 
-  const revealingRef = useRef(false);
-  const displayMatchesRef = useRef(displayMatches);
-  const pendingActionRef = useRef({ reset: null, end: null });
-  useEffect(() => { displayMatchesRef.current = displayMatches; }, [displayMatches]);
+  // True for the whole duration of a Random Roll's on-screen sequence
+  // (countdown -> flicker -> reveal, one match at a time). The server
+  // already has the fully-resolved result the instant the roll RPC
+  // returns -- well before that multi-second sequence finishes playing --
+  // and Realtime pushes that resolved `matchups` prop back to this
+  // component almost immediately. Without this guard, the prop-sync
+  // effect below would immediately overwrite the cast portraits /
+  // filmstrip with the fully-revealed end state instead of letting the
+  // sequence reveal it one match at a time like the reference.
+  const rollAnimatingRef = useRef(false);
+  const renderAllRef = useRef(() => {}); // set by the mount effect; called by the prop-sync effect below so both share one render path (and one place that attaches click listeners)
+  const showFinaleRef = useRef(() => {});
+  // Spectator-only ("isStaff=false") replay: set by the mount effect to a
+  // function that plays the exact same countdown -> flicker -> reveal
+  // sequence onPoolRollClick's own runRollSequence call uses, driven by
+  // an already-resolved result instead of a fresh RPC response -- see
+  // the prop-sync effect below, which is this ref's only caller.
+  const playAppendedRevealRef = useRef(async () => {});
 
-  const teamByIdx = useMemo(() => new Map(displayTeams.map((t) => [t.idx, t])), [displayTeams]);
-  const usedIdxs = useMemo(() => computeUsedIdxs(displayMatches), [displayMatches]);
-  const remaining = useMemo(() => displayTeams.filter((t) => !usedIdxs.has(t.idx)), [displayTeams, usedIdxs]);
-  const byeIdxs = useMemo(() => new Set(displayMatches.filter((m) => m.a != null && m.b == null).map((m) => m.a)), [displayMatches]);
-  const complete = displayMatches.length > 0 && remaining.length === 0;
-
-  // If another connected admin locks/pairs/rolls a team this client
-  // currently has selected in the pairing pool (e.g. two admins working
-  // the casting pool at once), drop it from the selection instead of
-  // leaving a stale idx sitting there that would just fail server-side
-  // the moment 定角锁定/随机生成剩余对阵 is clicked.
+  // Mount once: build the model from real data and wire up the
+  // reference's own script (verbatim functions + Variant-1 IIFE) against
+  // the real DOM this component just rendered.
   useEffect(() => {
-    setSelected((prev) => {
-      if (prev.length === 0) return prev;
-      const stillFree = new Set(remaining.map((t) => t.idx));
-      const next = prev.filter((idx) => stillFree.has(idx));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [remaining]);
+    const root = containerRef.current;
+    if (!root) return undefined;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // Plays the countdown -> flicker -> settle sequence for one or more
-  // newly-appended matches, one at a time, entirely via React state.
-  // Used both when this client itself triggers a roll (fed the RPC's own
-  // result) and when Realtime reports another client's roll (fed that
-  // update's resolved teams/matchups) -- either way the viewer sees the
-  // exact same show instead of the result just snapping into place.
-  async function runReveal(appended, startIdx, finalMatches, labelTeams) {
-    if (appended.length === 0) { setDisplayMatches(finalMatches); return; }
-    revealingRef.current = true;
-    for (let k = 0; k < appended.length; k++) {
-      const idx = startIdx + k;
-      setFeaturedIdx(idx);
-      for (const n of [3, 2, 1]) { setReveal({ idx, phase: "countdown", n }); await fmpWait(600); }
-      for (let f = 0; f < 8; f++) {
-        const flickerA = labelTeams[Math.floor(Math.random() * labelTeams.length)] || null;
-        const flickerB = labelTeams[Math.floor(Math.random() * labelTeams.length)] || null;
-        setReveal({ idx, phase: "flicker", flickerA, flickerB });
-        await fmpWait(110);
-      }
-      setDisplayMatches((prev) => { const next = prev.slice(); next[idx] = appended[k]; return next; });
-      setReveal({ idx, phase: "reveal" });
-      await fmpWait(1100);
-      setReveal(null);
+    // ---- makeModel(): the reference's own shape (teams/selected/
+    // usedSet/remaining/toggleSelect/lockSelected/reset/computeRollPlan/
+    // applyRollResult), adapted so `matches` is a true append-only array
+    // mirroring exactly what the server persists (the reference's demo
+    // never needed byes, so it always pre-sized `matches` to a fixed
+    // teams.length/2 with null placeholders -- that assumption breaks for
+    // any odd team count, which real tournaments have all the time, so
+    // matches now grows exactly the way the real matchups column does:
+    // starts empty, only ever appended to). `toggleSelect` no longer caps
+    // at 2 -- "Unlimited team pool" -- 定角锁定 below still requires
+    // choosing exactly 2 before it does anything, same as before.
+    function makeModel(teamLabels) {
+      return {
+        teams: teamLabels.slice(),
+        matches: [],
+        selected: [],
+        usedSet() { const s = new Set(); this.matches.forEach((m) => { if (m.a) s.add(m.a); if (m.b) s.add(m.b); }); return s; },
+        remaining() { const u = this.usedSet(); return this.teams.filter((t) => !u.has(t)); },
+        toggleSelect(t) {
+          if (this.selected.includes(t)) this.selected = this.selected.filter((x) => x !== t);
+          else this.selected.push(t);
+        },
+        lockSelected() {
+          if (this.selected.length !== 2) return null;
+          const [a, b] = this.selected;
+          const idx = this.matches.length;
+          this.matches.push({ a, b, locked: true });
+          this.selected = [];
+          return idx;
+        },
+        reset() { this.matches = []; this.selected = []; },
+        isComplete() { return this.matches.length > 0 && this.remaining().length === 0; },
+        // Only ever called with a real {emptyIdxs, plan} handed to it via
+        // `_pendingPlan` (set right before runRollSequence() runs, from
+        // the server's actual roll result) -- see onPoolRollClick below.
+        // The reference's own client-only shuffle is kept as a fallback
+        // so this still behaves exactly like the reference if ever called
+        // with no override, it's just never exercised in production
+        // since a real override is always supplied.
+        computeRollPlan() {
+          if (this._pendingPlan) { const p = this._pendingPlan; this._pendingPlan = null; return p; }
+          const remaining = this.remaining();
+          const shuffled = remaining.slice();
+          for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
+          const emptyIdxs = this.matches.map((m, i) => ({ m, i })).filter((x) => !x.m.a && !x.m.b).map((x) => x.i);
+          const plan = {}; let p = 0;
+          emptyIdxs.forEach((idx) => { plan[idx] = { a: shuffled[p++] ?? null, b: shuffled[p++] ?? null }; });
+          return { emptyIdxs, plan };
+        },
+        applyRollResult(idx, pair) { this.matches[idx] = { a: pair.a, b: pair.b, locked: false }; },
+      };
     }
-    setDisplayMatches(finalMatches);
-    setFeaturedIdx((prev) => (computeComplete(finalMatches, labelTeams) ? null : prev));
-    revealingRef.current = false;
-  }
+    function initials(name) { return name ? name[0] : "?"; }
 
-  // Live-sync whenever `matchups`/`teams` change (Realtime -- another
-  // connected admin locked/rolled/removed/reset, or this stage just
-  // mounted with a tournament already in progress). A pure append (more
-  // entries than we're currently showing) means a roll just happened
-  // somewhere -- replay it via runReveal instead of snapping straight to
-  // the end state. Anything else (manual pair already applied locally,
-  // a removal, a reset) syncs directly.
-  useEffect(() => {
-    if (revealingRef.current) return;
-    const newMatches = matchups.map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
-    const prevLen = displayMatchesRef.current.length;
-    setDisplayTeams(teams);
-    if (newMatches.length > prevLen) {
-      runReveal(newMatches.slice(prevLen), prevLen, newMatches, teams);
-    } else {
-      setDisplayMatches(newMatches);
-      const nowComplete = computeComplete(newMatches, teams);
-      setFeaturedIdx((prev) => {
-        if (newMatches.length === 0) return null;
-        if (nowComplete) return null;
-        return Math.min(prev ?? newMatches.length - 1, newMatches.length - 1);
+    // ---- shared filmstrip + casting renderers, copied from the
+    // reference, extended only to treat a bye (`b === null`, impossible
+    // in the reference's own always-even demo) as a filled/complete slot
+    // rather than "未生成", and to label it accordingly.
+    function renderFilmstrip(el, model, activeIdx, onPick) {
+      el.innerHTML = model.matches.map((m, i) => `
+        <div class="pv-frame ${i === activeIdx ? "active" : ""}" data-idx="${i}">
+          <div class="fn">MATCH ${String(i + 1).padStart(2, "0")}</div>
+          ${m.a != null ? `<div class="ft">${m.b != null ? `${m.a} / ${m.b}` : `${m.a} 轮空`}</div>` : `<div class="fe">未生成</div>`}
+        </div>`).join("");
+      el.querySelectorAll(".pv-frame").forEach((f) => f.addEventListener("click", () => {
+        const i = +f.dataset.idx; const m = model.matches[i];
+        if (m.a != null) onPick(i);
+      }));
+    }
+    function renderCasting(el, model, onToggle) {
+      const used = model.usedSet();
+      el.innerHTML = model.teams.filter((t) => !used.has(t)).map((t) => {
+        const sel = model.selected.includes(t);
+        return `<button class="pv-castcard ${sel ? "sel" : ""}" data-team="${t}">${t}</button>`;
+      }).join("") || '<div style="color:rgba(255,255,255,.3);font-size:12px;">全部战队已配对</div>';
+      el.querySelectorAll(".pv-castcard").forEach((b) => b.addEventListener("click", () => { onToggle(b.dataset.team); }));
+    }
+
+    // ---- generic roll sequence, copied verbatim, unmodified.
+    async function runRollSequence(model, hooks) {
+      const { emptyIdxs, plan } = model.computeRollPlan();
+      if (emptyIdxs.length === 0) return;
+      if (hooks.before) await hooks.before();
+      for (const n of [3, 2, 1]) { await hooks.countdown(n); await wait(750); }
+      for (let k = 0; k < emptyIdxs.length; k++) {
+        const idx = emptyIdxs[k];
+        for (let f = 0; f < 7; f++) {
+          const rn1 = model.teams[Math.floor(Math.random() * model.teams.length)];
+          const rn2 = model.teams[Math.floor(Math.random() * model.teams.length)];
+          await hooks.flicker(idx, rn1, rn2, f);
+          await wait(150);
+        }
+        const pair = plan[idx];
+        model.applyRollResult(idx, pair);
+        await hooks.reveal(idx, pair, k === emptyIdxs.length - 1);
+        await wait(1200);
+      }
+      if (hooks.allDone) await hooks.allDone();
+    }
+
+    // ---- team labels, built from this tournament's real captains
+    // instead of the reference's hardcoded TEAMS array. labelFromServer
+    // builds the same label directly from an RPC response's own `teams`
+    // snapshot, so applyServerRow() below never has to cross-reference
+    // stale client props.
+    function labelFromServer(t) { return t?.captainName ? `${t.captainName} 战队` : "（空）战队"; }
+    const teamLabels = stateRef.current.teams.map((t) => teamLabel(t));
+    const labelToIdx = new Map(stateRef.current.teams.map((t) => [teamLabel(t), t.idx]));
+
+    const model = makeModel(teamLabels);
+    modelRef.current = model;
+
+    // Every mutating RPC below returns the fresh row -- always trust that
+    // over any locally-guessed mutation, so the model can never drift
+    // from what the server actually persisted.
+    function applyServerRow(result) {
+      if (!result) return;
+      const byIdx = new Map((result.teams || []).map((t) => [t.idx, labelFromServer(t)]));
+      model.teams = (result.teams || []).map((t) => labelFromServer(t));
+      model.matches = (result.matchups || []).map((m) => ({
+        a: m.a != null ? byIdx.get(m.a) : null,
+        b: m.b != null ? byIdx.get(m.b) : null,
+        locked: !!m.locked,
+      }));
+    }
+
+    const castEl = root.querySelector("#h1Cast");
+    const idleEl = root.querySelector("#h1Idle");
+    const pairEl = root.querySelector("#h1Pair");
+    const nameA = root.querySelector("#h1NameA");
+    const nameB = root.querySelector("#h1NameB");
+    const vsEl = root.querySelector(".h1-fp-vs"); // the reference's own "VS" span -- has no id in FMP_HTML, selected by its existing class instead of adding one
+    const tagEl = root.querySelector("#h1Tag");
+    const cnumEl = root.querySelector("#h1CNum");
+    const flashEl = root.querySelector("#h1Flash");
+    const badgeEl = root.querySelector("#h1Badge");
+    const fsEl = root.querySelector("#fs1");
+    const castPoolEl = root.querySelector("#cast1");
+    const lockBtn = root.querySelector("#lock1");
+    const rollBtn = root.querySelector("#roll1");
+    const finaleEl = root.querySelector("#h1Finale");
+    const finaleGridEl = root.querySelector("#h1FinaleGrid");
+    const actionsWrap = root.querySelector("#actions1");
+
+    // ---- Minimum extra wiring the reference's own demo never needed:
+    // per-match dissolve control (the reference had no concept of undoing
+    // an already-created matchup), and a small pool counter. Both are
+    // appended as NEW nodes -- FMP_HTML itself is never edited -- and
+    // styled by a small separate stylesheet (FMP_WIRE_CSS), never by
+    // touching FMP_CSS. "✕ 解除对阵" (pairCtl) lives in the same action
+    // bar as 定角锁定/开幕！随机生成剩余对阵/重置/结束锦标赛 (#actions1 /
+    // `actionsWrap`), not beneath the featured matchup box -- grouping
+    // every admin action for the currently-featured match together with
+    // the rest of the admin controls, rather than splitting it off into
+    // its own spot elsewhere on the page.
+    const pairCtl = document.createElement("div");
+    pairCtl.className = "fmpwire-pairctl";
+    pairCtl.innerHTML = `
+      <button type="button" class="fmpwire-btn" id="fmpwireRemove">✕ 解除对阵</button>
+    `;
+    actionsWrap.appendChild(pairCtl);
+    const pairRemoveBtn = pairCtl.querySelector("#fmpwireRemove");
+
+    const poolHint = document.createElement("div");
+    poolHint.className = "fmpwire-hint";
+    actionsWrap.appendChild(poolHint);
+
+    function updatePairControls() {
+      // Always visible for staff once this is possible at all (same
+      // pattern as lockBtn/定角锁定, which is always rendered and just
+      // toggles `.disabled` based on selection) -- enabled only once a
+      // match is actually selected/featured, disabled otherwise.
+      if (!stateRef.current.isStaff) { pairCtl.style.display = "none"; return; }
+      pairCtl.style.display = "flex";
+      const idx = activeIdxRef.current;
+      const m = idx >= 0 ? model.matches[idx] : null;
+      pairRemoveBtn.disabled = !m || busyRef.current !== null;
+    }
+
+    function renderCast() {
+      const used = model.usedSet();
+      // A team currently sitting alone in a bye entry (m.a set, m.b null)
+      // gets the "bye" modifier alongside "used" so its portrait is
+      // recolored silver instead of the normal gold -- purely a color
+      // swap, same size/shape/border-width/glow-radius/animation as
+      // every other portrait.
+      const byeTeams = new Set(model.matches.filter((m) => m.a && m.b == null).map((m) => m.a));
+      castEl.innerHTML = model.teams.map((t) =>
+        `<div class="h1-portrait ${used.has(t) ? (byeTeams.has(t) ? "used bye" : "used") : "dim"}">${initials(t)}</div>`
+      ).join("");
+    }
+    function renderAll() {
+      renderCast();
+      renderFilmstrip(fsEl, model, activeIdxRef.current, cutTo);
+      renderCasting(castPoolEl, model, (t) => { model.toggleSelect(t); renderAll(); });
+      // Lock is enabled from 2 selected teams up -- with exactly 2 it
+      // creates an immediate manual pairing; with 3+ it kicks off Random
+      // Roll for exactly that selected group (see onLockClick below).
+      lockBtn.disabled = model.selected.length < 2 || busyRef.current !== null;
+      // Roll is disabled only when there's truly nothing it could do:
+      // busy, or (no pool selected AND no free teams left to default to).
+      // An empty pool is not a blocker -- it's the "roll everyone free"
+      // case.
+      const rollTargetCount = model.selected.length > 0 ? model.selected.length : model.remaining().length;
+      rollBtn.disabled = rollTargetCount < 1 || busyRef.current !== null;
+      poolHint.textContent = model.selected.length > 0
+        ? `已选择 ${model.selected.length} 支战队进入随机池`
+        : (model.remaining().length > 0 ? `未选择战队 · 将随机排位全部剩余 ${model.remaining().length} 支战队` : "");
+      badgeEl.textContent = model.isComplete() ? "TOURNAMENT READY" : "ROUND 1 · PREMIERE";
+      updatePairControls();
+    }
+    function showFinale() {
+      finaleGridEl.innerHTML = model.matches.map((m, i) =>
+        m.b != null
+          ? `<div class="h1-finale-row" style="animation-delay:${i * 180}ms"><span class="no">0${i + 1}</span>${m.a} <span class="vs">VS</span> ${m.b}</div>`
+          : `<div class="h1-finale-row" style="animation-delay:${i * 180}ms"><span class="no">0${i + 1}</span>${m.a} <span class="vs"></span> 轮空</div>`
+      ).join("");
+      finaleGridEl.querySelectorAll(".h1-finale-row").forEach((r) => r.classList.add("in"));
+      pairEl.classList.remove("show");
+      finaleEl.classList.remove("show"); void finaleEl.offsetWidth; finaleEl.classList.add("show");
+      flashEl.classList.remove("go"); void flashEl.offsetWidth; flashEl.classList.add("go");
+    }
+    function cutTo(idx) {
+      activeIdxRef.current = idx;
+      const m = model.matches[idx];
+      idleEl.style.display = "none";
+      finaleEl.classList.remove("show");
+      pairEl.classList.add("show");
+      if (m.b != null) {
+        nameA.textContent = m.a || "—";
+        if (vsEl) { vsEl.textContent = "VS"; vsEl.style.display = ""; }
+        nameB.textContent = m.b;
+        nameB.style.display = "";
+      } else {
+        // Bye: only "A 战队 轮空" is shown, centered in the frame -- no
+        // "VS", no second team. The "VS" span and the second-name span
+        // are now hidden with display:none (not just emptied text), so
+        // the flex row's `gap` no longer reserves space for them and
+        // #fmpStage .h1-fp-frame naturally shrink-wraps to the single
+        // remaining name plus its existing symmetric 22px/40px padding
+        // -- which is what centers it. Same 3 spans as the reference
+        // (h1NameA / h1-fp-vs / h1NameB); nothing about the markup,
+        // corner-bracket decoration, glow, or reveal animation those
+        // spans already play is touched.
+        nameA.textContent = `${m.a || "—"} 轮空`;
+        if (vsEl) { vsEl.textContent = ""; vsEl.style.display = "none"; }
+        nameB.textContent = "";
+        nameB.style.display = "none";
+      }
+      [nameA, nameB].forEach((el) => { el.classList.remove("in"); void el.offsetWidth; el.classList.add("in"); });
+      tagEl.textContent = `MATCH ${String(idx + 1).padStart(2, "0")}`;
+      flashEl.classList.remove("go"); void flashEl.offsetWidth; flashEl.classList.add("go");
+      renderFilmstrip(fsEl, model, activeIdxRef.current, cutTo);
+      updatePairControls();
+    }
+
+    // busyRef mirrors React's busy state into the imperative script so
+    // renderAll() can disable buttons during an in-flight request the
+    // same way the reference disabled `rollBtn` mid-sequence.
+    const busyRef = { current: null };
+
+    async function withBusy(action, fn) {
+      busyRef.current = action;
+      setBusyAction(action);
+      setError(null);
+      renderAll();
+      try {
+        await fn();
+      } catch (err) {
+        setError(err?.message || "操作失败，请重试");
+      } finally {
+        busyRef.current = null;
+        setBusyAction(null);
+        renderAll();
+      }
+    }
+
+    // lock1 -- with exactly 2 teams selected, hand-pick and lock that pair
+    // together immediately (unchanged from before). With 3 or more
+    // selected, 定角锁定 now means "lock this exact group in and
+    // randomize it": it hands the selected teams straight to the same
+    // Random Roll flow as roll1 (onPoolRollClick below), using them as
+    // the explicit pool, so e.g. selecting A+B+C and clicking Lock rolls
+    // those 3 immediately -- one random pair plus one random bye -- via
+    // the real backend and the same countdown/flicker/reveal sequence,
+    // without needing a separate click on 开幕！随机生成剩余对阵.
+    async function onLockClick() {
+      if (model.selected.length < 2 || busyRef.current) return;
+      if (model.selected.length > 2) {
+        await onPoolRollClick();
+        return;
+      }
+      const [la, lb] = model.selected;
+      const idxA = labelToIdx.get(la), idxB = labelToIdx.get(lb);
+      await withBusy("pair", async () => {
+        const result = await createManualMatchup(idxA, idxB);
+        model.selected = [];
+        applyServerRow(result);
+        const idx = model.matches.length - 1; // createManualMatchup always appends
+        renderAll();
+        if (model.isComplete()) showFinale(); else cutTo(idx);
       });
     }
+
+    // roll1 -- Random Roll. If the admin has selected teams from the
+    // casting pool (model.selected), the roll is scoped to exactly that
+    // pool. If nothing is selected, this rolls every currently-free team
+    // instead -- the same "roll everyone" behavior the reference's own
+    // button implied, now genuinely computed server-side (not guessed on
+    // the client) so it can't race with what's actually free. Either way
+    // `runRollSequence` itself is never touched; the real
+    // roll_tournament_matchups_pool RPC shuffles + pairs server-side
+    // (including a bye if the rolled group is odd), and the reveal
+    // sequence plays back that real result -- teams outside whatever
+    // group ends up being rolled, and every existing matchup (locked or
+    // unlocked), are guaranteed untouched by the RPC itself, not just by
+    // convention here.
+    async function onPoolRollClick() {
+      if (rollBtn.disabled || busyRef.current) return;
+      const poolLabels = model.selected.slice();
+      const explicitPool = poolLabels.length > 0;
+      if (!explicitPool && model.remaining().length < 1) return; // nothing free to roll either way
+      const poolIdxs = explicitPool ? poolLabels.map((l) => labelToIdx.get(l)) : null; // null = let the server default to "every free team"
+      idleEl.style.display = "none";
+      rollAnimatingRef.current = true; // block the prop-sync effect until the sequence below finishes
+      await withBusy("roll", async () => {
+        const beforeLen = stateRef.current.matchups.length; // roll_tournament_matchups_pool only ever appends, either way, so anything from here on is new
+        const result = await rollTournamentMatchupsPool(poolIdxs);
+        model.selected = [];
+        // Deliberately do NOT apply the server's result to model.matches
+        // yet. The reference's own reveal engine (runRollSequence, via
+        // model.applyRollResult) is what's supposed to grow model.matches
+        // one entry at a time, in step with each reveal -- that's the
+        // entire mechanism the countdown -> flicker -> reveal choreography
+        // relies on for "only the just-revealed match's teams light up".
+        // Writing the full, already-known result here immediately would
+        // make every rolled team's cast portrait light up together the
+        // instant the very first reveal fires renderAll(), since
+        // renderCast()'s used/dim state is computed by scanning the
+        // entirety of model.matches. Only team LABELS are safe to sync
+        // early (they don't drive any lit/dim state); the actual match
+        // entries are handed to the sequence as a plan and applied by it,
+        // exactly once per reveal step, exactly like the reference.
+        const teamsByIdx = new Map((result.teams || []).map((t) => [t.idx, labelFromServer(t)]));
+        model.teams = (result.teams || []).map((t) => labelFromServer(t));
+        const newIdxs = [];
+        const plan = {};
+        (result.matchups || []).forEach((m, i) => {
+          if (i < beforeLen) return; // pre-existing entry -- untouched, not part of this reveal
+          newIdxs.push(i);
+          plan[i] = { a: m.a != null ? teamsByIdx.get(m.a) : null, b: m.b != null ? teamsByIdx.get(m.b) : null };
+        });
+        model._pendingPlan = { emptyIdxs: newIdxs, plan };
+
+        await runRollSequence(model, {
+          countdown: async (n) => { cnumEl.textContent = n; cnumEl.classList.remove("go"); void cnumEl.offsetWidth; cnumEl.classList.add("go"); },
+          flicker: async (idx, a, b) => {
+            pairCtl.style.display = "none";
+            pairEl.classList.add("show");
+            nameA.textContent = a; nameB.textContent = b;
+            nameA.style.opacity = nameA.style.opacity === "1" ? ".25" : "1";
+            nameB.style.opacity = nameA.style.opacity;
+            tagEl.textContent = `MATCH ${String(idx + 1).padStart(2, "0")} · ANALYZING`;
+          },
+          reveal: async (idx) => {
+            // model.matches[idx] was just written by runRollSequence's own
+            // model.applyRollResult(idx, plan[idx]) call, immediately
+            // before this hook fires -- so renderAll() here only ever
+            // lights up the teams revealed so far, never teams from
+            // later, still-unrevealed matches in this same roll.
+            nameA.style.opacity = "1"; nameB.style.opacity = "1";
+            renderAll();
+            cutTo(idx);
+          },
+          allDone: async () => {
+            // Final reconciliation against the server's own row (covers
+            // e.g. `locked` flags) -- by now model.matches already equals
+            // this anyway, since every entry was written incrementally
+            // above, so this is a no-op in practice, not a second reveal.
+            applyServerRow(result);
+            renderAll();
+            if (model.isComplete()) showFinale();
+          },
+        });
+      });
+      rollAnimatingRef.current = false; // sequence finished -- prop-sync effect may resume (and will just confirm the same end state)
+    }
+
+    // Spectator-only replay: same countdown->flicker->reveal choreography
+    // as onPoolRollClick's own runRollSequence call just above, but fed an
+    // already-resolved `{newTeams, newMatches}` (this component's own
+    // `teams`/`matchups` props, label-resolved) instead of driving off a
+    // fresh RPC response -- so a spectator watching someone else's roll
+    // sees it play out live instead of snapping straight to the result.
+    // If `newMatches` isn't strictly longer than what the model already
+    // has (nothing was appended -- a lock/unlock/remove/reset instead),
+    // this just syncs directly, same as the prop-sync effect always did.
+    async function playAppendedReveal(newTeams, newMatches) {
+      const beforeLen = model.matches.length;
+      if (newMatches.length <= beforeLen) {
+        model.teams = newTeams;
+        model.matches = newMatches;
+        if (activeIdxRef.current >= model.matches.length) activeIdxRef.current = -1;
+        if (activeIdxRef.current < 0 && model.matches.length === 0) {
+          idleEl.style.display = "block";
+          pairEl.classList.remove("show");
+        }
+        renderAll();
+        if (model.isComplete() && !finaleEl.classList.contains("show")) showFinale();
+        return;
+      }
+      idleEl.style.display = "none";
+      model.teams = newTeams;
+      const emptyIdxs = [];
+      const plan = {};
+      for (let i = beforeLen; i < newMatches.length; i++) {
+        emptyIdxs.push(i);
+        plan[i] = { a: newMatches[i].a, b: newMatches[i].b };
+        model.matches[i] = { a: null, b: null, locked: false };
+      }
+      model._pendingPlan = { emptyIdxs, plan };
+      await runRollSequence(model, {
+        countdown: async (n) => { cnumEl.textContent = n; cnumEl.classList.remove("go"); void cnumEl.offsetWidth; cnumEl.classList.add("go"); },
+        flicker: async (idx, a, b) => {
+          pairCtl.style.display = "none";
+          pairEl.classList.add("show");
+          nameA.textContent = a; nameB.textContent = b;
+          nameA.style.opacity = nameA.style.opacity === "1" ? ".25" : "1";
+          nameB.style.opacity = nameA.style.opacity;
+          tagEl.textContent = `MATCH ${String(idx + 1).padStart(2, "0")} · ANALYZING`;
+        },
+        reveal: async (idx) => {
+          nameA.style.opacity = "1"; nameB.style.opacity = "1";
+          renderAll();
+          cutTo(idx);
+        },
+        allDone: async () => {
+          model.teams = newTeams;
+          model.matches = newMatches;
+          renderAll();
+          if (model.isComplete()) showFinale();
+        },
+      });
+    }
+    playAppendedRevealRef.current = playAppendedReveal;
+
+    // Matchup-level dissolve on whatever's currently featured -- the
+    // reference never needed this (its demo had no way to undo
+    // anything); this project's backend already supports it, so it's
+    // wired here.
+    async function onPairRemove() {
+      const idx = activeIdxRef.current;
+      if (idx < 0 || busyRef.current) return;
+      await withBusy(`remove:${idx}`, async () => {
+        const result = await removeTournamentMatchup(idx);
+        applyServerRow(result);
+        activeIdxRef.current = -1;
+        pairEl.classList.remove("show");
+        if (model.matches.length === 0) idleEl.style.display = "block";
+        renderAll();
+      });
+    }
+
+    async function onResetClick() {
+      if (busyRef.current) return;
+      pendingActionRef.current.reset = () => withBusy("reset", async () => {
+        const result = await resetTournamentMatchups();
+        applyServerRow(result);
+        activeIdxRef.current = -1;
+        renderAll();
+        pairEl.classList.remove("show"); finaleEl.classList.remove("show"); idleEl.style.display = "block";
+      });
+      setConfirmReset(true);
+    }
+    async function onEndClick() {
+      if (busyRef.current) return;
+      pendingActionRef.current.end = () => withBusy("end", async () => { await endTournament(); });
+      setConfirmEnd(true);
+    }
+
+    root.querySelector("#lock1").addEventListener("click", onLockClick);
+    root.querySelector("#roll1").addEventListener("click", onPoolRollClick);
+    root.querySelector("#reset1").addEventListener("click", onResetClick);
+    root.querySelector("#end1").addEventListener("click", onEndClick);
+    pairRemoveBtn.addEventListener("click", onPairRemove);
+
+    // Title text (real tournament name) -- the reference hardcoded
+    // "冠军之战" as demo copy; this is the one piece of text content
+    // swapped for real data, same font/size/position/animation.
+    const titleEl = root.querySelector("#h1TitleMain");
+    if (titleEl) titleEl.textContent = stateRef.current.__tournamentName || "冠军之战";
+
+    // Casting pool + action bar visibility for isStaff is handled by a
+    // dedicated reactive effect below (so it responds to isStaff changing
+    // after mount, not just at mount time).
+
+    // Seed the model from whatever Final Matchups state already existed
+    // the moment this stage mounted (e.g. this admin refreshed mid-way
+    // through an existing tournament) instead of assuming a blank slate.
+    applyServerRow({ teams: stateRef.current.teams.map((t) => ({ idx: t.idx, captainName: t.captainName })), matchups: stateRef.current.matchups });
+    if (model.matches.length > 0) idleEl.style.display = "none";
+
+    renderAllRef.current = renderAll;
+    showFinaleRef.current = showFinale;
+
+    renderAll();
+    if (model.isComplete()) showFinale();
+
+    return () => {
+      root.querySelector("#lock1")?.removeEventListener("click", onLockClick);
+      root.querySelector("#roll1")?.removeEventListener("click", onPoolRollClick);
+      root.querySelector("#reset1")?.removeEventListener("click", onResetClick);
+      root.querySelector("#end1")?.removeEventListener("click", onEndClick);
+      pairRemoveBtn.removeEventListener("click", onPairRemove);
+      pairCtl.remove();
+      poolHint.remove();
+    };
+    // Mount once -- see the sync effect below for how later prop changes
+    // (Realtime updates from other clients) get reflected.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchups, teams]);
+  }, []);
 
-  async function withBusy(action, fn) {
-    setBusyAction(action);
-    setError(null);
-    try { await fn(); }
-    catch (err) { setError(err?.message || "操作失败，请重试"); }
-    finally { setBusyAction(null); }
-  }
+  // Keep the model (and therefore the on-screen poster) in sync whenever
+  // `matchups`/`teams` change from Realtime -- e.g. another connected
+  // Admin/Developer locks, rolls, removes, or resets from their own
+  // client. The reference never needed this (single local `model`, no
+  // server); it's required here for the same live-sync guarantee every
+  // other stage in this project already has.
+  useEffect(() => {
+    if (rollAnimatingRef.current) return; // a Random Roll reveal sequence is actively playing -- let it finish rendering its own frames
+    const model = modelRef.current;
+    const root = containerRef.current;
+    if (!model || !root) return;
+    const teamsByIdx = new Map(teams.map((t) => [t.idx, t]));
+    const newTeams = teams.map((t) => teamLabel(t));
+    const newMatches = matchups.map((m) => ({
+      a: m.a != null ? teamLabel(teamsByIdx.get(m.a)) : null,
+      b: m.b != null ? teamLabel(teamsByIdx.get(m.b)) : null,
+      locked: !!m.locked,
+    }));
 
-  function toggleSelect(idx) {
-    setSelected((prev) => (prev.includes(idx) ? prev.filter((x) => x !== idx) : [...prev, idx]));
-  }
+    // Spectator-only ("isStaff=false"): if this update is a pure append
+    // (every previously-known entry is unchanged, and at least one new,
+    // already-resolved entry was added) -- i.e. someone else just locked
+    // a manual pairing or ran a Random Roll -- replay it live via
+    // playAppendedRevealRef instead of snapping straight to the result.
+    // Never fires on the very first sync right after mount (the mount
+    // effect above already seeded model.matches from these same initial
+    // props, so beforeLen === newMatches.length then, which fails the
+    // ">" check below) and never for isStaff=true (unchanged, pre-
+    // existing behavior for admins -- the one who actually clicked
+    // already gets their own sequence from onPoolRollClick).
+    const beforeLen = model.matches.length;
+    const isPureAppend = !isStaff && newMatches.length > beforeLen &&
+      newMatches.slice(0, beforeLen).every((m, i) => {
+        const prevMatch = model.matches[i];
+        return prevMatch && prevMatch.a === m.a && prevMatch.b === m.b && prevMatch.locked === m.locked;
+      });
 
-  // 定角锁定 -- exactly 2 selected: hand-pick and lock that pair
-  // immediately, no countdown (a deliberate pick, not a random one).
-  // 3+ selected: hands off to Random Roll scoped to that exact group.
-  async function handleLockOrRoll() {
-    if (selected.length < 2 || busyAction || reveal) return;
-    if (selected.length > 2) { await handleRoll(); return; }
-    const [idxA, idxB] = selected;
-    await withBusy("pair", async () => {
-      const result = await createManualMatchup(idxA, idxB);
-      setSelected([]);
-      const newTeams = result.teams && result.teams.length > 0 ? result.teams : teams;
-      const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
-      setDisplayTeams(newTeams);
-      setDisplayMatches(newMatches);
-      setFeaturedIdx(computeComplete(newMatches, newTeams) ? null : newMatches.length - 1);
-    });
-  }
+    if (isPureAppend) {
+      rollAnimatingRef.current = true;
+      playAppendedRevealRef.current(newTeams, newMatches).finally(() => { rollAnimatingRef.current = false; });
+      return;
+    }
 
-  // Random Roll -- scoped to the current pool selection, or every free
-  // team when nothing's selected. The RPC resolves server-side; this
-  // just plays that resolved result back one match at a time.
-  async function handleRoll() {
-    if (busyAction || reveal || complete) return;
-    const poolIdxs = selected.length > 0 ? selected.slice() : null;
-    if (!poolIdxs && remaining.length < 1) return;
-    await withBusy("roll", async () => {
-      const beforeLen = displayMatchesRef.current.length;
-      const result = await rollTournamentMatchupsPool(poolIdxs);
-      setSelected([]);
-      const newTeams = result.teams && result.teams.length > 0 ? result.teams : teams;
-      const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
-      setDisplayTeams(newTeams);
-      await runReveal(newMatches.slice(beforeLen), beforeLen, newMatches, newTeams);
-    });
-  }
+    model.teams = newTeams;
+    model.matches = newMatches;
+    // Realtime can move a currently-featured match's index (e.g. another
+    // admin removed an earlier entry, shifting everything after it down)
+    // or dissolve it outright -- drop the spotlight rather than risk
+    // showing the wrong pair.
+    if (activeIdxRef.current >= model.matches.length) activeIdxRef.current = -1;
+    if (activeIdxRef.current < 0 && model.matches.length === 0) {
+      const idleEl = root.querySelector("#h1Idle");
+      const pairEl = root.querySelector("#h1Pair");
+      if (idleEl) idleEl.style.display = "block";
+      if (pairEl) pairEl.classList.remove("show");
+    }
+    // Delegate to the exact same render function the mount effect itself
+    // uses (renderAllRef), so this can never drift out of sync with it --
+    // in particular, so the casting-pool chips this rebuilds always keep
+    // their click listeners (renderAll()/renderCasting() re-attach them
+    // on every call; a hand-rolled innerHTML rebuild here previously did
+    // not, which silently broke pool selection after the very first
+    // Realtime update).
+    renderAllRef.current();
+    const finaleEl = root.querySelector("#h1Finale");
+    if (model.isComplete() && finaleEl && !finaleEl.classList.contains("show")) {
+      showFinaleRef.current();
+    }
+  }, [teams, matchups, isStaff]);
 
-  async function handleRemove() {
-    if (featuredIdx == null || busyAction || reveal) return;
-    const idx = featuredIdx;
-    await withBusy(`remove:${idx}`, async () => {
-      const result = await removeTournamentMatchup(idx);
-      const newTeams = result.teams && result.teams.length > 0 ? result.teams : teams;
-      const newMatches = (result.matchups || []).map((m) => ({ a: m.a, b: m.b, locked: !!m.locked }));
-      setDisplayTeams(newTeams);
-      setDisplayMatches(newMatches);
-      setFeaturedIdx(newMatches.length > 0 ? Math.min(idx, newMatches.length - 1) : null);
-    });
-  }
+  // isStaff visibility, kept reactive (not just set once at mount) --
+  // casting pool + action bar + per-match lock/unlock/remove controls are
+  // admin/developer tools; everyone else gets a read-only poster
+  // (filmstrip still clickable to browse revealed matchups).
+  useLayoutEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const castingWrap = root.querySelector("#cast1");
+    const actionsWrap = root.querySelector("#actions1");
+    if (castingWrap) castingWrap.style.display = isStaff ? "" : "none";
+    if (actionsWrap) actionsWrap.style.display = isStaff ? "" : "none";
+    if (!isStaff) {
+      const pairCtl = root.querySelector(".fmpwire-pairctl");
+      if (pairCtl) pairCtl.style.display = "none";
+    } else {
+      renderAllRef.current();
+    }
+  }, [isStaff]);
 
-  function handleResetClick() {
-    if (busyAction || reveal) return;
-    pendingActionRef.current.reset = () => withBusy("reset", async () => {
-      const result = await resetTournamentMatchups();
-      setDisplayTeams(result.teams && result.teams.length > 0 ? result.teams : teams);
-      setDisplayMatches([]);
-      setFeaturedIdx(null);
-      setSelected([]);
-    });
-    setConfirmReset(true);
-  }
-  function handleEndClick() {
-    if (busyAction || reveal) return;
-    // Same fix, same reasoning, as handleProceed's own comment in
-    // DraftArenaPage (进入最终对阵): call `onEnded()` directly off this
-    // action's own success instead of relying solely on this table's
-    // Realtime DELETE event reaching *this same client's* subscription --
-    // that event still fires and still matters for every other connected
-    // client (another staff tab, or Spectators on this page), it's just
-    // no longer the only way *this* click ever takes visible effect.
-    pendingActionRef.current.end = () => withBusy("end", async () => { await endTournament(); onEnded(); });
-    setConfirmEnd(true);
-  }
-
-  const featured = featuredIdx != null ? displayMatches[featuredIdx] : null;
-  const rollDisabled = busyAction || !!reveal || complete || (selected.length === 0 && remaining.length < 1);
-  const lockDisabled = busyAction || !!reveal || selected.length < 2;
+  stateRef.current.__tournamentName = tournamentName;
 
   return (
-    <div id="fmpStage2" className="w-full flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
-      <style>{FMP_ANIM_CSS}</style>
-
-      {/* status strip -- same flat, flush-under-the-shell idiom as Draft Arena's own status strip */}
-      <div className="shrink-0 border-b border-panel-line/80 bg-void/30 backdrop-blur-sm px-5 sm:px-8 h-20 flex items-center gap-6">
-        <div className="flex-1 min-w-0 flex items-center gap-4">
-          <span className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full tracking-widest"
-            style={{
-              background: complete ? "rgba(34,229,255,.12)" : "rgba(124,92,255,.12)",
-              color: complete ? "#22E5FF" : "#A78BFA",
-              border: `1px solid ${complete ? "rgba(34,229,255,.4)" : "rgba(124,92,255,.35)"}`,
-            }}>
-            {complete ? "对阵已就绪" : "对阵抽签"}
-          </span>
-          <GlowHeading size="text-xl" className="truncate block">
-            {reveal ? `MATCH ${String(reveal.idx + 1).padStart(2, "0")} 生成中…`
-              : complete ? "全部对阵已生成 🏆"
-              : featured ? `MATCH ${String(featuredIdx + 1).padStart(2, "0")}`
-              : "等待生成首个对阵"}
-          </GlowHeading>
-        </div>
-      </div>
-
-      {/* body: roster + pairing rail, spotlight reveal as the dominant surface */}
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row lg:overflow-hidden">
-        <aside className="lg:w-[280px] shrink-0 lg:h-full lg:overflow-y-auto px-4 sm:px-5 lg:px-4 py-4 flex flex-col gap-2">
-          <p className="eyebrow px-1">参赛战队 · {displayTeams.length}</p>
-          {displayTeams.map((t) => {
-            const status = byeIdxs.has(t.idx) ? "bye" : usedIdxs.has(t.idx) ? "used" : "idle";
-            return (
-              <RosterRow key={t.idx} team={t} status={status}
-                selected={selected.includes(t.idx)}
-                onClick={isStaff && status === "idle" ? () => toggleSelect(t.idx) : undefined} />
-            );
-          })}
-        </aside>
-
-        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-panel-line/80 px-5 sm:px-6 py-4 gap-4">
-          {/* spotlight */}
-          <div className="relative flex-1 min-h-[380px] rounded-2xl border overflow-hidden flex items-center justify-center p-8 sm:p-10"
-            style={{
-              background: "radial-gradient(ellipse at 50% 0%, rgba(124,92,255,.14), transparent 60%), linear-gradient(180deg,#141833,#0a0c1c 80%)",
-              borderColor: complete ? "rgba(34,229,255,.35)" : "rgba(124,92,255,.25)",
-            }}>
-            {reveal?.phase === "reveal" && (
-              <div key={`flash-${reveal.idx}`} className="absolute inset-0 pointer-events-none"
-                style={{
-                  animation: "fmpFlashBurst .8s ease-out forwards",
-                  background: "radial-gradient(circle at 50% 45%, rgba(255,255,255,.55), rgba(124,92,255,.5) 30%, rgba(34,229,255,.3) 50%, transparent 72%)",
-                }} />
-            )}
-            {complete && featuredIdx === null ? (
-              <div key={displayMatches.length} className="w-full max-w-2xl flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .7s ease forwards" }}>
-                <div className="text-[11px] font-heading font-semibold uppercase tracking-[0.3em] text-accent2/90">对阵表已揭晓 · Final Lineup</div>
-                <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {displayMatches.map((m, i) => (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-panel-alt/50 border border-panel-line"
-                      style={{ animation: "fmpRowIn .45s ease forwards", animationDelay: `${i * 110}ms`, opacity: 0 }}>
-                      <span className="text-[10px] font-mono text-accent2/70 w-6 shrink-0">0{i + 1}</span>
-                      <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate">{teamByIdx.get(m.a)?.captainName ?? "?"}</span>
-                      {m.b != null ? (
-                        <>
-                          <span className="shrink-0 text-[10px] font-display font-black text-accent-soft">VS</span>
-                          <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate text-right">{teamByIdx.get(m.b)?.captainName ?? "?"}</span>
-                        </>
-                      ) : (
-                        <span className="shrink-0 text-xs text-ink-muted">轮空 · 直接晋级</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : reveal ? (
-              reveal.phase === "countdown" ? (
-                <div key={reveal.n} className="relative flex items-center justify-center">
-                  <span className="absolute w-48 h-48 sm:w-56 sm:h-56 rounded-full pointer-events-none"
-                    style={{ border: "2px solid rgba(124,92,255,.5)", animation: "fmpRingPulse .6s ease-out forwards" }} />
-                  <span className="absolute w-48 h-48 sm:w-56 sm:h-56 rounded-full pointer-events-none"
-                    style={{ border: "2px solid rgba(34,229,255,.35)", animation: "fmpRingPulse .6s ease-out .12s forwards" }} />
-                  <div className="font-display font-black text-white"
-                    style={{ fontSize: 140, animation: "fmpCountPulse .6s cubic-bezier(.2,.8,.3,1) forwards", textShadow: "0 0 80px rgba(124,92,255,.9), 0 0 140px rgba(34,229,255,.5)" }}>
-                    {reveal.n}
-                  </div>
-                </div>
-              ) : (
-                <BroadcastFrame pulse={reveal.phase === "reveal"} glowColor={reveal.phase === "reveal" ? "#7C5CFF" : "#22E5FF"}>
-                  <div key={reveal.phase} className="flex items-center gap-8 sm:gap-14"
-                    style={{ animation: reveal.phase === "flicker" ? "fmpFlicker .35s ease-in-out infinite" : undefined }}>
-                    <TeamFace team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.a) : reveal.flickerA} animateIn={reveal.phase === "reveal"} />
-                    <span className="font-display font-black text-2xl sm:text-3xl text-accent-soft shrink-0"
-                      style={reveal.phase === "reveal" ? { animation: "fmpVsPop .5s cubic-bezier(.2,.8,.2,1) forwards" } : undefined}>
-                      VS
-                    </span>
-                    <TeamFace
-                      team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.b) : reveal.flickerB}
-                      dim={reveal.phase === "reveal" && displayMatches[reveal.idx]?.b == null}
-                      animateIn={reveal.phase === "reveal"}
-                    />
-                  </div>
-                </BroadcastFrame>
-              )
-            ) : featured ? (
-              <div key={featuredIdx} className="flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .5s ease forwards" }}>
-                <BroadcastFrame glowColor="rgba(124,92,255,.6)">
-                  <div className="flex items-center gap-8 sm:gap-14">
-                    <TeamFace team={teamByIdx.get(featured.a)} />
-                    {featured.b != null ? (
-                      <>
-                        <span className="font-display font-black text-2xl sm:text-3xl text-accent-soft shrink-0">VS</span>
-                        <TeamFace team={teamByIdx.get(featured.b)} />
-                      </>
-                    ) : (
-                      <span className="px-4 py-2 rounded-lg bg-accent2/10 border border-accent2/40 text-accent2 font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
-                    )}
-                  </div>
-                </BroadcastFrame>
-                {complete && (
-                  <button type="button" onClick={() => setFeaturedIdx(null)} className="text-xs text-ink-muted hover:text-accent2 transition font-heading">
-                    ← 返回完整对阵表
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="text-center text-ink-faint text-sm max-w-xs leading-relaxed">
-                敬请期待首个对阵公布
-                <br />
-                手动配对或随机生成开启序幕
-              </div>
-            )}
+    <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-3 lg:overflow-y-auto">
+      <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
+        {showBackButton ? (
+          <button onClick={onBack}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg border transition-all"
+            style={{ background: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.16)", color: "rgba(255,255,255,0.6)" }}>
+            {backLabel}
+          </button>
+        ) : <span />}
+        {error && (
+          <div className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: "rgba(255,59,59,.1)", color: "#ff6b6b" }}>
+            ⚠ {error}
           </div>
-
-          {/* filmstrip */}
-          {displayMatches.length > 0 && (
-            <div className="shrink-0 flex gap-2 overflow-x-auto pb-1">
-              {displayMatches.map((m, i) => (
-                <FilmChip key={i} idx={i} match={m} teamByIdx={teamByIdx} active={featuredIdx === i}
-                  onClick={() => { if (!reveal) setFeaturedIdx(i); }} />
-              ))}
-            </div>
-          )}
-
-          {/* actions */}
-          {isStaff && (
-            <div className="shrink-0 flex items-center gap-3 flex-wrap">
-              <button type="button" onClick={handleLockOrRoll} disabled={lockDisabled} className="btn-primary px-4 py-2.5 text-sm">
-                🎬 定角锁定
-              </button>
-              <button type="button" onClick={handleRoll} disabled={rollDisabled} className="btn-primary px-4 py-2.5 text-sm">
-                🎞️ 随机生成剩余对阵
-              </button>
-              <button type="button" onClick={handleResetClick} disabled={busyAction || !!reveal} className="btn-ghost px-4 py-2.5 text-sm">
-                🔄 重置
-              </button>
-              <button onClick={handleRemove} disabled={!featured || busyAction || !!reveal}
-                className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-bold border transition-all whitespace-nowrap"
-                style={{
-                  background: featured ? "rgba(255,77,109,.08)" : "rgba(0,0,0,.2)",
-                  borderColor: featured ? "#FF4D6D66" : "rgba(255,255,255,.06)",
-                  color: featured ? "#FF4D6D" : "rgba(255,255,255,.15)",
-                  cursor: featured ? "pointer" : "not-allowed",
-                }}>
-                ✕ 解除本场对阵
-              </button>
-              <button type="button" onClick={handleEndClick} disabled={busyAction || !!reveal} className="btn-danger px-4 py-2.5 text-sm">
-                🏁 结束锦标赛
-              </button>
-              <span className="text-xs text-ink-muted ml-auto">
-                {selected.length > 0 ? `已选择 ${selected.length} 支战队` : remaining.length > 0 ? `未选择 · 将随机排位剩余 ${remaining.length} 支战队` : ""}
-              </span>
-            </div>
-          )}
-        </div>
+        )}
       </div>
-
-      {error && (
-        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt/95 backdrop-blur border border-danger/40 shadow-[0_0_24px_rgba(255,77,109,0.2)] text-danger text-xs px-4 py-3 rounded-lg cursor-pointer"
-          onClick={() => setError(null)}>
-          ⚠ {error}（点击关闭）
-        </div>
-      )}
-
+      <style>{FMP_CSS}</style>
+      <style>{FMP_WIRE_CSS}</style>
+      <div id="fmpStage" ref={containerRef} style={{ maxWidth: 1300, width: "100%", margin: "0 auto" }}
+        dangerouslySetInnerHTML={{ __html: FMP_HTML }} />
       {confirmReset && (
         <ConfirmDialog
           title="确认重置对阵"
@@ -1681,7 +1978,7 @@ function toDraftPlayer(participant) {
    so in the normal flow the pools this seeds with are never empty or
    mismatched in size -- but this page doesn't re-validate that itself.
    ════════════════════════════════════════════════════════════════════════ */
-export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
+export default function DraftArenaPage({ onExitToLobby, account }) {
   const [tournamentName, setTournamentName] = useState('')
   const [settingsMeta, setSettingsMeta] = useState({ teamCount: 0, playersPerTeam: 0 })
   const [tournament, setTournament] = useState(() => initialTournament([]))
@@ -1712,33 +2009,23 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
   const isStaff = account && (account.permission_role === 'admin' || account.permission_role === 'developer')
 
   // Seeds `tournament` (and `seededDraftHistory`) on mount. Resuming an
-  // in-progress draft (Live Draft State's `tournament_draft_state` +
-  // `tournament_draft_history` -- see their split, and why, in
-  // tournamentApi.js's own comment above fetchDraftState/fetchDraftHistory)
-  // now takes priority: if a row already exists there, this admin (or a
-  // different one) started a draft that hasn't reached Final Matchups or
-  // been abandoned via 结束锦标赛/重置 yet, so pick it up exactly where it
-  // was left -- teams, every pick so far (including the Undo stack behind
-  // them), and the current phase, all read straight from that persisted
-  // snapshot rather than reconstructing from current Tournament
-  // Settings/roster (which keeps a resumed draft internally consistent
-  // even if either changed while nobody was actively at this page). Falls
-  // through to the original from-scratch seed
+  // in-progress draft (Live Draft State, Phase 6's `tournament_draft_state`
+  // -- originally added only as a one-way broadcast for the Spectator
+  // Page) now takes priority: if a row already exists there, this admin
+  // (or a different one) started a draft that hasn't reached Final
+  // Matchups or been abandoned via 结束锦标赛/重置 yet, so pick it up
+  // exactly where it was left -- teams, every pick so far (including the
+  // Undo stack behind them), and the current phase, all read straight
+  // from that persisted snapshot rather than reconstructing from current
+  // Tournament Settings/roster (which keeps a resumed draft internally
+  // consistent even if either changed while nobody was actively at this
+  // page). Falls through to the original from-scratch seed
   // (fetchTournamentSettings()+fetchLobby() -> seedTournament(), empty
   // Undo stack) only when there's genuinely no draft in progress yet.
-  // Both persisted pieces are fetched together up front (cheap either
-  // way -- fetchDraftHistory() just returns `[]` when nothing's saved)
-  // rather than one gating the other, so this stays a single round trip
-  // pair instead of a waterfall.
   useEffect(() => {
     let cancelled = false
-    // fetchDraftHistory() is allowed to fail independently of
-    // fetchDraftState() -- a hiccup fetching the (larger, REST-only)
-    // Undo stack shouldn't discard a perfectly valid resumed board; it
-    // just resumes with an empty Undo stack instead (Undo simply has
-    // nothing to undo until a new pick happens).
-    Promise.all([fetchDraftState(), fetchDraftHistory().catch(() => [])])
-      .then(([existing, history]) => {
+    fetchDraftState()
+      .then((existing) => {
         if (cancelled) return
         if (existing && Array.isArray(existing.teams) && existing.teams.length > 0) {
           setTournamentName(existing.tournamentName || '')
@@ -1752,7 +2039,7 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
             captainCandidates: Array.isArray(existing.captainCandidates) ? existing.captainCandidates : [],
             roundOrders: Array.isArray(existing.roundOrders) ? existing.roundOrders : [],
           })
-          setSeededDraftHistory(history)
+          setSeededDraftHistory(Array.isArray(existing.draftHistory) ? existing.draftHistory : [])
           setReady(true)
           return
         }
@@ -1778,124 +2065,43 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
     return () => { cancelled = true }
   }, [])
 
-  // Live Draft State persistence (also the layer a resume reads back
-  // from, see the mount effect above): every time this admin/developer's
-  // local `tournament` (or the Undo stack / ephemeral captain selection
-  // reported up from DraftArena) actually changes during the draft, save
-  // a snapshot of it to the database. Fire-and-forget by design -- a slow
-  // or failed write here must never block or alter the admin's own
-  // drafting experience (all of this stays 100% local `DraftArena` state
-  // first; this is only ever a mirror of it, never the other way around
-  // while actively drafting). A non-staff account that somehow reaches
-  // this page (Section 8's pre-existing, unrelated known gap) simply has
-  // every call rejected server-side, same as any other admin-only RPC --
+  // Live Draft State broadcast (Phase 6 -- Spectator Page; also now the
+  // persistence layer a resume reads back from, see the mount effect
+  // above): every time this admin/developer's local `tournament` (or the
+  // Undo stack / ephemeral captain selection reported up from
+  // DraftArena) actually changes during the draft, mirror a snapshot of
+  // it to the database. Fire-and-forget by design -- a slow or failed
+  // write here must never block or alter the admin's own drafting
+  // experience (all of this stays 100% local `DraftArena` state first;
+  // this is only ever a mirror of it, never the other way around while
+  // actively drafting). A non-staff account that somehow reaches this
+  // page (Section 8's pre-existing, unrelated known gap) simply has every
+  // call rejected server-side, same as any other admin-only RPC --
   // harmless.
-  //
-  // `state` and `history` (draftHistory) are sent as two separate
-  // payloads to syncDraftState() -- not one -- because folding
-  // draftHistory into the same payload/row that Realtime broadcasts to
-  // the Spectator Page was a real, shipped bug: draftHistory alone was
-  // measured at ~3MB for a full 8x5 draft, and once that combined row
-  // crossed Supabase Realtime's 1,024 KB Postgres Changes payload cap,
-  // Realtime silently dropped the entire `state` field from the change
-  // event (see tournament_draft_history's comment in schema.sql), so the
-  // Spectator Page saw a row with no state and rendered its "nothing
-  // saved" placeholder -- reliably around the 6th teammate pick -- even
-  // though the correct state was sitting in Postgres. `history` is only
-  // ever read back by this same page's own resume-on-mount (see above),
-  // never by the Spectator Page, and is written to a table that isn't on
-  // the Realtime publication at all, so it can never trigger that failure
-  // again regardless of how large a draft's Undo stack grows.
-  //
-  // Leading-edge immediate + trailing-edge coalesced, not a plain
-  // trailing debounce -- this distinction matters and is the whole point:
-  // a plain trailing debounce (the previous version of this effect) waits
-  // out the full window on *every single change*, even an isolated pick
-  // with nothing else happening around it -- so the Spectator Page was
-  // never less than ~200ms behind the real draft, by design, all the
-  // time. That 200ms only ever existed to protect against a *rapid click
-  // burst* recomputing this payload once per click (see the cost note
-  // below) -- it was never meant to delay the common case of one pick at
-  // a time, which is most of a real draft. So: if no window is currently
-  // open, run immediately (nothing to protect against yet) and open a
-  // window purely to catch anything that lands in the next instant; if a
-  // change arrives while a window is already open (an actual burst),
-  // coalesce it into that window's trailing fire instead of running again
-  // right away. A quiet draft (the common case) now reaches Supabase --
-  // and therefore the Spectator Page -- with no artificial delay at all;
-  // a rapid burst (e.g. spam-clicking Undo late in a draft, when
-  // draftHistory is longest and JSON.stringify-ing it is most expensive)
-  // still only pays that recomputation cost once per window instead of
-  // once per click, same protection as before.
-  //
-  // `syncInFlightRef`/`pendingWhileInFlightRef` -- a SEPARATE guard from
-  // the 200ms window above, and just as load-bearing: root-caused a real,
-  // reported `57014 canceling statement due to statement timeout` /
-  // 500 on `sync_draft_state`. The 200ms window only throttles *when a
-  // write starts*; `syncDraftState(...).catch(...)` is fire-and-forget,
-  // never awaited, so nothing ever stopped a SECOND write from starting
-  // before the FIRST one's network round trip finished. Both tables this
-  // writes to are singleton rows (`id = true`) -- every write to either
-  // one takes the same row lock -- so two overlapping requests don't run
-  // concurrently in Postgres, the second one just blocks until the first
-  // commits. Normally that block is milliseconds, harmless. But several
-  // picks landing close together (very plausible right at the end of a
-  // draft -- an admin moving fast, or several picks within the same
-  // ~200ms window each still opening their own leading-edge send once
-  // the window before them closes) can queue up multiple overlapping
-  // writes faster than each one's round trip clears, and the queue can
-  // compound: request 3 waits on request 2 which waits on request 1.
-  // Enough of a backlog and a later request in that queue can genuinely
-  // exceed Postgres's own statement_timeout waiting for a lock that was
-  // always going to be released in milliseconds -- it just never got the
-  // chance to even start executing. `enter_final_matchups()` (进入最终对阵)
-  // deletes these exact same two rows, so it queues behind this same lock
-  // too -- see `flushPendingDraftSync` and `handleProceed`'s own comment
-  // further down for the other half of this fix. The fix here: never
-  // let two `sync_draft_state` requests be in flight at once -- if one
-  // is already running when a new write is due, queue it (superseding
-  // anything already queued, only the latest state matters) and fire it
-  // the instant the in-flight one finishes, rather than opening a second,
-  // overlapping request.
   const draftBroadcastRef = useRef(null)
   const draftBroadcastTimerRef = useRef(null)
   const pendingBroadcastRef = useRef(null)
-  const syncInFlightRef = useRef(false)
-  const pendingWhileInFlightRef = useRef(null)
   useEffect(() => {
     if (!isStaff || stage !== 'draft') return
     if (!tournament.teams || tournament.teams.length === 0) return
 
-    const send = (state, history) => {
-      if (syncInFlightRef.current) {
-        // A write to this same singleton row is already in flight --
-        // queue this one instead of starting a second, overlapping
-        // request that would just sit blocked waiting for the same row
-        // lock. Only the latest queued write survives; a superseded one
-        // is dropped outright, never sent.
-        pendingWhileInFlightRef.current = () => send(state, history)
-        return
-      }
-      syncInFlightRef.current = true
-      // Fire-and-forget by design (see this effect's own comment above) --
-      // never awaited/blocking, but never silently swallowed either: a
-      // failed write here is exactly the kind of thing that otherwise
-      // looks like "the app is fine, the Spectator Page/resume is just
-      // randomly stale," so it's worth a console trace even though the
-      // admin's own drafting experience must never wait on or be
-      // interrupted by it.
-      syncDraftState(state, history)
-        .catch((err) => console.error('sync_draft_state failed:', err))
-        .finally(() => {
-          syncInFlightRef.current = false
-          const next = pendingWhileInFlightRef.current
-          pendingWhileInFlightRef.current = null
-          next?.()
-        })
-    }
-
+    // Debounced on purpose: this payload includes the full draftHistory
+    // array (every entry itself a deep-cloned snapshot of teams/pool) plus
+    // the current teams/pool/captainCandidates again, so JSON.stringify-ing
+    // it gets more expensive the deeper into the draft this runs -- doing
+    // that synchronously on every single change meant a rapid click burst
+    // (e.g. spam-clicking Undo late in a draft, when draftHistory is
+    // longest) recomputed it once per click. Deferring it means a burst
+    // only pays that cost once, after the last change settles -- since this
+    // was already fire-and-forget/eventually-consistent (see comment
+    // above), the eventual broadcast content and this admin's own drafting
+    // experience are both unchanged; only the redundant mid-burst
+    // recomputation is removed. `pendingBroadcastRef` + the unmount effect
+    // right below exist so that navigating away mid-debounce still flushes
+    // the latest state instead of silently dropping it -- the old
+    // synchronous version never had a "pending" state that could be lost.
     const run = () => {
-      const state = {
+      const payload = {
         tournamentName,
         teamCount: settingsMeta.teamCount,
         playersPerTeam: settingsMeta.playersPerTeam,
@@ -1906,78 +2112,33 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
         pickIndex: tournament.pickIndex,
         roundOrders: tournament.roundOrders,
         selectedCaptainId,
+        draftHistory,
       }
-      const json = JSON.stringify({ state, draftHistory })
+      const json = JSON.stringify(payload)
       if (draftBroadcastRef.current === json) return
       draftBroadcastRef.current = json
-      send(state, draftHistory)
+      syncDraftState(payload).catch(() => {})
     }
 
-    if (draftBroadcastTimerRef.current) {
-      // A coalescing window from a very recent change is already open --
-      // queue this one for the trailing fire at the end of it instead of
-      // running again immediately.
-      pendingBroadcastRef.current = run
-      return
-    }
-
-    // No window open: the common case. Run immediately, then open a
-    // short window purely to coalesce anything that arrives right behind
-    // it (the actual burst-protection case).
-    run()
+    if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
+    pendingBroadcastRef.current = run
     draftBroadcastTimerRef.current = setTimeout(() => {
       draftBroadcastTimerRef.current = null
-      const pending = pendingBroadcastRef.current
       pendingBroadcastRef.current = null
-      pending?.()
+      run()
     }, 200)
   }, [isStaff, stage, tournamentName, settingsMeta, tournament, selectedCaptainId, draftHistory])
 
-  // Flush any still-pending coalesced write on unmount (leaving this page
-  // mid-burst) so the very last change before navigating away is never
-  // silently dropped -- a `[]`-deps effect so this runs exactly once, on
-  // true unmount, not on every dependency change above. Harmless no-op in
-  // the common case: outside of a burst, nothing is ever left pending
-  // since the leading edge above already ran synchronously.
+  // Flush any still-pending debounced broadcast on unmount (leaving this
+  // page) so the very last change before navigating away is never silently
+  // dropped -- a `[]`-deps effect so this runs exactly once, on true
+  // unmount, not on every dependency change above.
   useEffect(() => {
     return () => {
       if (draftBroadcastTimerRef.current) clearTimeout(draftBroadcastTimerRef.current)
       pendingBroadcastRef.current?.()
     }
   }, [])
-
-  // 进入最终对阵's own fix, other half of the `sync_draft_state`
-  // 57014/500 root cause above: `enter_final_matchups()` deletes the
-  // exact same two singleton rows `sync_draft_state` writes to, so it
-  // queues behind the exact same row lock. `readyToProceed` (see
-  // `allDrafted`/`hiddenKeys` above) already keeps this from firing while
-  // a flight animation is still playing, but a pick's own write can still
-  // be in flight or queued (the in-flight/coalescing guards above) well
-  // after its animation already finished -- animation duration and
-  // network round-trip time are unrelated. `handleProceed` awaits this
-  // before calling `enterFinalMatchups()` specifically so that DELETE is
-  // never one more request piling into the same queue -- it simply waits
-  // for the queue to fully drain first, the same way a careful caller
-  // would wait for a lock rather than contend for it. Polls on a short
-  // interval rather than exposing a "resolve me" callback from the effect
-  // above, since this only needs to run once, right before this one
-  // specific action, not be wired into that effect's own lifecycle.
-  async function flushPendingDraftSync() {
-    const deadline = Date.now() + 10000
-    while (draftBroadcastTimerRef.current || syncInFlightRef.current || pendingWhileInFlightRef.current) {
-      if (Date.now() > deadline) {
-        // Sane ceiling, not a fix for anything -- the fix above is what
-        // keeps this queue short and fast under normal conditions. This
-        // only exists so a genuinely hung network call (a different
-        // failure than the lock pileup this effect fixes) can't leave
-        // 进入最终对阵 permanently stuck waiting on a request that will
-        // never resolve.
-        console.error('flushPendingDraftSync: gave up waiting after 10s, proceeding anyway')
-        break
-      }
-      await new Promise((r) => setTimeout(r, 50))
-    }
-  }
 
   // Draft progress now persists across leaving this page entirely: the
   // Live Draft State broadcast above is the *only* place captain
@@ -2003,80 +2164,31 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
   // remains in the next tournament.
   useEffect(() => {
     let cancelled = false
-    let unsubscribe = null
-    let retryTimer = null
-
-    // Immediate initial read (fast first paint, before the realtime
-    // channel has necessarily finished subscribing yet).
     fetchFinalMatchups()
       .then((row) => {
         if (cancelled || !row) return
         setFinalMatches(row)
         setStage('final')
       })
-      .catch((err) => console.error('fetchFinalMatchups (initial) failed:', err))
+      .catch(() => {})
 
-    function connect() {
-      unsubscribe = subscribeFinalMatchups(
-        (payload) => {
-          if (cancelled) return
-          if (payload.eventType === 'DELETE') {
-            setFinalMatches(null)
-            setStage('draft')
-            ;(onExitToLobby || (() => {}))()
-            return
-          }
-          const row = payload.new
-          if (!row) return
-          // `teams` is snapshotted once by enter_final_matchups and never
-          // changes again for the lifetime of this tournament_matches row --
-          // every later mutation (lock/pair/roll/remove/reset) only ever
-          // touches `matchups`. But Postgres logical replication can omit an
-          // unchanged jsonb column's value from a realtime UPDATE payload
-          // once it's large enough to be TOASTed, so a matchups-only update
-          // can arrive here with `teams` missing/empty even though the
-          // database itself still has it. Guard against that by keeping
-          // whatever non-empty teams we already have instead of wiping the
-          // whole roster to nothing.
-          const incomingTeams = Array.isArray(row.teams) ? row.teams : []
-          setFinalMatches((prev) => ({
-            teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
-            matchups: Array.isArray(row.matchups) ? row.matchups : [],
-          }))
-          setStage('final')
-        },
-        // Realtime resilience: Supabase's client retries the underlying
-        // WebSocket on its own, but a channel that was live through a long
-        // backgrounded tab or a rough network patch can come back
-        // reporting 'CHANNEL_ERROR'/'TIMED_OUT' without ever cleanly
-        // re-subscribing -- silently stuck on stale data. So: on any
-        // non-SUBSCRIBED status, tear the channel down and reconnect
-        // shortly; and on every SUBSCRIBED (the first connect *and* every
-        // later reconnect), re-fetch once so nothing missed while
-        // disconnected is silently lost. Same pattern used by the
-        // Spectator Page's own subscriptions (SpectatorPage.jsx), since
-        // this is the exact same underlying channel/table.
-        (status) => {
-          if (cancelled) return
-          if (status === 'SUBSCRIBED') {
-            fetchFinalMatchups()
-              .then((row) => { if (!cancelled && row) { setFinalMatches(row); setStage('final') } })
-              .catch((err) => console.error('fetchFinalMatchups (reconnect) failed:', err))
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            unsubscribe?.()
-            unsubscribe = null
-            if (!cancelled) retryTimer = setTimeout(connect, 2000)
-          }
-        }
-      )
-    }
-    connect()
+    const unsubscribe = subscribeFinalMatchups((payload) => {
+      if (payload.eventType === 'DELETE') {
+        setFinalMatches(null)
+        setStage('draft')
+        ;(onExitToLobby || (() => {}))()
+        return
+      }
+      const row = payload.new
+      if (!row) return
+      setFinalMatches({
+        teams: Array.isArray(row.teams) ? row.teams : [],
+        matchups: Array.isArray(row.matchups) ? row.matchups : [],
+      })
+      setStage('final')
+    })
 
-    return () => {
-      cancelled = true
-      if (retryTimer) clearTimeout(retryTimer)
-      unsubscribe?.()
-    }
+    return () => { cancelled = true; unsubscribe() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -2090,54 +2202,15 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
   async function handleProceed() {
     setProceedError(null)
     try {
-      // Wait for any pending/in-flight tournament_draft_state write to
-      // fully drain first -- see flushPendingDraftSync's own comment
-      // above. enter_final_matchups() deletes the exact same two
-      // singleton rows sync_draft_state writes to; without this, this
-      // DELETE could queue up behind (or race) an in-flight or
-      // about-to-fire write to those rows and contend for the same lock
-      // -- root cause of a real, reported `57014 canceling statement due
-      // to statement timeout` / 500 on sync_draft_state. This is a plain
-      // wait, not a retry or a fallback -- if a write itself fails, its
-      // own console.error already covers that; this only ever waits for
-      // the queue to be empty before adding the next thing to it.
-      await flushPendingDraftSync()
       const teamsPayload = tournament.teams.map((team, idx) => toFinalMatchupTeam(team, idx))
-      // Apply this click's own result directly, the same way every
-      // mutation inside FinalMatchupsStage already does (createManualMatchup
-      // / rollTournamentMatchupsPool / removeTournamentMatchup /
-      // resetTournamentMatchups -- see their own handlers) -- this button
-      // was the one exception that instead awaited the RPC, discarded its
-      // result, and relied entirely on the tournament_matches Realtime
-      // subscription's own echo to ever flip `stage` to 'final'. That's a
-      // real, reported bug: a genuine INSERT/UPDATE succeeding server-side
-      // is not the same event as *this client's own subscription* having
-      // already processed it by the time this function returns -- the two
-      // are only *usually* close together, not guaranteed to be, so the
-      // very first click could genuinely produce no visible change until
-      // something else (a second click's own write, prompting a second
-      // Realtime round trip) happened to arrive. Using the RPC's own
-      // return value removes that dependency entirely for the client that
-      // just performed the action -- Realtime remains exactly as useful as
-      // before for every *other* connected client (a second staff tab, or
-      // Spectators already on the Final Matchups view).
-      const row = await enterFinalMatchups(teamsPayload)
-      setFinalMatches(row)
-      setStage('final')
+      await enterFinalMatchups(teamsPayload)
     } catch (err) {
       setProceedError(err.message || '生成最终对阵失败')
     }
   }
 
   return (
-    <AppShell
-      account={account}
-      onLogout={onLogout}
-      backAction={onExitToLobby}
-      backLabel="返回锦标赛大厅"
-      title={tournamentName}
-      bgVariant="default"
-    >
+    <div className="min-h-screen w-full text-white font-sans flex flex-col lg:h-screen lg:overflow-hidden" style={{ background: "radial-gradient(ellipse at top, #0b1716 0%, #050807 55%, #020303 100%)" }}>
       <GlobalStyle />
       {stage === 'final' && finalMatches ? (
         <FinalMatchupsStage
@@ -2145,7 +2218,7 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
           teams={finalMatches.teams}
           matchups={finalMatches.matchups}
           isStaff={isStaff}
-          onEnded={onExitToLobby}
+          onBack={onExitToLobby || (() => {})}
         />
       ) : !ready ? (
         <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>
@@ -2153,6 +2226,7 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
         <DraftArena
           tournament={tournament}
           setTournament={setTournament}
+          onBack={onExitToLobby || (() => {})}
           onProceed={handleProceed}
           tournamentName={tournamentName}
           isStaff={isStaff}
@@ -2162,11 +2236,12 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
         />
       )}
       {proceedError && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer bg-panel-alt/95 backdrop-blur border border-danger/40 text-danger shadow-[0_0_24px_rgba(255,77,109,0.25)]"
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-bold"
+          style={{ background: "rgba(20,4,4,0.95)", border: "1px solid #5a1414", color: "#f87171" }}
           onClick={() => setProceedError(null)}>
           ⚠ {proceedError}（点击关闭）
         </div>
       )}
-    </AppShell>
+    </div>
   );
 }

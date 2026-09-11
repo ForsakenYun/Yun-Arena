@@ -14,38 +14,34 @@ body,
 
 body {
   margin: 0;
-  background-color: #06070f;
-  color: #f4f2ff;
+  background-color: #060a10;
+  color: #e8f6f3;
   font-family: 'Noto Sans SC', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: rgba(124, 92, 255, 0.35);
+  background: rgba(45, 255, 209, 0.3);
   color: #ffffff;
 }
 
-/* thin gradient scrollbar to stay on-brand */
+/* thin teal scrollbar to stay on-brand */
 ::-webkit-scrollbar {
   width: 8px;
-  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #0e1020;
+  background: #0d141c;
 }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #7c5cff, #22e5ff);
+  background: #14a88c;
   border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #8f72ff, #4dedff);
 }
 
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #f4f2ff;
-  -webkit-box-shadow: 0 0 0px 1000px #161a33 inset;
+  -webkit-text-fill-color: #e8f6f3;
+  -webkit-box-shadow: 0 0 0px 1000px #101922 inset;
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -57,67 +53,5 @@ input:-webkit-autofill:focus {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
-  }
-}
-
-/* ---------- shared visual-identity utility classes ---------- */
-@layer components {
-  /* frosted card with a soft gradient hairline border */
-  .glass-panel {
-    @apply relative bg-panel/80 backdrop-blur-sm border border-panel-line rounded-2xl shadow-card-lift;
-  }
-
-  /* gradient-bordered accent panel (used for hero/emphasis cards) */
-  .accent-frame {
-    position: relative;
-    border-radius: 1rem;
-    background: linear-gradient(155deg, rgba(124, 92, 255, 0.5), rgba(34, 229, 255, 0.12) 40%, rgba(43, 49, 89, 0.6) 100%);
-    padding: 1px;
-  }
-  .accent-frame > * {
-    border-radius: inherit;
-  }
-
-  /* clipped-corner esports card shape */
-  .clip-corner {
-    clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
-  }
-  .clip-corner-sm {
-    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
-  }
-
-  /* primary CTA -- gradient fill, lifts on hover */
-  .btn-primary {
-    @apply relative inline-flex items-center justify-center gap-2 font-heading font-bold tracking-wide text-void
-      bg-accent-gradient rounded-lg transition-all duration-200 shadow-accent-glow
-      hover:shadow-accent-glow-lg hover:brightness-110 active:scale-[0.98]
-      disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none;
-  }
-
-  /* ghost / outline button using the accent color */
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 font-heading font-semibold tracking-wide
-      text-accent2 border border-accent/40 rounded-lg transition-all duration-200
-      hover:bg-accent/10 hover:border-accent hover:shadow-accent-glow
-      disabled:opacity-50 disabled:pointer-events-none;
-  }
-
-  .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 font-heading font-semibold tracking-wide
-      text-danger border border-danger/40 rounded-lg transition-all duration-200
-      hover:bg-danger/10 hover:border-danger disabled:opacity-50 disabled:pointer-events-none;
-  }
-
-  /* gradient text for hero titles */
-  .text-gradient {
-    background: linear-gradient(90deg, #f4f2ff, #cfc7ff 45%, #22e5ff);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  /* thin uppercase eyebrow label */
-  .eyebrow {
-    @apply font-heading text-[11px] font-semibold uppercase tracking-[0.28em] text-accent2/80;
   }
 }
