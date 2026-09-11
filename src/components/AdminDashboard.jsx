@@ -902,8 +902,8 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
   }
 
   const nav = [
-    { key: 'lobby', icon: 'lobby', label: '锦标赛大厅' },
     { key: 'admin', icon: 'admin', label: '管理后台' },
+    { key: 'lobby', icon: 'lobby', label: '锦标赛大厅' },
     { key: 'spectate', icon: 'spectate', label: '观赛' },
   ]
   function handleNavigate(key) {
