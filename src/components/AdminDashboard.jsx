@@ -197,8 +197,8 @@ function RoleToggle({ value, onChange }) {
           key={opt.value}
           className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
             value === opt.value
-              ? 'bg-accent-gradient border-transparent text-void shadow-accent-glow font-semibold'
-              : 'bg-panel-alt/70 border-panel-line text-ink-muted hover:text-ink-primary hover:border-accent2/40'
+              ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
+              : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
           }`}
         >
           <input
@@ -227,8 +227,8 @@ function GenderToggle({ value, onChange }) {
           key={opt.value}
           className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
             value === opt.value
-              ? 'bg-accent-gradient border-transparent text-void shadow-accent-glow font-semibold'
-              : 'bg-panel-alt/70 border-panel-line text-ink-muted hover:text-ink-primary hover:border-accent2/40'
+              ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
+              : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
           }`}
         >
           <input
