@@ -991,7 +991,7 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
                   </span>
                 }
                 trailing={
-                  <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                  <div className="flex gap-1.5 transition">
                     {isDeveloper && u.permission_role === 'user' && (
                       <IconAction icon="promote" title="提升为管理员" onClick={() => handlePromote(u)} />
                     )}
@@ -1056,7 +1056,7 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
                     </span>
                   }
                   trailing={
-                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
+                    <div className="flex gap-1.5 transition">
                       <IconAction icon="copy" title="复制" onClick={() => copyInvite(inv.code)} />
                       <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingInvite(inv)} />
                     </div>

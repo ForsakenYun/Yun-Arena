@@ -687,7 +687,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
                       <button
                         type="button"
                         onClick={() => setRemovingParticipant(p)}
-                        className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
+                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
                       >
                         <Icon.userMinus className="w-3.5 h-3.5" />
                       </button>
