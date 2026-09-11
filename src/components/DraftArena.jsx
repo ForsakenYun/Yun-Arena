@@ -1136,7 +1136,7 @@ function FilmChip({ idx, match, teamByIdx, active, onClick }) {
   );
 }
 
-export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff }) {
+export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onEnded = () => {} }) {
   const initialMatches = useMemo(() => matchups.map((m) => ({ a: m.a, b: m.b, locked: !!m.locked })), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [displayTeams, setDisplayTeams] = useState(teams);
   const [displayMatches, setDisplayMatches] = useState(initialMatches);
@@ -1305,7 +1305,14 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff })
   }
   function handleEndClick() {
     if (busyAction || reveal) return;
-    pendingActionRef.current.end = () => withBusy("end", async () => { await endTournament(); });
+    // Same fix, same reasoning, as handleProceed's own comment in
+    // DraftArenaPage (进入最终对阵): call `onEnded()` directly off this
+    // action's own success instead of relying solely on this table's
+    // Realtime DELETE event reaching *this same client's* subscription --
+    // that event still fires and still matters for every other connected
+    // client (another staff tab, or Spectators on this page), it's just
+    // no longer the only way *this* click ever takes visible effect.
+    pendingActionRef.current.end = () => withBusy("end", async () => { await endTournament(); onEnded(); });
     setConfirmEnd(true);
   }
 
@@ -1930,7 +1937,27 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
     setProceedError(null)
     try {
       const teamsPayload = tournament.teams.map((team, idx) => toFinalMatchupTeam(team, idx))
-      await enterFinalMatchups(teamsPayload)
+      // Apply this click's own result directly, the same way every
+      // mutation inside FinalMatchupsStage already does (createManualMatchup
+      // / rollTournamentMatchupsPool / removeTournamentMatchup /
+      // resetTournamentMatchups -- see their own handlers) -- this button
+      // was the one exception that instead awaited the RPC, discarded its
+      // result, and relied entirely on the tournament_matches Realtime
+      // subscription's own echo to ever flip `stage` to 'final'. That's a
+      // real, reported bug: a genuine INSERT/UPDATE succeeding server-side
+      // is not the same event as *this client's own subscription* having
+      // already processed it by the time this function returns -- the two
+      // are only *usually* close together, not guaranteed to be, so the
+      // very first click could genuinely produce no visible change until
+      // something else (a second click's own write, prompting a second
+      // Realtime round trip) happened to arrive. Using the RPC's own
+      // return value removes that dependency entirely for the client that
+      // just performed the action -- Realtime remains exactly as useful as
+      // before for every *other* connected client (a second staff tab, or
+      // Spectators already on the Final Matchups view).
+      const row = await enterFinalMatchups(teamsPayload)
+      setFinalMatches(row)
+      setStage('final')
     } catch (err) {
       setProceedError(err.message || '生成最终对阵失败')
     }
@@ -1951,6 +1978,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
           teams={finalMatches.teams}
           matchups={finalMatches.matchups}
           isStaff={isStaff}
+          onEnded={onExitToLobby}
         />
       ) : !ready ? (
         <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>

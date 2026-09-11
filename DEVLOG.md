@@ -89,6 +89,30 @@ Development rules:
   rendering path in `<DraftArena>`/`<FinalMatchupsStage>` (admin-only
   controls, spectator-replay animations); or anything
   `SpectatorPage.jsx` itself reads, subscribes to, or assumes.
+- **A click's own success must never depend solely on that same
+  client's Realtime subscription echoing its own write back.** Found
+  twice as a real, reported bug (进入最终对阵 and 结束锦标赛, Section 8
+  — both fixed by applying the RPC's own result/success directly
+  instead): a write succeeding server-side and *this client's own*
+  postgres_changes subscription having already processed it by the
+  time the click handler returns are only *usually* close together in
+  time, never guaranteed to be — so the very first click could produce
+  no visible change at all until something else (often just a second
+  click's own write, prompting a second round trip) coincidentally
+  arrived. The symptom is distinctive and easy to mistake for
+  something else: click does nothing, click again and it works. The
+  fix is always the same shape, and is already the established pattern
+  for every other mutation in `FinalMatchupsStage`
+  (createManualMatchup/rollTournamentMatchupsPool/
+  removeTournamentMatchup/resetTournamentMatchups all do this
+  already) — apply the awaited RPC call's own return value (or a
+  direct follow-up callback on success, e.g. `onEnded()`) straight to
+  local state/navigation, synchronously in the same handler. Realtime
+  still stays exactly as useful as before for *every other* connected
+  client (another staff tab, or Spectators) — this isn't "remove
+  Realtime," it's "never make the acting client wait on it for its own
+  action." Any new admin-mutating button added to Draft Arena or
+  Admin Dashboard should be checked against this before shipping.
 
 **Browser Layout Standard** (permanent — applies to main pages only,
 not dialogs/modals):
