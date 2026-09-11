@@ -1163,33 +1163,29 @@ function TeamFace({ team, dim = false, animateIn = false }) {
   );
 }
 
-function RosterRow({ team, status }) {
+function RosterRow({ team, status, selected, onClick }) {
   const isUsed = status !== "idle";
+  const clickable = !!onClick;
+  const Tag = clickable ? "button" : "div";
   return (
-    <div className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors duration-500 ${
-      isUsed ? "border-accent2/35 bg-accent2/5" : "border-panel-line bg-void/30"
-    }`}>
-      <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed} />
-      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${isUsed ? "text-accent2" : "text-ink-muted"}`}>
+    <Tag type={clickable ? "button" : undefined} onClick={onClick}
+      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors duration-500 text-left ${
+        selected ? "border-accent2 bg-accent2/15 shadow-accent-glow"
+          : isUsed ? "border-accent2/35 bg-accent2/5"
+          : "border-panel-line bg-void/30"
+      } ${clickable ? "cursor-pointer hover:border-accent2/40" : ""}`}>
+      <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed || selected} />
+      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${isUsed || selected ? "text-accent2" : "text-ink-muted"}`}>
         {teamLabel(team)}
       </span>
       {status === "bye" && (
         <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white/50">轮空</span>
       )}
-    </div>
+    </Tag>
   );
 }
 
-function PoolChip({ team, selected, onClick }) {
-  return (
-    <button type="button" onClick={onClick}
-      className={`px-2.5 py-1.5 rounded-lg border text-xs font-heading font-semibold transition-all ${
-        selected ? "border-accent2 bg-accent2/15 text-white shadow-accent-glow" : "border-panel-line bg-void/30 text-ink-muted hover:border-accent2/40 hover:text-ink-primary"
-      }`}>
-      {teamLabel(team)}
-    </button>
-  );
-}
+
 
 function FilmChip({ idx, match, teamByIdx, active, onClick }) {
   const a = teamByIdx.get(match.a);
@@ -1419,23 +1415,14 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
       <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row lg:overflow-hidden">
         <aside className="lg:w-[280px] shrink-0 lg:h-full lg:overflow-y-auto px-4 sm:px-5 lg:px-4 py-4 flex flex-col gap-2">
           <p className="eyebrow px-1">参赛战队 · {displayTeams.length}</p>
-          {displayTeams.map((t) => (
-            <RosterRow key={t.idx} team={t} status={byeIdxs.has(t.idx) ? "bye" : usedIdxs.has(t.idx) ? "used" : "idle"} />
-          ))}
-          {isStaff && (
-            <>
-              <p className="eyebrow px-1 mt-3">选择配对战队</p>
-              <div className="flex flex-wrap gap-1.5">
-                {remaining.length === 0 ? (
-                  <span className="text-xs text-ink-faint px-1 py-1">全部战队已配对</span>
-                ) : (
-                  remaining.map((t) => (
-                    <PoolChip key={t.idx} team={t} selected={selected.includes(t.idx)} onClick={() => toggleSelect(t.idx)} />
-                  ))
-                )}
-              </div>
-            </>
-          )}
+          {displayTeams.map((t) => {
+            const status = byeIdxs.has(t.idx) ? "bye" : usedIdxs.has(t.idx) ? "used" : "idle";
+            return (
+              <RosterRow key={t.idx} team={t} status={status}
+                selected={selected.includes(t.idx)}
+                onClick={isStaff && status === "idle" ? () => toggleSelect(t.idx) : undefined} />
+            );
+          })}
         </aside>
 
         <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-panel-line/80 px-5 sm:px-6 py-4 gap-4">
