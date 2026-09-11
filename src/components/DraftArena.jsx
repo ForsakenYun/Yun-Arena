@@ -876,8 +876,14 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   // is used in the BODY section below.
   const teamOverviewStrip = (
     <div className="shrink-0 border-b border-panel-line/80 px-4 sm:px-5 lg:px-6 py-3.5">
-      <p className="eyebrow px-1 mb-2">战队总览 · {teams.length}</p>
-      <div className="flex flex-row gap-2.5 overflow-x-auto pb-1">
+      <p className="eyebrow px-1">战队总览 · {teams.length}</p>
+      {/* pt-3 here (in place of the eyebrow's old mb-2) puts headroom
+          *inside* this overflow-x-auto row's own clip box -- setting
+          overflow-x without overflow-y forces the used value of
+          overflow-y to auto too (per the CSS overflow spec), so without
+          this the row clips TeamCard's isActive glow and its df-hit
+          assignment-ripple flush against its own top edge. */}
+      <div className="flex flex-row gap-2.5 overflow-x-auto pb-1 pt-3">
         {teams.map((team, i) => (
           <div key={i} className="shrink-0" style={{ width: 220 }}>
             <TeamCard team={team} activeTeamIdx={visualActiveTeamIdx} teamIdx={i}
@@ -989,11 +995,18 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 
           {draftPhase === "captain" && (
             <div className="flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden px-5 sm:px-6 py-4">
-              <div className="flex items-center justify-between shrink-0 mb-3">
+              {/* mb-3 moved off this header and onto the scroll container
+                  below as pt-3 (same 12px total gap) so that 12px sits
+                  *inside* the scroll container's own clip box instead of
+                  outside it -- giving PlayerStatCard's hover/selected glow
+                  room to bleed upward without being clipped by the
+                  container's own top edge (its first row otherwise sits
+                  flush against it). */}
+              <div className="flex items-center justify-between shrink-0">
                 <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: "#22c55e" }}>队长候选池</h2>
                 <span className="text-xs font-mono text-white/30">{captainCandidates.length} 人未分配</span>
               </div>
-              <div className="flex-1 lg:min-h-0 overflow-y-auto">
+              <div className="flex-1 lg:min-h-0 overflow-y-auto pt-3">
                 <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
                   {captainCandidates.map((c) => (
                     <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={effectiveSelectedCaptain?.id === c.id} badge="队长" />
@@ -1006,12 +1019,14 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
 
           {draftPhase === "teammate" && (
             <div className="flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden px-5 sm:px-6 py-4">
-              <div className="flex items-center justify-between shrink-0 mb-3">
+              {/* Same mb-3-to-pt-3 headroom fix as the captain pool grid
+                  above -- see the comment there. */}
+              <div className="flex items-center justify-between shrink-0">
                 <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>待选选手</h2>
                 <span className="text-xs font-mono text-white/30">{pool?.length ?? 0} 人待选</span>
               </div>
               {pool && pool.length > 0 ? (
-                <div className="flex-1 lg:min-h-0 overflow-y-auto">
+                <div className="flex-1 lg:min-h-0 overflow-y-auto pt-3">
                   <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
                     {pool.map((p) => (
                       <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
@@ -1019,7 +1034,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center py-10 text-white/30">
+                <div className="flex-1 flex flex-col items-center justify-center py-10 text-white/30 pt-3">
                   <div className="text-4xl mb-2">🏆</div>
                   <div className="font-display text-sm tracking-widest">选秀完成</div>
                 </div>
