@@ -79,6 +79,14 @@ const Icon = {
       <path d="M15.5 10h6" strokeLinecap="round" />
     </svg>
   ),
+  // Identical markup to AdminDashboard.jsx's own `trash` icon -- kept as an
+  // exact duplicate (not a shared import) so this page's delete action
+  // renders pixel-identical to the Admin Dashboard's, per explicit request.
+  trash: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M5 7h14M9.5 7V5.2A1.2 1.2 0 0 1 10.7 4h2.6a1.2 1.2 0 0 1 1.2 1.2V7M7.5 7l.7 11.2A1.6 1.6 0 0 0 9.8 19.7h4.4a1.6 1.6 0 0 0 1.6-1.5L16.5 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   userPlus: (p) => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
       <circle cx="9" cy="8" r="3" />
@@ -687,9 +695,10 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
                       <button
                         type="button"
                         onClick={() => setRemovingParticipant(p)}
-                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
+                        title="删除"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-panel-line text-ink-muted hover:text-danger hover:border-danger/40 transition"
                       >
-                        <Icon.userMinus className="w-3.5 h-3.5" />
+                        <Icon.trash className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </>
