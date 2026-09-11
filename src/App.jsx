@@ -130,9 +130,9 @@ export default function App() {
   if (isDashboard) {
     view = <AdminDashboard account={account} onLogout={handleLogout} onOpenLobby={() => (window.location.hash = 'lobby')} />
   } else if (isDraft) {
-    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} account={account} />
+    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} account={account} onLogout={handleLogout} />
   } else if (isSpectate) {
-    view = <SpectatorPage onExitToLobby={() => (window.location.hash = 'lobby')} account={account} />
+    view = <SpectatorPage onExitToLobby={() => (window.location.hash = 'lobby')} account={account} onLogout={handleLogout} />
   } else if (account) {
     // Default logged-in destination for everyone (Section: navigation).
     // Admin/Developer accounts can reach this from the dashboard's

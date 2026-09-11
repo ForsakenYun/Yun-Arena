@@ -1691,7 +1691,7 @@ function toDraftPlayer(participant) {
    so in the normal flow the pools this seeds with are never empty or
    mismatched in size -- but this page doesn't re-validate that itself.
    ════════════════════════════════════════════════════════════════════════ */
-export default function DraftArenaPage({ onExitToLobby, account }) {
+export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
   const [tournamentName, setTournamentName] = useState('')
   const [settingsMeta, setSettingsMeta] = useState({ teamCount: 0, playersPerTeam: 0 })
   const [tournament, setTournament] = useState(() => initialTournament([]))
@@ -2142,6 +2142,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   return (
     <AppShell
       account={account}
+      onLogout={onLogout}
       backAction={onExitToLobby}
       backLabel="返回锦标赛大厅"
       title={tournamentName}

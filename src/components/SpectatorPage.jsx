@@ -47,7 +47,11 @@ import AppShell from './AppShell.jsx'
          a spectator's click can never diverge local state from the saved
          state this page renders.
    Only a thin identity/exit strip (this file's own header) is unique to
-   this page, in the main app's Tailwind accent theme (Section 3).
+   this page, in the main app's Tailwind accent theme (Section 3). The
+   account chip itself (avatar, name, 退出登录) is the same shared
+   AppShell control every other page uses -- see the note on `account`/
+   `onLogout` below for why this page now forwards both instead of
+   hard-coding `viewerMode`.
 
    View, switched purely by what's currently saved in the database:
      - 'final'    — a tournament_matches row exists (Final Matchups stage
@@ -101,7 +105,7 @@ function EmptySpectatorView() {
 function noop() {}
 
 /* ---------- top-level page ---------- */
-export default function SpectatorPage({ onExitToLobby }) {
+export default function SpectatorPage({ onExitToLobby, account, onLogout }) {
   const [tournamentName, setTournamentName] = useState('')
   const [draftState, setDraftState] = useState(null)
   const [finalMatches, setFinalMatches] = useState(null) // { teams, matchups } | null
@@ -256,8 +260,8 @@ export default function SpectatorPage({ onExitToLobby }) {
 
   return (
     <AppShell
-      account={null}
-      viewerMode
+      account={account}
+      onLogout={onLogout}
       backAction={onExitToLobby}
       backLabel="返回锦标赛大厅"
       title={tournamentName ? `${tournamentName} · 观赛` : '观赛'}
