@@ -948,11 +948,11 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
               {Math.round(headerProgressPct)}%
             </div>
           </div>
-          {isStaff && draftPhase === "captain" && allCaptainsAssigned && (
-            <button onClick={startTeammateDraft} disabled={!roundOrderValid.every(Boolean)}
+          {isStaff && draftPhase === "captain" && (
+            <button onClick={startTeammateDraft} disabled={!(allCaptainsAssigned && roundOrderValid.every(Boolean))}
               className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
-              style={{ background: "rgba(34,229,255,0.07)", borderColor: roundOrderValid.every(Boolean) ? TEAL : "rgba(255,255,255,0.08)", color: roundOrderValid.every(Boolean) ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: roundOrderValid.every(Boolean) ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: roundOrderValid.every(Boolean) ? "pointer" : "not-allowed" }}>
-              开始队员选秀
+              style={{ background: "rgba(34,229,255,0.07)", borderColor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? TEAL : "rgba(255,255,255,0.08)", color: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "pointer" : "not-allowed" }}>
+              开始队员选秀 →
             </button>
           )}
           {isStaff && draftPhase === "teammate" && (
