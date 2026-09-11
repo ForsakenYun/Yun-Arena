@@ -948,7 +948,14 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
               {Math.round(headerProgressPct)}%
             </div>
           </div>
-          {isStaff && (
+          {isStaff && draftPhase === "captain" && allCaptainsAssigned && (
+            <button onClick={startTeammateDraft} disabled={!roundOrderValid.every(Boolean)}
+              className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
+              style={{ background: "rgba(34,229,255,0.07)", borderColor: roundOrderValid.every(Boolean) ? TEAL : "rgba(255,255,255,0.08)", color: roundOrderValid.every(Boolean) ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: roundOrderValid.every(Boolean) ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: roundOrderValid.every(Boolean) ? "pointer" : "not-allowed" }}>
+              开始队员选秀
+            </button>
+          )}
+          {isStaff && draftPhase === "teammate" && (
             <button onClick={onProceed} disabled={!readyToProceed}
               className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
               style={{ background: "rgba(34,229,255,0.07)", borderColor: readyToProceed ? TEAL : "rgba(255,255,255,0.08)", color: readyToProceed ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: readyToProceed ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: readyToProceed ? "pointer" : "not-allowed" }}>
@@ -994,13 +1001,6 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center col-span-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
                 </div>
               </div>
-              {isStaff && allCaptainsAssigned && (
-                <button onClick={startTeammateDraft} disabled={!roundOrderValid.every(Boolean)}
-                  className="w-full mt-4 py-3 rounded-xl font-extrabold tracking-widest text-sm uppercase border transition-all shrink-0"
-                  style={{ background: roundOrderValid.every(Boolean) ? `linear-gradient(135deg, #7C5CFF, #22E5FF)` : "rgba(0,0,0,0.3)", color: roundOrderValid.every(Boolean) ? "#06070F" : "rgba(255,255,255,0.2)", borderColor: roundOrderValid.every(Boolean) ? TEAL : "rgba(255,255,255,0.08)", boxShadow: roundOrderValid.every(Boolean) ? "0 0 22px rgba(124,92,255,0.5)" : "none", cursor: roundOrderValid.every(Boolean) ? "pointer" : "not-allowed" }}>
-                  {roundOrderValid.every(Boolean) ? "🚀 锁定并开始队员选秀 →" : "⚠ 请先修正轮次顺序"}
-                </button>
-              )}
             </div>
           )}
 
