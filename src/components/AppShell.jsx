@@ -136,7 +136,21 @@ export default function AppShell({
     <div className="min-h-screen w-full text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
       <AppBackground variant={bgVariant} />
 
-      <div className="shrink-0 h-16 border-b border-panel-line/80 bg-void/40 backdrop-blur-md flex items-center px-4 sm:px-6 gap-4">
+      {/* relative + z-20: the account dropdown below is positioned
+          relative to this bar and already carries its own z-20, but that
+          only orders it *within* this bar's own stacking context. This
+          bar's `backdrop-blur-md` creates a stacking context of its own
+          with z-index:auto (i.e. painted like z-index:0), so without an
+          explicit z-index here it loses to *any* later-in-DOM page
+          content that forms its own stacking context too (e.g. the
+          overlapping tournament-card stack, which also uses
+          backdrop-blur) -- ties at z-index:auto go to whichever comes
+          later in the document, which is always the page content, never
+          the header above it. An explicit z-20 here settles that tie in
+          the header's favor so the dropdown -- and the whole bar -- reliably
+          paints over ordinary page content on every page, while staying
+          below the real full-screen modals (z-30 and up). */}
+      <div className="shrink-0 h-16 border-b border-panel-line/80 bg-void/40 backdrop-blur-md flex items-center px-4 sm:px-6 gap-4 relative z-20">
         {/* brand */}
         <div className="flex items-center gap-2.5 shrink-0">
           <span className="w-8 h-8 rounded-lg bg-accent-gradient flex items-center justify-center shadow-accent-glow rotate-3 shrink-0">
