@@ -116,7 +116,7 @@ export default function SpectatorPage({ onExitToLobby }) {
     let cancelled = false
     fetchTournamentSettings()
       .then((s) => { if (!cancelled) setTournamentName(s.tournamentName || '') })
-      .catch(() => {})
+      .catch((err) => console.error('fetchTournamentSettings failed:', err))
     return () => { cancelled = true }
   }, [])
 
@@ -143,7 +143,7 @@ export default function SpectatorPage({ onExitToLobby }) {
 
     fetchDraftState()
       .then((state) => { if (!cancelled) setDraftState(state) })
-      .catch(() => {})
+      .catch((err) => console.error('fetchDraftState (initial) failed:', err))
       .finally(() => { if (!cancelled) setDraftLoaded(true) })
 
     function connect() {
@@ -158,7 +158,7 @@ export default function SpectatorPage({ onExitToLobby }) {
         (status) => {
           if (cancelled) return
           if (status === 'SUBSCRIBED') {
-            fetchDraftState().then((state) => { if (!cancelled) setDraftState(state) }).catch(() => {})
+            fetchDraftState().then((state) => { if (!cancelled) setDraftState(state) }).catch((err) => console.error('fetchDraftState (reconnect) failed:', err))
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             unsubscribe?.()
             unsubscribe = null
@@ -188,7 +188,7 @@ export default function SpectatorPage({ onExitToLobby }) {
 
     fetchFinalMatchups()
       .then((row) => { if (!cancelled && row) setFinalMatches(row) })
-      .catch(() => {})
+      .catch((err) => console.error('fetchFinalMatchups (initial) failed:', err))
       .finally(() => { if (!cancelled) setFinalLoaded(true) })
 
     function connect() {
@@ -217,7 +217,7 @@ export default function SpectatorPage({ onExitToLobby }) {
         (status) => {
           if (cancelled) return
           if (status === 'SUBSCRIBED') {
-            fetchFinalMatchups().then((row) => { if (!cancelled && row) setFinalMatches(row) }).catch(() => {})
+            fetchFinalMatchups().then((row) => { if (!cancelled && row) setFinalMatches(row) }).catch((err) => console.error('fetchFinalMatchups (reconnect) failed:', err))
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             unsubscribe?.()
             unsubscribe = null

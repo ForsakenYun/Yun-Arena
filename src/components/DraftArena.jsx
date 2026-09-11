@@ -488,6 +488,12 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const [hiddenKeys, setHiddenKeys] = useState(() => new Set());
   const flightsMeta = useRef({});
   const startedFlights = useRef(new Set());
+  // Every currently-in-flight clone + its live Animation object, purely so
+  // they can be torn down cleanly if this component ever unmounts while
+  // one is still running (see the cleanup effect below `runFlight`) --
+  // normal completion (settle()) already removes its own entry here, same
+  // as it already does for flightsMeta/startedFlights.
+  const activeFlights = useRef(new Map());
 
   const beginFlight = (key, meta) => {
     if (!meta || !meta.srcRect) return;
@@ -531,6 +537,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
       if (settled) return;
       settled = true;
       clone.remove();
+      activeFlights.current.delete(key);
       reveal();
       cleanupRefs();
       destEl.classList.add("df-settle");
@@ -558,9 +565,34 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
     );
     anim.onfinish = settle;
     anim.oncancel = settle;
+    activeFlights.current.set(key, { clone, anim });
     // Hard safety net in case the animation lifecycle is ever interrupted.
     setTimeout(settle, 700);
   };
+
+  // Defense in depth alongside `readyToProceed` above: if this component
+  // ever unmounts while a flight is still active (readyToProceed is meant
+  // to make that unreachable via 进入最终对阵 specifically, but this stays
+  // safe regardless of *why* an unmount happened to race a flight) settle
+  // every one immediately rather than leaving a raw `document.body`-
+  // attached clone element and a live Web Animations API `Animation`
+  // object dangling with callbacks that reach back into this now-gone
+  // component's closures -- `settle()`'s own guard (`if (settled) return`)
+  // makes this safe to call even if the animation's own `onfinish` fires
+  // around the same moment. `anim.cancel()` itself is wrapped in try/catch
+  // since cancelling an animation whose target has already left the
+  // document is exactly the kind of call that can throw inside the
+  // browser's own WAAPI implementation -- the goal here is a clean
+  // teardown, not one more uncaught exception during it.
+  useEffect(() => {
+    return () => {
+      activeFlights.current.forEach(({ clone, anim }) => {
+        try { anim.cancel(); } catch { /* target may already be detached */ }
+        clone.remove();
+      });
+      activeFlights.current.clear();
+    };
+  }, []);
 
   useLayoutEffect(() => {
     hiddenKeys.forEach((key) => {
@@ -672,6 +704,30 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const meta = computeDraftMeta(tournament, teamCount);
   const { roundOrderValid, customSnakeOrder, allCaptainsAssigned, draftFinished, currentPick, activeTeamIdx, roundLabel } = meta;
   const allDrafted = draftFinished;
+
+  // 进入最终对阵 must wait for `hiddenKeys` to be empty too, not just
+  // `allDrafted` -- this is the actual root cause of a real, reported bug
+  // (`sync_draft_state` 500s, a 404, and an uncaught
+  // "Cannot read properties of undefined (reading 'startTime')" the
+  // instant this button was clicked). `allDrafted` flips true the instant
+  // the *last* pick commits -- the same render the last flying-card
+  // animation *starts*, up to ~550-700ms before it actually finishes (see
+  // runFlight below). Clicking 进入最终对阵 during that window used to be
+  // possible, and its success handler flips `stage` to 'final'
+  // synchronously -- which unmounts this entire `DraftArena` component,
+  // including the still-live flight animation: a raw DOM clone appended
+  // straight to `document.body` (outside React's tree, so unmounting
+  // doesn't clean it up), a still-running Web Animations API `Animation`
+  // object, and a pending `settle()` callback that reaches back into a
+  // now-unmounted component's closures. Ripping a WAAPI animation's
+  // context out mid-flight like that is exactly the kind of thing that
+  // throws that "startTime" TypeError. Gating the button on
+  // `hiddenKeys.size === 0` means the click that unmounts this component
+  // can only ever happen once every flight has already cleanly finished
+  // and cleaned up after itself via its own `settle()` -- see the
+  // matching unmount-safety effect further down for the defense-in-depth
+  // half of this fix.
+  const readyToProceed = allDrafted && hiddenKeys.size === 0;
 
   // "Whose turn is it" -- the *visual* team highlight (TeamCard's glow,
   // the header's "队 N 的选人回合" name, and scrolling that team into
@@ -893,9 +949,9 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
             </div>
           </div>
           {isStaff && (
-            <button onClick={onProceed} disabled={!allDrafted}
+            <button onClick={onProceed} disabled={!readyToProceed}
               className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
-              style={{ background: "rgba(34,229,255,0.07)", borderColor: allDrafted ? TEAL : "rgba(255,255,255,0.08)", color: allDrafted ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: allDrafted ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: allDrafted ? "pointer" : "not-allowed" }}>
+              style={{ background: "rgba(34,229,255,0.07)", borderColor: readyToProceed ? TEAL : "rgba(255,255,255,0.08)", color: readyToProceed ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: readyToProceed ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: readyToProceed ? "pointer" : "not-allowed" }}>
               进入最终对阵 →
             </button>
           )}
@@ -1766,12 +1822,72 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   // draftHistory is longest and JSON.stringify-ing it is most expensive)
   // still only pays that recomputation cost once per window instead of
   // once per click, same protection as before.
+  //
+  // `syncInFlightRef`/`pendingWhileInFlightRef` -- a SEPARATE guard from
+  // the 200ms window above, and just as load-bearing: root-caused a real,
+  // reported `57014 canceling statement due to statement timeout` /
+  // 500 on `sync_draft_state`. The 200ms window only throttles *when a
+  // write starts*; `syncDraftState(...).catch(...)` is fire-and-forget,
+  // never awaited, so nothing ever stopped a SECOND write from starting
+  // before the FIRST one's network round trip finished. Both tables this
+  // writes to are singleton rows (`id = true`) -- every write to either
+  // one takes the same row lock -- so two overlapping requests don't run
+  // concurrently in Postgres, the second one just blocks until the first
+  // commits. Normally that block is milliseconds, harmless. But several
+  // picks landing close together (very plausible right at the end of a
+  // draft -- an admin moving fast, or several picks within the same
+  // ~200ms window each still opening their own leading-edge send once
+  // the window before them closes) can queue up multiple overlapping
+  // writes faster than each one's round trip clears, and the queue can
+  // compound: request 3 waits on request 2 which waits on request 1.
+  // Enough of a backlog and a later request in that queue can genuinely
+  // exceed Postgres's own statement_timeout waiting for a lock that was
+  // always going to be released in milliseconds -- it just never got the
+  // chance to even start executing. `enter_final_matchups()` (进入最终对阵)
+  // deletes these exact same two rows, so it queues behind this same lock
+  // too -- see `flushPendingDraftSync` and `handleProceed`'s own comment
+  // further down for the other half of this fix. The fix here: never
+  // let two `sync_draft_state` requests be in flight at once -- if one
+  // is already running when a new write is due, queue it (superseding
+  // anything already queued, only the latest state matters) and fire it
+  // the instant the in-flight one finishes, rather than opening a second,
+  // overlapping request.
   const draftBroadcastRef = useRef(null)
   const draftBroadcastTimerRef = useRef(null)
   const pendingBroadcastRef = useRef(null)
+  const syncInFlightRef = useRef(false)
+  const pendingWhileInFlightRef = useRef(null)
   useEffect(() => {
     if (!isStaff || stage !== 'draft') return
     if (!tournament.teams || tournament.teams.length === 0) return
+
+    const send = (state, history) => {
+      if (syncInFlightRef.current) {
+        // A write to this same singleton row is already in flight --
+        // queue this one instead of starting a second, overlapping
+        // request that would just sit blocked waiting for the same row
+        // lock. Only the latest queued write survives; a superseded one
+        // is dropped outright, never sent.
+        pendingWhileInFlightRef.current = () => send(state, history)
+        return
+      }
+      syncInFlightRef.current = true
+      // Fire-and-forget by design (see this effect's own comment above) --
+      // never awaited/blocking, but never silently swallowed either: a
+      // failed write here is exactly the kind of thing that otherwise
+      // looks like "the app is fine, the Spectator Page/resume is just
+      // randomly stale," so it's worth a console trace even though the
+      // admin's own drafting experience must never wait on or be
+      // interrupted by it.
+      syncDraftState(state, history)
+        .catch((err) => console.error('sync_draft_state failed:', err))
+        .finally(() => {
+          syncInFlightRef.current = false
+          const next = pendingWhileInFlightRef.current
+          pendingWhileInFlightRef.current = null
+          next?.()
+        })
+    }
 
     const run = () => {
       const state = {
@@ -1789,7 +1905,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       const json = JSON.stringify({ state, draftHistory })
       if (draftBroadcastRef.current === json) return
       draftBroadcastRef.current = json
-      syncDraftState(state, draftHistory).catch(() => {})
+      send(state, draftHistory)
     }
 
     if (draftBroadcastTimerRef.current) {
@@ -1824,6 +1940,39 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
       pendingBroadcastRef.current?.()
     }
   }, [])
+
+  // 进入最终对阵's own fix, other half of the `sync_draft_state`
+  // 57014/500 root cause above: `enter_final_matchups()` deletes the
+  // exact same two singleton rows `sync_draft_state` writes to, so it
+  // queues behind the exact same row lock. `readyToProceed` (see
+  // `allDrafted`/`hiddenKeys` above) already keeps this from firing while
+  // a flight animation is still playing, but a pick's own write can still
+  // be in flight or queued (the in-flight/coalescing guards above) well
+  // after its animation already finished -- animation duration and
+  // network round-trip time are unrelated. `handleProceed` awaits this
+  // before calling `enterFinalMatchups()` specifically so that DELETE is
+  // never one more request piling into the same queue -- it simply waits
+  // for the queue to fully drain first, the same way a careful caller
+  // would wait for a lock rather than contend for it. Polls on a short
+  // interval rather than exposing a "resolve me" callback from the effect
+  // above, since this only needs to run once, right before this one
+  // specific action, not be wired into that effect's own lifecycle.
+  async function flushPendingDraftSync() {
+    const deadline = Date.now() + 10000
+    while (draftBroadcastTimerRef.current || syncInFlightRef.current || pendingWhileInFlightRef.current) {
+      if (Date.now() > deadline) {
+        // Sane ceiling, not a fix for anything -- the fix above is what
+        // keeps this queue short and fast under normal conditions. This
+        // only exists so a genuinely hung network call (a different
+        // failure than the lock pileup this effect fixes) can't leave
+        // 进入最终对阵 permanently stuck waiting on a request that will
+        // never resolve.
+        console.error('flushPendingDraftSync: gave up waiting after 10s, proceeding anyway')
+        break
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+  }
 
   // Draft progress now persists across leaving this page entirely: the
   // Live Draft State broadcast above is the *only* place captain
@@ -1860,7 +2009,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
         setFinalMatches(row)
         setStage('final')
       })
-      .catch(() => {})
+      .catch((err) => console.error('fetchFinalMatchups (initial) failed:', err))
 
     function connect() {
       unsubscribe = subscribeFinalMatchups(
@@ -1907,7 +2056,7 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
           if (status === 'SUBSCRIBED') {
             fetchFinalMatchups()
               .then((row) => { if (!cancelled && row) { setFinalMatches(row); setStage('final') } })
-              .catch(() => {})
+              .catch((err) => console.error('fetchFinalMatchups (reconnect) failed:', err))
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             unsubscribe?.()
             unsubscribe = null
@@ -1936,6 +2085,18 @@ export default function DraftArenaPage({ onExitToLobby, account }) {
   async function handleProceed() {
     setProceedError(null)
     try {
+      // Wait for any pending/in-flight tournament_draft_state write to
+      // fully drain first -- see flushPendingDraftSync's own comment
+      // above. enter_final_matchups() deletes the exact same two
+      // singleton rows sync_draft_state writes to; without this, this
+      // DELETE could queue up behind (or race) an in-flight or
+      // about-to-fire write to those rows and contend for the same lock
+      // -- root cause of a real, reported `57014 canceling statement due
+      // to statement timeout` / 500 on sync_draft_state. This is a plain
+      // wait, not a retry or a fallback -- if a write itself fails, its
+      // own console.error already covers that; this only ever waits for
+      // the queue to be empty before adding the next thing to it.
+      await flushPendingDraftSync()
       const teamsPayload = tournament.teams.map((team, idx) => toFinalMatchupTeam(team, idx))
       // Apply this click's own result directly, the same way every
       // mutation inside FinalMatchupsStage already does (createManualMatchup

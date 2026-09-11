@@ -422,6 +422,70 @@ order) → Final Matchups.**
   the highlight jumps straight to the latest team once every pending
   flight has settled, rather than visiting each intermediate team in
   turn. Not addressed since it wasn't part of what was reported.
+- **`readyToProceed` (`allDrafted && hiddenKeys.size === 0`) — 进入最终对阵
+  must gate on both, not just `allDrafted`.** Root-caused a real,
+  reported bug: `sync_draft_state` 500s, a 404, and an uncaught
+  `"Cannot read properties of undefined (reading 'startTime')"`, all
+  firing the instant this button was clicked. `allDrafted` flips true
+  the instant the *last* pick commits — the same render its flying-card
+  animation *starts*, up to ~550–700ms before `runFlight`'s own
+  `settle()` actually finishes it. `handleProceed`'s success path flips
+  `stage` to `'final'` synchronously (see its own comment,
+  DraftArenaPage), which unmounts the entire `<DraftArena>` component —
+  including that still-live flight: a raw DOM clone appended straight to
+  `document.body` (outside React's tree), a still-running Web Animations
+  API `Animation` object, and a pending `settle()` closure reaching back
+  into a now-gone component instance. Tearing a WAAPI animation's context
+  out from under it mid-flight like that is exactly the class of thing
+  that throws a `startTime` TypeError in Chromium. Fix has two parts,
+  keep both:
+  1. `readyToProceed` on the button itself — the click that unmounts
+     `DraftArena` can now only happen once every flight has already
+     cleanly finished and called its own `settle()`.
+  2. Defense in depth: an unmount effect (`activeFlights` ref, tracking
+     every live `{clone, anim}` pair) that cancels and removes any
+     flight still running if `DraftArena` unmounts anyway, for any
+     *other* reason a future change might introduce. `anim.cancel()` is
+     wrapped in try/catch on purpose — cancelling an animation whose
+     target already left the document is exactly the kind of call that
+     can itself throw inside the browser's own WAAPI implementation.
+
+  The `sync_draft_state` 500s in that same report turned out to be a
+  *separate*, more serious issue: confirmed **not** a schema-deployment
+  gap (the live project already had the correct 3-argument
+  `sync_draft_state`) — the actual error was
+  `57014 canceling statement due to statement timeout`, a genuine
+  Postgres lock-contention timeout, not a missing function/table.
+  `tournament_draft_state`/`tournament_draft_history` are both singleton
+  rows (`id = true`) — every write to either takes the same row lock.
+  `syncDraftState(...).catch(...)` in the write effect above is
+  fire-and-forget, never awaited — so nothing stopped a second write
+  from starting before a first one's network round trip finished. The
+  200ms window only throttles *when a write starts*, not how many can be
+  in flight at once. Several picks landing close together (very
+  plausible right at the end of a draft) could queue up overlapping
+  writes faster than each cleared, and the queue could compound —
+  request 3 waits on request 2 which waits on request 1 — until a
+  later request in that pileup genuinely exceeded Postgres's own
+  statement_timeout waiting for a lock that was always only milliseconds
+  from being released; it just never got the chance to start executing.
+  `enter_final_matchups()` (进入最终对阵) deletes these exact same two
+  rows, so it queues behind this same lock too, which is why this
+  surfaced specifically on that click. Fixed with
+  `syncInFlightRef`/`pendingWhileInFlightRef` in the write effect (never
+  more than one `sync_draft_state` request in flight — a new write while
+  one's already running gets queued, superseding anything already
+  queued, and fires the instant the in-flight one finishes) plus
+  `flushPendingDraftSync()`, which `handleProceed` awaits before calling
+  `enterFinalMatchups()` so that DELETE is never one more request piling
+  into the same queue. **If a `57014`/500 on `sync_draft_state`
+  resurfaces, suspect this same lock-pileup mechanism before assuming
+  schema drift** — the fire-and-forget `sync_draft_state` call's own
+  `.catch()` now logs to `console.error` instead of swallowing silently
+  (same for every other fire-and-forget fetch in this file and in
+  `SpectatorPage.jsx`), specifically so the exact Postgres error text is
+  visible in the console next time, rather than only a bare status code
+  in the Network tab.
 - The 4 stat values on player cards (胜率/冠军/擅长位置/天梯分) are
   deterministic placeholders derived from player id — not real data.
 - **Performance note:** the "card slide" flight animation moves via
@@ -603,7 +667,12 @@ that only ever existed to protect against bursts. A matching "flush on
 unmount" effect exists alongside it specifically so navigating away
 *during* an open window still persists the latest state instead of
 silently dropping it — keep both effects together if this code is ever
-touched again.
+touched again. **This window governs when a write starts, not how many
+can be in flight at once — see the separate `syncInFlightRef`/
+`pendingWhileInFlightRef` guard (Section 3's development rules, the
+`readyToProceed` bullet) for the real, reported bug that gap caused
+(`57014` lock-contention timeouts on this same table) and why both
+guards need to stay in place together.**
 
 **Resuming a paused draft:** `DraftArenaPage`'s mount effect fetches
 `tournament_draft_state` and `tournament_draft_history` together and, if
