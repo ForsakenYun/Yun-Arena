@@ -58,7 +58,7 @@ export function isOnline(lastSeenAt, now = Date.now()) {
 export async function fetchLobby() {
   const [participantsRes, accountsRes, presenceRes] = await Promise.all([
     supabase.from('tournament_participants').select('*').order('joined_at', { ascending: true }),
-    supabase.from('accounts').select('id, display_name, avatar_url, tournament_role, gender'),
+    supabase.from('accounts').select('id, display_name, avatar_url, tournament_role, gender, is_temp'),
     supabase.from('presence').select('*'),
   ])
   if (participantsRes.error) throw new Error(friendlyError(participantsRes.error, '获取参赛名单失败'))
@@ -79,6 +79,7 @@ export async function fetchLobby() {
         avatarUrl: account.avatar_url,
         tournamentRole: account.tournament_role,
         gender: account.gender,
+        isTemp: !!account.is_temp,
         joinedAt: p.joined_at,
         lastSeenAt: presence?.last_seen_at ?? null,
         rollNumber: p.roll_number ?? null,
@@ -500,9 +501,17 @@ export async function fetchDraftState() {
   return normalizeDraftStateRow(data)
 }
 
+// Channel names must be unique among *concurrently open* channels --
+// reusing one while a previous subscribe() on that same name hasn't been
+// torn down yet throws ("cannot add `postgres_changes` callbacks... after
+// `subscribe()`") instead of just quietly multiplexing. This table has two
+// simultaneous subscribers now (App.jsx's system-wide "did a draft just
+// start" listener, alongside SpectatorPage's own), so a single fixed name
+// is no longer safe here -- each call gets its own suffixed name instead.
+let draftStateChannelSeq = 0
 export function subscribeDraftState(onChange, onStatus) {
   const channel = supabase
-    .channel('tournament-draft-state-realtime')
+    .channel(`tournament-draft-state-realtime-${draftStateChannelSeq++}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_draft_state' }, onChange)
     .subscribe((status) => onStatus?.(status))
   return () => supabase.removeChannel(channel)

@@ -403,6 +403,13 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
   const myEntry = useMemo(() => participants.find((p) => p.accountId === account.id), [participants, account.id])
   const joined = !!myEntry
 
+  // Locks 创建临时玩家 to a one-shot action until every temp account it
+  // created is gone -- derived straight from the live roster's `isTemp`
+  // flag (not local-only state) so the button stays correctly disabled
+  // across a page reload or a second admin's tab, and re-enables itself
+  // automatically the instant 移除临时玩家 clears the last one.
+  const hasTempPlayers = useMemo(() => participants.some((p) => p.isTemp), [participants])
+
   // Once a roll has happened, the list re-sorts itself highest-first so
   // admins can read off the top rolls at a glance. Participants who join
   // after that roll have no number yet (see tournamentApi.js) and sort to
@@ -555,6 +562,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
   // tournament, so 开始比赛 can be exercised before registration is fully
   // rolled out. Requires settings to be loaded so the counts are correct.
   async function handleCreateTempPlayers() {
+    if (hasTempPlayers) return
     if (!settings) {
       showToast('锦标赛设置加载中，请稍候再试')
       return
@@ -763,7 +771,13 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
               <div className="flex flex-col gap-1.5">
                 <RailAction icon="gear" label="锦标赛设置" onClick={() => setShowSettings(true)} />
                 <RailAction icon="dice" label={rolling ? '摇号中…' : '随机摇号'} onClick={handleRoll} disabled={rolling} />
-                <RailAction icon="userPlus" label={creatingTemp ? '创建中…' : '创建临时玩家'} onClick={handleCreateTempPlayers} disabled={creatingTemp || !settings} title="开发测试用：根据当前锦标赛设置自动生成并加入临时队长与队员" />
+                <RailAction
+                  icon="userPlus"
+                  label={creatingTemp ? '创建中…' : hasTempPlayers ? '已创建临时玩家' : '创建临时玩家'}
+                  onClick={handleCreateTempPlayers}
+                  disabled={creatingTemp || hasTempPlayers || !settings}
+                  title={hasTempPlayers ? '已创建过临时玩家，需先使用“移除临时玩家”清除后才能再次创建' : '开发测试用：根据当前锦标赛设置自动生成并加入临时队长与队员'}
+                />
                 <RailAction icon="userMinus" label="移除临时玩家" onClick={handleRemoveTempPlayers} tone="danger" title="开发测试用：移除所有由“创建临时玩家”生成的测试用户" />
                 <RailAction icon="sweep" label="清空参赛名单" onClick={handleClear} tone="danger" />
               </div>
