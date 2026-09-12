@@ -320,7 +320,11 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
   precomputed as plain SVG with no runtime filters — kept filter-free
   deliberately, since an earlier filter-heavy version caused a real
   animation-performance regression in the Draft Arena; see the caution
-  in Section 8).
+  in Section 8). 🏁 结束锦标赛 (Section 8, Final Matchups) now also
+  removes every temp account automatically once the tournament ends —
+  see that section's "Temp-player cleanup on end" note. That behavior
+  exists solely because this feature exists; it should be removed
+  along with 创建临时玩家/移除临时玩家 if this feature ever is.
 - **开始比赛** validates the joined roster against Tournament Settings
   exactly (`requiredCaptains` = team count, `requiredPlayers` = team
   count × (players per team − 1), `requiredTotal` = their sum, all
@@ -572,6 +576,22 @@ only) with zero matchups. From there, freely mixable:
   `tournament_settings` is left alone, so a new tournament reuses the
   last-configured team count/order) -- every connected client is
   booted back to the Tournament Lobby.
+  - **Temp-player cleanup on end.** `handleEndClick`'s confirmed action
+    now also calls `removeTempParticipants()` (Section 7's Temporary
+    Testing Buttons) right after `endTournament()` succeeds, so any
+    `accounts.is_temp = true` rows created for that session's testing
+    are deleted along with everything else 结束锦标赛 already clears --
+    an admin who used 创建临时玩家 no longer has to remember to run
+    移除临时玩家 separately once the tournament is over. Best-effort and
+    silent by design: it's fired-and-caught (`.catch(() => {})`) after
+    `endTournament()` has already succeeded, so a failure here (or
+    simply there being no temp accounts to remove) never blocks
+    `onEnded()` or surfaces an error for what is, from the admin's
+    perspective, a successfully-ended tournament. This call is entirely
+    a consequence of the Temporary Testing Buttons feature existing at
+    all -- if that feature is ever removed, this call (and this note)
+    should go with it rather than being left calling into a
+    since-removed RPC.
 
 **Backend:** `public.tournament_matches` -- a structural singleton
 holding a `teams` snapshot and a `matchups` **append-only** JSON array.

@@ -4,6 +4,7 @@ import {
   fetchFinalMatchups, subscribeFinalMatchups, enterFinalMatchups, rollTournamentMatchupsPool,
   lockTournamentMatchup, resetTournamentMatchups, endTournament, toFinalMatchupTeam,
   createManualMatchup, removeTournamentMatchup, syncDraftState, fetchDraftState, fetchDraftHistory,
+  removeTempParticipants,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
 import AppShell from "./AppShell.jsx";
@@ -1382,7 +1383,17 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
     // that event still fires and still matters for every other connected
     // client (another staff tab, or Spectators on this page), it's just
     // no longer the only way *this* click ever takes visible effect.
-    pendingActionRef.current.end = () => withBusy("end", async () => { await endTournament(); onEnded(); });
+    // Temp-player auto-cleanup below is intentionally best-effort and
+    // silent: 结束锦标赛 itself already succeeded by this point, so a temp
+    // account being left behind (removeTempParticipants failing, or there
+    // simply being none to remove) must never surface as an error or block
+    // onEnded() from firing. See DEVLOG.md's note on this tying to the
+    // Temporary Testing Buttons feature.
+    pendingActionRef.current.end = () => withBusy("end", async () => {
+      await endTournament();
+      await removeTempParticipants().catch(() => {});
+      onEnded();
+    });
     setConfirmEnd(true);
   }
 
