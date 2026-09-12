@@ -725,7 +725,21 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
         </section>
 
         {/* ═══ RIGHT RAIL: status + actions, the tournament's control panel ═══ */}
-        <aside className="lg:w-[340px] shrink-0 flex flex-col gap-4 lg:overflow-y-auto lg:pr-1">
+        {/* lg:min-h-0 (added alongside the lg:overflow-y-auto this already
+            had): without it, a flex item's default min-height:auto floors
+            this aside at its own content's natural height, so once that
+            content (esp. the 赛事管理 panel below, which is deliberately
+            shrink-0 -- it must never compress its buttons) is taller than
+            the row's own bounded height (Section 3's `lg:h-screen
+            lg:overflow-hidden` chain), the aside overflows *that* row --
+            which is `lg:overflow-hidden` -- and gets hard-clipped there
+            instead of ever reaching its own overflow-y-auto. min-h-0 lets
+            the aside actually shrink to the row's real height so its own
+            scrollbar does the job it was already meant to: the 赛事管理
+            panel's border still renders at its full natural height (no
+            button ever gets compressed or clipped), just scrollable into
+            view when the window's too short to show it all at once. */}
+        <aside className="lg:w-[340px] shrink-0 flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           {/* join/leave — the single most important action for a non-staff visitor */}
           <div className="accent-frame shadow-accent-glow shrink-0">
             <div className="bg-panel/90 backdrop-blur-sm rounded-[calc(1rem-1px)] px-5 py-5">
