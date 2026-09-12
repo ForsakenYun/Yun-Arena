@@ -725,21 +725,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
         </section>
 
         {/* ═══ RIGHT RAIL: status + actions, the tournament's control panel ═══ */}
-        {/* lg:min-h-0 (added alongside the lg:overflow-y-auto this already
-            had): without it, a flex item's default min-height:auto floors
-            this aside at its own content's natural height, so once that
-            content (esp. the 赛事管理 panel below, which is deliberately
-            shrink-0 -- it must never compress its buttons) is taller than
-            the row's own bounded height (Section 3's `lg:h-screen
-            lg:overflow-hidden` chain), the aside overflows *that* row --
-            which is `lg:overflow-hidden` -- and gets hard-clipped there
-            instead of ever reaching its own overflow-y-auto. min-h-0 lets
-            the aside actually shrink to the row's real height so its own
-            scrollbar does the job it was already meant to: the 赛事管理
-            panel's border still renders at its full natural height (no
-            button ever gets compressed or clipped), just scrollable into
-            view when the window's too short to show it all at once. */}
-        <aside className="lg:w-[340px] shrink-0 flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+        <aside className="lg:w-[340px] shrink-0 flex flex-col gap-4 lg:overflow-y-auto lg:pr-1">
           {/* join/leave — the single most important action for a non-staff visitor */}
           <div className="accent-frame shadow-accent-glow shrink-0">
             <div className="bg-panel/90 backdrop-blur-sm rounded-[calc(1rem-1px)] px-5 py-5">
@@ -778,9 +764,20 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
             </div>
           </div>
 
-          {/* staff control panel */}
+          {/* staff control panel. flex-1 lets this panel stretch to fill
+              any leftover space in the aside on a tall/full-screen
+              viewport (Image 2) -- but there's deliberately no min-h-0
+              here. flex-shrink:0 plus the default min-height:auto means
+              this box can never be compressed below what its own buttons
+              need, on any viewport height: if the aside runs out of room,
+              this panel overflows *the aside* (which already has its own
+              lg:overflow-y-auto to catch that) instead of ever being
+              squeezed smaller than its content -- so the border here
+              always closes fully around every button, and it's the
+              aside's scrollbar that appears on a short viewport, not a
+              clipped/overflowing card. */}
           {isStaff && (
-            <div className="glass-panel border-panel-line px-4 py-4 flex-1 lg:min-h-0 flex flex-col shrink-0">
+            <div className="glass-panel border-panel-line px-4 py-4 flex-1 flex flex-col shrink-0">
               <p className="eyebrow mb-3">赛事管理</p>
               <div className="flex flex-col gap-1.5">
                 <RailAction icon="gear" label="锦标赛设置" onClick={() => setShowSettings(true)} />
