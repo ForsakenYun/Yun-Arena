@@ -197,15 +197,6 @@ function RoleBadge({ role }) {
   )
 }
 
-function StatusDot({ online }) {
-  return (
-    <span
-      className={`block w-2.5 h-2.5 rounded-full border-2 border-panel ${online ? 'bg-success animate-pulseGlow' : 'bg-ink-faint'}`}
-      title={online ? '在线' : '离线'}
-    />
-  )
-}
-
 function RailStat({ icon, label, value }) {
   const IconCmp = Icon[icon]
   return (
@@ -244,7 +235,7 @@ function StatusBadge({ online }) {
         online ? 'bg-success/10 text-success border-success/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
-      <span className={`w-1.5 h-1.5 rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-ink-faint'}`} />
+      <span className={`w-3 h-3 rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-danger'}`} />
       {online ? '在线' : '离线'}
     </span>
   )
@@ -677,10 +668,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
                   {sortedParticipants.map((p) => (
                     <tr key={p.accountId} className="border-b border-panel-line/60 hover:bg-panel-alt/40 transition">
                       <td className="px-3 py-2.5">
-                        <div className="relative w-fit">
-                          <Avatar src={p.avatarUrl} alt={`${p.displayName} 的头像`} size="w-9 h-9" />
-                          <span className="absolute -bottom-0.5 -right-0.5"><StatusDot online={isOnline(p.lastSeenAt, now)} /></span>
-                        </div>
+                        <Avatar src={p.avatarUrl} alt={`${p.displayName} 的头像`} size="w-9 h-9" />
                       </td>
                       <td className="px-3 py-2.5">
                         <span className="text-sm text-ink-primary font-medium">
