@@ -66,6 +66,53 @@ Development rules:
 - Design new systems to be easy to expand later (e.g. the dashboard's
   tab navigation).
 - Keep the UI simple; don't add unrequested features.
+- **Draft Arena and the Spectator Page are one system, not two —
+  treat them that way in every change.** The Spectator Page
+  (`SpectatorPage.jsx`, Section 9) renders live off exactly what Draft
+  Arena (`DraftArena.jsx`, Section 8) persists — same components
+  (`<DraftArena>`/`<FinalMatchupsStage>` themselves, mounted
+  `isStaff={false}`), same tables, same payload shapes, same timing.
+  There is no independent Spectator implementation to "forget about."
+  Whenever *any* change to Draft Arena — adding, removing, refactoring,
+  or otherwise modifying anything in it — could affect the Spectator
+  Page's UI, state shape, persisted data, animations, timing, sync
+  behavior, or failure modes, the Spectator Page MUST be inspected and
+  updated in the same change, not as a follow-up. This is not a
+  suggestion: two real, shipped bugs (Section 9's persistence-vs-
+  connection rework, and the `tournament_draft_state`/
+  `tournament_draft_history` payload-size split) both came from this
+  link being treated as incidental instead of load-bearing. Concretely,
+  before merging any Draft Arena change, check whether it touches: the
+  shape of anything written to `tournament_draft_state`/
+  `tournament_draft_history` or `tournament_matches`; the debounce/
+  coalescing/timing of when those writes happen; the `isStaff={false}`
+  rendering path in `<DraftArena>`/`<FinalMatchupsStage>` (admin-only
+  controls, spectator-replay animations); or anything
+  `SpectatorPage.jsx` itself reads, subscribes to, or assumes.
+- **A click's own success must never depend solely on that same
+  client's Realtime subscription echoing its own write back.** Found
+  twice as a real, reported bug (进入最终对阵 and 结束锦标赛, Section 8
+  — both fixed by applying the RPC's own result/success directly
+  instead): a write succeeding server-side and *this client's own*
+  postgres_changes subscription having already processed it by the
+  time the click handler returns are only *usually* close together in
+  time, never guaranteed to be — so the very first click could produce
+  no visible change at all until something else (often just a second
+  click's own write, prompting a second round trip) coincidentally
+  arrived. The symptom is distinctive and easy to mistake for
+  something else: click does nothing, click again and it works. The
+  fix is always the same shape, and is already the established pattern
+  for every other mutation in `FinalMatchupsStage`
+  (createManualMatchup/rollTournamentMatchupsPool/
+  removeTournamentMatchup/resetTournamentMatchups all do this
+  already) — apply the awaited RPC call's own return value (or a
+  direct follow-up callback on success, e.g. `onEnded()`) straight to
+  local state/navigation, synchronously in the same handler. Realtime
+  still stays exactly as useful as before for *every other* connected
+  client (another staff tab, or Spectators) — this isn't "remove
+  Realtime," it's "never make the acting client wait on it for its own
+  action." Any new admin-mutating button added to Draft Arena or
+  Admin Dashboard should be checked against this before shipping.
 
 **Browser Layout Standard** (permanent — applies to main pages only,
 not dialogs/modals):
@@ -286,6 +333,12 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
 
 ## 8. Draft Arena
 
+**⚠ Before changing anything in this section: see Section 3's "Draft
+Arena and the Spectator Page are one system" rule. Any change here that
+touches persisted data shape, timing, or the `isStaff={false}` path also
+needs Section 9 (Spectator Page) inspected and updated in the same
+change.**
+
 Reached via 开始比赛 from the Tournament Lobby (validated, see Section
 7). `src/components/DraftArena.jsx` — its own self-contained visual
 system (Orbitron/Cinzel display fonts, dark radial background,
@@ -310,9 +363,21 @@ order) → Final Matchups.**
   has a captain and the draft order validates, a locked custom
   snake-order teammate draft begins; clicking a pool player commits the
   pick to whichever team is on the clock, same flight animation.
-- Full undo stack (`draftHistory`) across both phases; a live team grid
-  (`TeamCard`s); a pick-by-pick sequence strip once teammate drafting
-  starts.
+- Full undo stack (`draftHistory`) across both phases; a live team
+  strip (`TeamCard`s, one continuous horizontal line, `overflow-x-auto`
+  if it doesn't fit — filmstrip pattern, same as FinalMatchupsStage's
+  own match-chip strip) sitting directly above whichever pool is
+  relevant to the current phase. Same `teamOverviewStrip` JSX both
+  phases, declared once — but its *position* differs on purpose:
+  **Captain assignment** puts it first, directly above 队长候选池 (team
+  cards are literally what you click that phase). **Teammate draft**
+  puts the pick-by-pick sequence strip (Draft Order,
+  `DraftSequenceStrip`) first instead, 战队总览 second, 待选选手 last —
+  confirmed correct against an actual screenshot of the rendered page.
+  This one order flip-flopped across several requests in a row before
+  landing here — if asked to swap it again, treat it as a real,
+  repeatable request and check a fresh screenshot/build rather than
+  assuming the code must already be right.
 - `isStaff` prop (default `true`): when `false` (the Spectator Page's
   only use of this component, Section 9), every admin-only control is
   not rendered at all, and every click handler that would mutate the
@@ -333,6 +398,94 @@ order) → Final Matchups.**
   read this map. Skipping this guard was a real, measured cause of lag
   under rapid/spam-clicking (invisible on one click, compounds directly
   with how many renders happen in a short window).
+- **`visualActiveTeamIdx` vs. `activeTeamIdx` — don't conflate these.**
+  `activeTeamIdx` (from `computeDraftMeta`) is derived straight from
+  `pickIndex`, which advances to the next team the instant a teammate
+  pick commits — same render the flying-card animation *starts*, well
+  before it visually lands. Using `activeTeamIdx` directly for "whose
+  turn is it" UI (TeamCard's glow, the header's team name, scrolling
+  the active team into view) was a real, reported bug: the next team's
+  box lit up before the current pick's card had finished flying into
+  its slot. `visualActiveTeamIdx` is a separate state that mirrors
+  `activeTeamIdx` at all times *except* while a teammate pick's flight
+  is still open in `hiddenKeys` (checked by `slot:` key prefix,
+  captain-phase `cap:` flights don't gate it — there's no sequential
+  "whose turn" during captain assignment) — it only catches up once
+  that flight's own `settle()` clears the key. TeamCard's `isActive`,
+  the scroll-into-view target, and the header's "队 X 的选人回合"/
+  "战队 N" text all read `visualActiveTeamIdx`; `pickPlayer()`,
+  `handlePlayerCardClick()`, the snake-order math, and the progress
+  ring all still read the real, immediate `activeTeamIdx`/`pickIndex`
+  — game logic was never the problem, only the display lagging behind
+  it was the fix. Known simplification: rapid multi-click (a second
+  pick committed before the first one's flight settles) coalesces —
+  the highlight jumps straight to the latest team once every pending
+  flight has settled, rather than visiting each intermediate team in
+  turn. Not addressed since it wasn't part of what was reported.
+- **`readyToProceed` (`allDrafted && hiddenKeys.size === 0`) — 进入最终对阵
+  must gate on both, not just `allDrafted`.** Root-caused a real,
+  reported bug: `sync_draft_state` 500s, a 404, and an uncaught
+  `"Cannot read properties of undefined (reading 'startTime')"`, all
+  firing the instant this button was clicked. `allDrafted` flips true
+  the instant the *last* pick commits — the same render its flying-card
+  animation *starts*, up to ~550–700ms before `runFlight`'s own
+  `settle()` actually finishes it. `handleProceed`'s success path flips
+  `stage` to `'final'` synchronously (see its own comment,
+  DraftArenaPage), which unmounts the entire `<DraftArena>` component —
+  including that still-live flight: a raw DOM clone appended straight to
+  `document.body` (outside React's tree), a still-running Web Animations
+  API `Animation` object, and a pending `settle()` closure reaching back
+  into a now-gone component instance. Tearing a WAAPI animation's context
+  out from under it mid-flight like that is exactly the class of thing
+  that throws a `startTime` TypeError in Chromium. Fix has two parts,
+  keep both:
+  1. `readyToProceed` on the button itself — the click that unmounts
+     `DraftArena` can now only happen once every flight has already
+     cleanly finished and called its own `settle()`.
+  2. Defense in depth: an unmount effect (`activeFlights` ref, tracking
+     every live `{clone, anim}` pair) that cancels and removes any
+     flight still running if `DraftArena` unmounts anyway, for any
+     *other* reason a future change might introduce. `anim.cancel()` is
+     wrapped in try/catch on purpose — cancelling an animation whose
+     target already left the document is exactly the kind of call that
+     can itself throw inside the browser's own WAAPI implementation.
+
+  The `sync_draft_state` 500s in that same report turned out to be a
+  *separate*, more serious issue: confirmed **not** a schema-deployment
+  gap (the live project already had the correct 3-argument
+  `sync_draft_state`) — the actual error was
+  `57014 canceling statement due to statement timeout`, a genuine
+  Postgres lock-contention timeout, not a missing function/table.
+  `tournament_draft_state`/`tournament_draft_history` are both singleton
+  rows (`id = true`) — every write to either takes the same row lock.
+  `syncDraftState(...).catch(...)` in the write effect above is
+  fire-and-forget, never awaited — so nothing stopped a second write
+  from starting before a first one's network round trip finished. The
+  200ms window only throttles *when a write starts*, not how many can be
+  in flight at once. Several picks landing close together (very
+  plausible right at the end of a draft) could queue up overlapping
+  writes faster than each cleared, and the queue could compound —
+  request 3 waits on request 2 which waits on request 1 — until a
+  later request in that pileup genuinely exceeded Postgres's own
+  statement_timeout waiting for a lock that was always only milliseconds
+  from being released; it just never got the chance to start executing.
+  `enter_final_matchups()` (进入最终对阵) deletes these exact same two
+  rows, so it queues behind this same lock too, which is why this
+  surfaced specifically on that click. Fixed with
+  `syncInFlightRef`/`pendingWhileInFlightRef` in the write effect (never
+  more than one `sync_draft_state` request in flight — a new write while
+  one's already running gets queued, superseding anything already
+  queued, and fires the instant the in-flight one finishes) plus
+  `flushPendingDraftSync()`, which `handleProceed` awaits before calling
+  `enterFinalMatchups()` so that DELETE is never one more request piling
+  into the same queue. **If a `57014`/500 on `sync_draft_state`
+  resurfaces, suspect this same lock-pileup mechanism before assuming
+  schema drift** — the fire-and-forget `sync_draft_state` call's own
+  `.catch()` now logs to `console.error` instead of swallowing silently
+  (same for every other fire-and-forget fetch in this file and in
+  `SpectatorPage.jsx`), specifically so the exact Postgres error text is
+  visible in the console next time, rather than only a bare status code
+  in the Network tab.
 - The 4 stat values on player cards (胜率/冠军/擅长位置/天梯分) are
   deterministic placeholders derived from player id — not real data.
 - **Performance note:** the "card slide" flight animation moves via
@@ -374,45 +527,53 @@ future edit in this file rather than re-discovering them):
   content is smaller than it, or gets scrolled unnecessarily when
   content plus padding exceeds it.
 
-### Final Matchups ("01 冠军海报版" poster)
+### Final Matchups ("Broadcast Bracket Reveal")
 
-Reached via 进入最终对阵. **This UI is a literal, character-for-character
-port of an external reference file, not a React reimplementation** —
-`FMP_HTML`/`FMP_CSS` inside `DraftArena.jsx` are copied verbatim (only
-scoped/renamed to avoid collisions), and the mount effect's DOM-building
-functions are the reference's own imperative code, deliberately not
-translated into React state. **Any future change to this poster should
-edit this existing code in place, matching its existing patterns
-(inline `<style>` strings, `querySelector`/`innerHTML` DOM building) —
-do not redesign it as idiomatic React.** The only intentional
-deviations from the raw reference are: real team names/data instead of
-a demo array; click handlers wired to real RPCs (below); a Realtime
-prop-sync effect; staff-only visibility gating for non-admin viewers;
-and small appended wire-up chrome (the per-match dissolve button,
-`FMP_WIRE_CSS`) styled to match the existing action bar rather than
-introducing a new style.
+Reached via 进入最终对阵. **As of the visual redesign pass, this is a
+genuine, idiomatic React component** (`FinalMatchupsStage` in
+`DraftArena.jsx`) -- the earlier "01 冠军海报版" implementation (a
+literal, character-for-character port of an external static HTML/CSS/JS
+reference file, rendered via `dangerouslySetInnerHTML` + manual
+`querySelector`/`classList`/`innerHTML` DOM building) was fully replaced
+at the user's explicit request for a ground-up UI/UX redesign, matching
+the rest of the app's shared visual language (AppShell rail+main
+composition, `.btn-primary`/`.btn-ghost`/`.btn-danger`, `GlowHeading`,
+`Avatar`) instead of a separately-styled gold/Cinzel "movie poster."
+**Any future change to this stage should be made the normal React way --
+component state, JSX, Tailwind classes -- like every other stage in this
+file; there is no more special "edit this like raw DOM-scripting code"
+carve-out for it.**
 
-**Workflow (admin-controlled, blank canvas — nothing auto-generated):**
+Only the *data/logic* layer was carried over unchanged: `teams`/
+`matchups` props (kept live via Realtime), and the same RPC-backed
+mutation functions below. The reveal choreography (countdown -> name-
+shuffle flicker -> settle) is a new implementation built entirely from
+React state (`reveal` = `{idx, phase, n, flickerA, flickerB}`) rather
+than manual class-toggling, but keeps the same real-server-data-driven
+guarantee described further down.
+
+**Workflow (admin-controlled, blank canvas -- nothing auto-generated):**
 entering this stage snapshots the drafted teams (captain identity
 only) with zero matchups. From there, freely mixable:
-- **Manual Pairing** — select exactly 2 remaining teams → 锁定此对阵 →
+- **Manual Pairing** -- select exactly 2 remaining teams -> 定角锁定 ->
   creates an already-**locked** matchup.
-- **Random Roll** — select any number of teams (or none, defaulting to
-  "every currently-free team") → 开幕！随机生成剩余对阵 → server shuffles
-  + pairs just that pool (odd count → one team gets a **轮空**/bye),
-  plays the full countdown → flicker → reveal animation against the
+- **Random Roll** -- select any number of teams (or none, defaulting to
+  "every currently-free team") -> 随机生成剩余对阵 -> server shuffles
+  + pairs just that pool (odd count -> one team gets a **轮空**/bye),
+  plays the full countdown -> flicker -> reveal animation against the
   real result. Locked matchups are left untouched by any later roll.
-- Every matchup can be removed (✕ 解除对阵, returns both teams to the
-  free pool immediately). 定角锁定 with 3+ selected delegates straight
-  to Random Roll for that exact group instead of being disabled.
+- Every matchup can be removed (✕ 解除本场对阵, returns both teams to
+  the free pool immediately). 定角锁定 with 3+ selected delegates
+  straight to Random Roll for that exact group instead of being
+  disabled.
 - 🔄 重置 wipes every matchup back to the blank canvas. 🏁 结束锦标赛
   deletes the whole `tournament_matches` row *and* clears
   `tournament_participants` (nobody carries into the next tournament;
   `tournament_settings` is left alone, so a new tournament reuses the
-  last-configured team count/order) — every connected client is booted
-  back to the Tournament Lobby.
+  last-configured team count/order) -- every connected client is
+  booted back to the Tournament Lobby.
 
-**Backend:** `public.tournament_matches` — a structural singleton
+**Backend:** `public.tournament_matches` -- a structural singleton
 holding a `teams` snapshot and a `matchups` **append-only** JSON array.
 Public-read, Realtime-enabled. Admin/Developer-gated RPCs:
 `enter_final_matchups`, `create_manual_matchup`,
@@ -423,61 +584,111 @@ whole page's life regardless of which stage it's on, so a matchup
 change / End Tournament reaches every connected client instantly, not
 just the one that clicked.
 
-**Real-server-data-must-drive-the-reveal pattern:** the countdown/
-flicker/reveal animation must only ever paint what the server actually
-returned, in step with its own reveal timing — never write the
-already-known result into the model ahead of the sequence, and guard
-the Realtime prop-sync effect from overwriting the DOM mid-sequence.
+**Real-server-data-must-drive-the-reveal pattern:** `runReveal()` only
+ever paints matches it was explicitly handed (the RPC's own resolved
+result, appended entries only) -- `displayMatches` (React state) is
+never written ahead of the sequence, and a `revealingRef` guard stops
+the Realtime prop-sync effect from overwriting it mid-sequence, same
+guarantee as before, just implemented as a plain ref + effect instead
+of a mutable non-React model object.
 
-**Spectator-only reveal replay.** For anyone who didn't click the roll
-button themselves (another admin, or a spectator), the prop-sync effect
-diffs incoming `matchups` against the current model; a pure append
-(someone else just locked/rolled a new pairing) replays the identical
-countdown→flicker→reveal sequence instead of snapping straight to the
-result. A non-append change (lock/unlock/remove/reset, or the very
-first sync on mount) still snaps immediately.
+**Spectator-only reveal replay.** For anyone who didn't trigger the
+roll themselves (another admin, or a spectator), the prop-sync effect
+diffs incoming `matchups` length against `displayMatches`; a pure
+append (someone else just locked/rolled a new pairing) replays the
+identical countdown->flicker->reveal sequence instead of snapping
+straight to the result. A non-append change (removal/reset, or the
+very first sync on mount) snaps immediately.
 
-### Live Draft State broadcast, and resuming a paused draft
+### Live Draft State persistence, and resuming a paused draft
 
 The Captain assignment / Teammate draft phases are still 100% local
 React state (`tournament` in `DraftArenaPage`) while actively being
 driven. In parallel, every time that state actually changes (while an
-Admin/Developer is on the draft stage), it's mirrored to
-`public.tournament_draft_state` (structural singleton, public-read,
-Realtime-enabled) via `sync_draft_state()` — this is what feeds the
-Spectator Page's live view (Section 9). A failed/slow write here can
-never block or alter the admin's own drafting experience.
+Admin/Developer is on the draft stage), it's saved via `sync_draft_state()`
+— this is what feeds both the Spectator Page's view (Section 9) and
+resuming a paused draft, below. A failed/slow write here can never block
+or alter the admin's own drafting experience.
 
-**Watch out — this broadcast is debounced (200ms) on purpose, and needs
-to stay that way:** its payload includes the full Undo stack
-(`draftHistory` — every entry itself a deep-cloned snapshot of `teams`/
-`pool`) plus the current `teams`/`pool`/`captainCandidates` again, so
-`JSON.stringify`-ing it gets measurably more expensive the deeper into
-a draft this runs (measured: ~12ms for a realistic full 8×5 draft's
-worth of history, ~3MB serialized — cheap once, but a rapid click burst
-that recomputes it **on every single click** adds up fast: a 20-click
-burst measured at ~220ms of blocking main-thread work undebounced vs.
-~11ms debounced). This was a real, measured cause of lag when
-spam-clicking Undo (and to a lesser extent, rapid picks) late in a
-draft. The debounce means a rapid burst only pays this cost once, right
-after it settles — since the broadcast was already fire-and-forget/
-eventually-consistent by design, this doesn't change what eventually
-gets persisted, just skips the redundant mid-burst recomputation. A
-matching "flush on unmount" effect exists alongside it specifically so
-navigating away *during* the debounce window still persists the latest
-state instead of silently dropping it — keep both effects together if
-this code is ever touched again.
+**Split across two tables — `tournament_draft_state` and
+`tournament_draft_history` — and this split is load-bearing, not
+cosmetic; don't recombine them.** `tournament_draft_state` (public-read,
+Realtime-enabled) holds everything the current board needs
+(teams/pool/phase/pickIndex/captainCandidates/roundOrders/etc) and stays
+small — bounded by team/pool size, not by how many picks have happened.
+`tournament_draft_history` (public-read, **not** Realtime-enabled) holds
+only the Undo stack (`draftHistory` — every entry itself a deep-cloned
+snapshot of `teams`/`pool`), which grows every pick and was measured at
+~3MB serialized for a realistic full 8×5 draft.
 
-**Resuming a paused draft:** `DraftArenaPage`'s mount effect checks for
-an existing `tournament_draft_state` row first and, if one exists,
-seeds both `tournament` and the Undo stack from it instead of starting
-fresh. The row is only cleared when the draft actually reaches Final
-Matchups or the tournament ends — leaving the page mid-draft no longer
-loses progress. The ephemeral "captain clicked but not yet assigned"
-highlight is intentionally **not** restored on resume (would read as a
-click that never happened).
+This used to be one field on one broadcast row, and it was a real shipped
+bug: Supabase Realtime's Postgres Changes feature caps a change payload
+at 1,024 KB — past that, Realtime doesn't error, it silently drops every
+field over 64 bytes from that event
+(https://supabase.com/docs/guides/realtime/limits#postgres-changes-payload-limit).
+With `draftHistory` folded into the same row Spectator subscribes to,
+crossing that cap meant the *entire* `state` field vanished from the
+Realtime event the moment a draft's combined payload passed ~1MB —
+reliably around the 6th teammate pick in a default 8×5 draft — even
+though Postgres still had the correct row the whole time. The Spectator
+Page's realtime handler saw a row with no `state` and rendered its empty
+placeholder, which looked exactly like "sync randomly breaks mid-draft."
+The fix is structural: `draftHistory` only has one real reader
+(`DraftArenaPage`'s own resume-on-mount, via a plain REST `fetchDraftHistory()`
+— no such payload cap applies to REST), so it lives in a table that was
+never added to the `supabase_realtime` publication at all. The Spectator
+Page never fetches it and has no reason to.
+
+`sync_draft_state(p_token, p_state, p_history)` writes both tables in one
+call/transaction, so they can never drift apart. `enter_final_matchups()`
+and `end_tournament()` both clear both tables together for the same
+reason.
+
+**Watch out — the write is leading-edge-immediate + trailing-edge-coalesced
+(200ms window) on purpose, and needs to stay that way:** an isolated
+change (an isolated pick, which is most of a real draft) is written the
+instant it happens, with no artificial delay, because the Spectator
+Page's whole value is showing what just happened as fast as possible.
+The 200ms window only exists to protect against a genuine rapid click
+burst (spam-clicking Undo, and to a lesser extent rapid picks) recomputing
+`JSON.stringify(draftHistory)` on every single click — `draftHistory`
+gets measurably more expensive to serialize the deeper into a draft this
+runs (measured: ~12ms for a realistic full 8×5 draft's worth of history —
+cheap once, but a 20-click burst measured at ~220ms of blocking
+main-thread work if every click recomputed it). So: if no window is
+already open, write immediately and open a short window purely to catch
+anything landing in the next instant; if a change arrives while a window
+is already open, coalesce it into that window's trailing fire instead of
+writing again right away. A rapid burst still only pays the recomputation
+cost twice (once immediately for the first click, once for the trailing
+fire with the final state) instead of once per click — same protection as
+a plain debounce, but a quiet draft is never held back by a fixed delay
+that only ever existed to protect against bursts. A matching "flush on
+unmount" effect exists alongside it specifically so navigating away
+*during* an open window still persists the latest state instead of
+silently dropping it — keep both effects together if this code is ever
+touched again. **This window governs when a write starts, not how many
+can be in flight at once — see the separate `syncInFlightRef`/
+`pendingWhileInFlightRef` guard (Section 3's development rules, the
+`readyToProceed` bullet) for the real, reported bug that gap caused
+(`57014` lock-contention timeouts on this same table) and why both
+guards need to stay in place together.**
+
+**Resuming a paused draft:** `DraftArenaPage`'s mount effect fetches
+`tournament_draft_state` and `tournament_draft_history` together and, if
+a state row exists, seeds both `tournament` and the Undo stack from them
+instead of starting fresh. Both rows are only cleared when the draft
+actually reaches Final Matchups or the tournament ends — leaving the
+page mid-draft no longer loses progress. The ephemeral "captain clicked
+but not yet assigned" highlight is intentionally **not** restored on
+resume (would read as a click that never happened).
 
 ## 9. Spectator Page
+
+**⚠ This page is not independent of Draft Arena (Section 8) — see
+Section 3's "one system" rule. If you're here because you just changed
+something in Draft Arena, that's correct; check this whole section
+against that change before considering it done.**
 
 `src/components/SpectatorPage.jsx`, reached via a **观赛** button (open
 to every logged-in account, staff or not) on the Tournament Lobby,
@@ -496,11 +707,28 @@ but visually nothing is missing: both stages' spectator-replay paths
 (Section 8) fire the identical animations for every pick/roll as they
 happen live, not just the final state.
 
-Views, switched purely by what's currently in the database:
-- **waiting placeholder** — no draft in progress and no Final Matchups
-  yet: a minimal "选秀尚未开始" message.
+**Persistence-first, not connection-first.** This page's job is to
+render whatever is currently *saved* in Supabase — it never depends on
+an Admin/Developer being on the Draft Arena at the same time, being
+online, or having any live connection at all. On open it reads
+`tournament_draft_state`/`tournament_matches` directly (the same
+persisted rows described in Section 8's "Live Draft State" and Final
+Matchups sections), so an Admin can draft, close the browser entirely,
+and anyone opening Spectator later still sees everything that already
+happened. A Realtime subscription on top of that initial read is a pure
+enhancement for anyone who already has the page open — if it drops, the
+page just keeps showing the last state it read/received until it
+reconnects (same reconnect-and-refetch pattern `DraftArenaPage` itself
+uses for `tournament_matches`, Section 8); it never gates or blocks what
+gets displayed.
+
+Views, switched purely by what's currently saved:
+- **empty placeholder** — neither a `tournament_draft_state` row nor a
+  `tournament_matches` row has ever been saved: a minimal "暂无选秀数据"
+  message. Not a "waiting for the admin to connect" state — it renders
+  the same whether or not anyone is currently online.
 - **`drafting`** — a `tournament_draft_state` row exists: `<DraftArena>`
-  fed a `tournament` object built from that broadcast.
+  fed a `tournament` object built from that saved state.
 - **`final`** — a `tournament_matches` row exists: `<FinalMatchupsStage>`
   with its own back button suppressed (this page's header already has
   an exit button). Ending the tournament sends spectators back to the
@@ -511,7 +739,7 @@ Views, switched purely by what's currently in the database:
 - If two Admin/Developer accounts ran separate drafts concurrently
   before Final Matchups, the snapshot taken on 进入最终对阵 is whichever
   draft called it most recently — an accepted, unaddressed edge case.
-  The Live Draft State broadcast has the same "last writer wins"
+  The Live Draft State write has the same "last writer wins"
   behavior for the Spectator Page's `drafting` view, and for resuming a
   paused draft.
 - Sessions are bearer tokens, not JWTs — no Supabase-Auth-based RLS

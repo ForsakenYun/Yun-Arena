@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import AuthPage from './components/AuthPage.jsx'
+import AppBackground from './components/AppBackground.jsx'
 import AdminDashboard from './components/AdminDashboard.jsx'
 import TournamentLobby from './components/TournamentLobby.jsx'
 import DraftArena from './components/DraftArena.jsx'
@@ -106,7 +107,11 @@ export default function App() {
   }
 
   if (checkingSession) {
-    return <div className="min-h-screen w-full bg-void" />
+    return (
+      <div className="min-h-screen w-full bg-void">
+        <AppBackground />
+      </div>
+    )
   }
 
   const isStaff = account && (account.permission_role === 'admin' || account.permission_role === 'developer')
@@ -125,9 +130,9 @@ export default function App() {
   if (isDashboard) {
     view = <AdminDashboard account={account} onLogout={handleLogout} onOpenLobby={() => (window.location.hash = 'lobby')} />
   } else if (isDraft) {
-    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} account={account} />
+    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} account={account} onLogout={handleLogout} />
   } else if (isSpectate) {
-    view = <SpectatorPage onExitToLobby={() => (window.location.hash = 'lobby')} account={account} />
+    view = <SpectatorPage onExitToLobby={() => (window.location.hash = 'lobby')} account={account} onLogout={handleLogout} />
   } else if (account) {
     // Default logged-in destination for everyone (Section: navigation).
     // Admin/Developer accounts can reach this from the dashboard's

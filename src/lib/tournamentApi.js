@@ -332,11 +332,25 @@ export async function fetchFinalMatchups() {
 // this stage" (see DraftArena.jsx's subscription for how DELETE is
 // handled, since payload.new is empty on delete and the caller needs the
 // raw event, not just the normalized row).
-export function subscribeFinalMatchups(onChange) {
+//
+// `onStatus` (optional) is called with the channel's connection status
+// on every change ('SUBSCRIBED' | 'CHANNEL_ERROR' | 'TIMED_OUT' |
+// 'CLOSED'). Supabase's realtime-js client already retries the
+// underlying WebSocket transport on its own, but a channel that was
+// live during a long-backgrounded tab or a rough network patch can come
+// back in a state where this fires 'CHANNEL_ERROR'/'TIMED_OUT' without
+// ever cleanly re-delivering 'SUBSCRIBED' -- silently stuck showing
+// stale data with no visible error, which is exactly what "Spectator
+// looks frozen mid-draft" looks like from the outside. Callers that
+// care about self-healing from that (SpectatorPage) tear down and
+// recreate the channel on error/timeout, and treat every fresh
+// 'SUBSCRIBED' (including this reconnect) as a cue to re-fetch once so
+// nothing missed while disconnected is silently lost.
+export function subscribeFinalMatchups(onChange, onStatus) {
   const channel = supabase
     .channel('tournament-matches-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_matches' }, onChange)
-    .subscribe()
+    .subscribe((status) => onStatus?.(status))
   return () => supabase.removeChannel(channel)
 }
 
@@ -439,14 +453,42 @@ export async function endTournament() {
   if (error) throw new Error(friendlyError(error, '结束锦标赛失败'))
 }
 
-/* ---------- Live Draft State (Phase 6 -- Spectator Page) ---------- */
-// A one-way broadcast mirror of the Draft Arena's local `tournament`
-// state (captain-assignment/teammate-draft phases), written only by
-// whichever admin/developer is actually driving the draft, purely so the
-// read-only Spectator Page can render it live via Realtime -- never read
-// back by the Draft Arena itself. Absence of a row means no draft is
-// currently in progress (it hasn't started yet, already reached Final
-// Matchups, or the admin running it already left/ended the tournament).
+/* ---------- Live Draft State (persisted draft progress) ---------- */
+// The single source of truth for "how far has the draft gotten" once one
+// is running: written by whichever admin/developer is actively driving
+// the draft every time their local `tournament` state changes, then read
+// back from two places -- DraftArenaPage's own mount effect (so leaving
+// and reopening the Draft Arena, even in a different browser/session,
+// resumes exactly where the draft was left) and the read-only Spectator
+// Page (so it always renders whatever was last saved, whether or not an
+// admin/developer is currently online). Absence of a row means no draft
+// has been started yet, or it already reached Final Matchups or the
+// tournament ended (both clear this row server-side).
+//
+// Split across two tables on purpose -- root-caused a real bug, not a
+// style choice, so don't recombine them:
+//   - tournament_draft_state (`fetchDraftState`/`subscribeDraftState`
+//     below) -- everything the Spectator Page and a resumed draft's
+//     *current* board need (teams/pool/phase/pickIndex/etc). Always
+//     small (bounded by team/pool size, not by how many picks have
+//     happened), so it always fits Supabase Realtime's 1,024 KB Postgres
+//     Changes payload cap.
+//   - tournament_draft_history (`fetchDraftHistory` below) -- just the
+//     Undo stack (draftHistory), which grows every pick and was measured
+//     at ~3MB for a realistic full 8x5 draft (Section 8, DEVLOG.md). With
+//     this folded into the same row as the state above, crossing that
+//     1,024 KB cap made Supabase Realtime silently drop the entire
+//     `state` field from the change payload (fields over 64 bytes are
+//     dropped once the cap is hit -- see
+//     https://supabase.com/docs/guides/realtime/limits#postgres-changes-payload-limit),
+//     which the Spectator Page's realtime handler read as "nothing saved"
+//     and blanked the screen to its empty placeholder -- reliably around
+//     the 6th teammate pick in a default 8x5 draft, even though Postgres
+//     had the correct data the whole time. tournament_draft_history is
+//     deliberately NOT on the Realtime publication (nothing needs to
+//     subscribe to it -- only DraftArenaPage's own resume-on-mount reads
+//     it, via a plain REST fetch, which has no such cap), so the
+//     Spectator Page never touches it at all.
 function normalizeDraftStateRow(row) {
   if (!row || !row.state || typeof row.state !== 'object') return null
   return { ...row.state, updatedAt: row.updated_at ?? null }
@@ -458,12 +500,22 @@ export async function fetchDraftState() {
   return normalizeDraftStateRow(data)
 }
 
-export function subscribeDraftState(onChange) {
+export function subscribeDraftState(onChange, onStatus) {
   const channel = supabase
     .channel('tournament-draft-state-realtime')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_draft_state' }, onChange)
-    .subscribe()
+    .subscribe((status) => onStatus?.(status))
   return () => supabase.removeChannel(channel)
+}
+
+// Admin/Developer only. Used only by DraftArenaPage's own resume-on-mount
+// -- the Spectator Page never needs the Undo stack (isStaff={false} never
+// renders an Undo control), so it never calls this. Deliberately a plain
+// REST read, not a Realtime subscription -- see the comment block above.
+export async function fetchDraftHistory() {
+  const { data, error } = await supabase.from('tournament_draft_history').select('history').maybeSingle()
+  if (error) throw new Error(friendlyError(error, '获取选秀历史记录失败'))
+  return Array.isArray(data?.history) ? data.history : []
 }
 
 // Admin/Developer only. Fire-and-forget -- called by DraftArenaPage every
@@ -471,22 +523,17 @@ export function subscribeDraftState(onChange) {
 // be awaited for correctness by the Draft Arena itself; a failed/late
 // write here can never block or alter the admin's own drafting
 // experience. Rejected server-side for any non-staff caller, same as
-// every other admin-only RPC.
-export async function syncDraftState(state) {
+// every other admin-only RPC. `history` is optional (defaults to `[]`
+// server-side) -- always pass the current Undo stack from DraftArenaPage
+// so a resumed draft never loses it.
+export async function syncDraftState(state, history = []) {
   const { data, error } = await supabase.rpc('sync_draft_state', {
     p_token: requireToken(),
     p_state: state,
+    p_history: history,
   })
   if (error) throw new Error(friendlyError(error, '同步选秀状态失败'))
   return normalizeDraftStateRow(data)
-}
-
-// Admin/Developer only -- clears the broadcast draft state, e.g. when the
-// admin leaves the Draft Arena before finishing, so the Spectator Page
-// doesn't keep mirroring a draft nobody is running anymore.
-export async function clearDraftState() {
-  const { error } = await supabase.rpc('clear_draft_state', { p_token: requireToken() })
-  if (error) throw new Error(friendlyError(error, '清除选秀状态失败'))
 }
 
 // Builds the exact captain-only shape enterFinalMatchups() persists, from

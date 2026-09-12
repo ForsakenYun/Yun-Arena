@@ -231,24 +231,46 @@ create table if not exists public.tournament_matches (
 comment on table public.tournament_matches is
   'Singleton row (Draft Arena -- Final Matchups / 对阵生成 stage). Public read, written only through enter_final_matchups()/create_manual_matchup()/remove_tournament_matchup()/roll_tournament_matchups()/lock_tournament_matchup()/reset_tournament_matchups(), all Admin/Developer-only. matchups starts (and, after Reset, returns to) a blank array -- nothing is ever auto-generated. Absence of this row means no tournament has reached the Final Matchups stage yet (or End Tournament just cleared it); its presence is itself the signal every connected Draft Arena client uses to switch into this stage, via Realtime.';
 
--- Live Draft State (Phase 6 -- Spectator Page). Singleton row, same
--- structural trick as tournament_matches/tournament_settings. This fills
--- the gap DEVLOG.md's "Not Yet Built" section used to flag: the Draft
--- Arena's captain-assignment/teammate-draft phases are still driven
--- entirely by the admin/developer's own local React state (`tournament`
--- in DraftArena.jsx) -- that has NOT changed. What's new is that state is
--- now ALSO mirrored here, fire-and-forget, every time it changes
--- (sync_draft_state(), Admin/Developer-only), purely so the read-only
--- Spectator Page can render a live view of it. Nothing here is ever read
--- back by the Draft Arena itself -- this table is a one-way broadcast.
--- `state` is a free-form JSON snapshot shaped like {tournamentName,
--- teamCount, playersPerTeam, draftPhase, teams, captainCandidates, pool,
--- pickIndex, roundOrders} -- see the broadcast effect in DraftArena.jsx's
--- DraftArenaPage for the exact shape. The row is deleted (clearing the
--- Spectator Page back to "no draft in progress") whenever the draft
--- reaches Final Matchups or the tournament ends (both already delete it
--- as part of enter_final_matchups()/end_tournament() below), or when the
--- admin leaves the Draft Arena before finishing (clear_draft_state()).
+-- `teams` is snapshotted once (by enter_final_matchups) and never
+-- written again for the rest of this row's life -- every later mutation
+-- (create_manual_matchup / roll_tournament_matchups_pool /
+-- remove_tournament_matchup / lock_tournament_matchup /
+-- reset_tournament_matchups) only ever touches `matchups`. Postgres's
+-- default replica identity only includes a changed row's *primary key*
+-- in the logical-replication stream for columns it can prove are
+-- unchanged once they're large enough to be TOASTed -- which `teams`
+-- (a jsonb array) very much can be -- so without REPLICA IDENTITY FULL,
+-- a matchups-only update can broadcast a Realtime payload with `teams`
+-- silently missing, even though the column's value in the database
+-- never changed. That previously showed up as the team roster
+-- appearing to vanish (captains rendering as "?"/unknown, team count
+-- showing 0) immediately after any admin action that doesn't touch
+-- `teams` -- lock/pair/roll/remove/reset all qualify. FULL guarantees
+-- Realtime always sees this row's complete column set on every change.
+alter table public.tournament_matches replica identity full;
+
+-- Live Draft State: the persisted source of truth for draft progress.
+-- Singleton row, same structural trick as tournament_matches/
+-- tournament_settings. The Draft Arena's captain-assignment/teammate-
+-- draft phases are still driven entirely by the admin/developer's own
+-- local React state (`tournament` in DraftArena.jsx) -- but that state is
+-- also saved here, fire-and-forget, every time it changes
+-- (sync_draft_state(), Admin/Developer-only). Two things read it back:
+-- DraftArenaPage's own mount effect (resuming an in-progress draft, even
+-- across a different browser/session) and the read-only Spectator Page
+-- (rendering whatever was last saved, independent of whether an admin/
+-- developer is currently online). `state` is a free-form JSON snapshot
+-- shaped like {tournamentName, teamCount, playersPerTeam, draftPhase,
+-- teams, captainCandidates, pool, pickIndex, roundOrders, selectedCaptainId}
+-- -- see the persistence effect in DraftArena.jsx's DraftArenaPage for the
+-- exact shape. The row is deleted (draft progress no longer exists) only
+-- when the draft actually reaches Final Matchups or the tournament ends
+-- (both delete it as part of enter_final_matchups()/end_tournament()
+-- below) -- leaving the Draft Arena page mid-draft does NOT clear it.
+--
+-- Deliberately does NOT include the Undo stack (draftHistory) -- see
+-- tournament_draft_history right below for why that lives in its own
+-- table instead of a field on this one.
 create table if not exists public.tournament_draft_state (
   id          boolean primary key default true,
   state       jsonb not null default '{}'::jsonb,
@@ -258,7 +280,51 @@ create table if not exists public.tournament_draft_state (
 );
 
 comment on table public.tournament_draft_state is
-  'Singleton row (Phase 6 -- Spectator Page). Public read, written only through sync_draft_state()/clear_draft_state(), both Admin/Developer-only. A one-way broadcast mirror of the Draft Arena''s local captain-assignment/teammate-draft state, purely for read-only live spectating -- never read back by the Draft Arena itself. Absence of this row means no draft is currently in progress (or it already reached Final Matchups / ended).';
+  'Singleton row. Public read, written only through sync_draft_state(), Admin/Developer-only. The persisted source of truth for draft progress -- read back by DraftArenaPage (resuming an in-progress draft) and by the read-only Spectator Page (rendering whatever was last saved, independent of live connections). Deliberately excludes the Undo stack (see tournament_draft_history) so this row stays small enough to broadcast reliably. Absence of this row means no draft is currently in progress (or it already reached Final Matchups / ended).';
+
+-- Undo stack (draftHistory), split out from tournament_draft_state on
+-- purpose -- root-caused a real production bug (see below), not a
+-- style preference, so don't merge these back into one table/column.
+--
+-- draftHistory is an array of full deep-cloned {teams, pool, ...}
+-- snapshots, one per pick -- it only ever grows over the course of a
+-- draft and was measured (DEVLOG.md, Section 8) at ~3MB serialized for a
+-- realistic full 8x5 draft. Supabase Realtime's Postgres Changes feature
+-- has a hard 1,024 KB payload cap: once a changed row's wire size crosses
+-- it, Realtime silently drops every field over 64 bytes from that
+-- change's payload instead of erroring -- see
+-- https://supabase.com/docs/guides/realtime/limits#postgres-changes-payload-limit.
+-- With draftHistory folded into tournament_draft_state.state, that meant
+-- the entire `state` jsonb blob (obviously always over 64 bytes) silently
+-- vanished from the postgres_changes event the instant a draft's combined
+-- payload crossed ~1MB -- reliably around the 6th teammate pick in a
+-- default 8x5 draft, matching exactly what was reported: the Spectator
+-- Page's realtime handler saw a row with no `state` field and rendered
+-- its "nothing saved yet" placeholder, even though the correct state was
+-- sitting in Postgres the entire time (a plain REST re-fetch always
+-- showed it correctly, which is what made this so easy to mistake for a
+-- flaky reconnect issue rather than a hard payload-size ceiling).
+--
+-- The fix is structural, not a size optimization: draftHistory is only
+-- ever needed by DraftArenaPage's own resume-on-mount (Admin/Developer
+-- picking a paused draft back up), which reads it once via a plain
+-- PostgREST GET -- a REST response has no such payload cap. The
+-- Spectator Page has no use for it at all (isStaff={false} never renders
+-- an Undo control). So it lives in its own singleton table, written in
+-- the same sync_draft_state() call/transaction as tournament_draft_state
+-- (never allowed to drift out of sync with it), but this table is
+-- intentionally NOT added to the supabase_realtime publication below --
+-- nothing subscribes to it, so its size can never again hit the
+-- postgres_changes cap that broke the Spectator Page.
+create table if not exists public.tournament_draft_history (
+  id          boolean primary key default true,
+  history     jsonb not null default '[]'::jsonb,
+  updated_at  timestamptz not null default now(),
+  constraint tournament_draft_history_singleton check (id)
+);
+
+comment on table public.tournament_draft_history is
+  'Singleton row. Public read, written only through sync_draft_state() (same call/transaction as tournament_draft_state), Admin/Developer-only. Holds only the Undo stack (draftHistory) for a resumed draft -- split out of tournament_draft_state specifically because it can grow past Supabase Realtime''s 1,024 KB Postgres Changes payload cap, which silently dropped the whole state row once crossed. Deliberately NOT on the supabase_realtime publication -- read only via a plain REST fetch (DraftArenaPage resume), which has no such cap. Never read by the Spectator Page.';
 
 -- ----------------------------------------------------------------------------
 -- 2. Row Level Security
@@ -274,6 +340,7 @@ alter table public.presence                enable row level security;
 alter table public.tournament_settings     enable row level security;
 alter table public.tournament_matches      enable row level security;
 alter table public.tournament_draft_state  enable row level security;
+alter table public.tournament_draft_history enable row level security;
 
 -- accounts: public read only (no password column exists on this table at all)
 drop policy if exists "accounts_public_read" on public.accounts;
@@ -334,13 +401,25 @@ grant select on public.tournament_matches to anon, authenticated;
 
 -- tournament_draft_state: public read (safe -- the same participant
 -- identities are already public via accounts/tournament_participants),
--- writes only via sync_draft_state()/clear_draft_state() below (Section 6c).
+-- writes only via sync_draft_state() below (Section 6c).
 drop policy if exists "tournament_draft_state_public_read" on public.tournament_draft_state;
 create policy "tournament_draft_state_public_read" on public.tournament_draft_state
   for select using (true);
 
 revoke insert, update, delete on public.tournament_draft_state from anon, authenticated;
 grant select on public.tournament_draft_state to anon, authenticated;
+
+-- tournament_draft_history: public read (same rationale as
+-- tournament_draft_state -- no secrets, just Undo-stack snapshots of the
+-- same public draft data), writes only via sync_draft_state() below
+-- (Section 6c). Deliberately excluded from the Realtime publication
+-- further down -- see this table's own comment above for why.
+drop policy if exists "tournament_draft_history_public_read" on public.tournament_draft_history;
+create policy "tournament_draft_history_public_read" on public.tournament_draft_history
+  for select using (true);
+
+revoke insert, update, delete on public.tournament_draft_history from anon, authenticated;
+grant select on public.tournament_draft_history to anon, authenticated;
 
 -- Enable Realtime on the tables clients actually subscribe to.
 do $$
@@ -383,16 +462,25 @@ begin
     alter publication supabase_realtime add table public.tournament_matches;
   end if;
 
-  -- Live Draft State (Phase 6): the Spectator Page subscribes to this
-  -- table to mirror the in-progress captain-assignment/teammate-draft
-  -- phases live, the same way tournament_matches already does for the
-  -- Final Matchups stage.
+  -- Live Draft State: the Spectator Page (and DraftArenaPage's own live
+  -- resume) subscribes to this table to mirror the in-progress captain-
+  -- assignment/teammate-draft phases live, the same way tournament_matches
+  -- already does for the Final Matchups stage. Kept deliberately small
+  -- (no draftHistory -- see tournament_draft_history's own comment above)
+  -- so it always stays well under Realtime's 1,024 KB Postgres Changes
+  -- payload cap.
   if not exists (
     select 1 from pg_publication_tables
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'tournament_draft_state'
   ) then
     alter publication supabase_realtime add table public.tournament_draft_state;
   end if;
+
+  -- tournament_draft_history is INTENTIONALLY NOT added here. Nothing
+  -- subscribes to it -- it's read only via a plain REST fetch (see its
+  -- own comment above for why) -- and adding it to the publication would
+  -- reintroduce the exact payload-size failure mode this split exists to
+  -- fix.
 end $$;
 
 -- ----------------------------------------------------------------------------
@@ -1356,10 +1444,12 @@ begin
   end if;
 
   -- The draft itself is over now that it's snapshotted here -- clear the
-  -- Live Draft State broadcast (Phase 6) so the Spectator Page switches
-  -- cleanly to the Final Matchups stage instead of also still showing a
+  -- Live Draft State (both tables -- see tournament_draft_history's
+  -- comment for why it's separate) so the Spectator Page switches cleanly
+  -- to the Final Matchups stage instead of also still showing a
   -- now-finished draft snapshot.
-  delete from public.tournament_draft_state where true;
+  delete from public.tournament_draft_state   where true;
+  delete from public.tournament_draft_history where true;
 
   insert into public.tournament_matches (id, teams, matchups, updated_at, updated_by)
   values (true, p_teams, '[]'::jsonb, now(), v_actor.id)
@@ -1765,9 +1855,10 @@ set search_path = public, extensions, pg_temp
 as $$
 begin
   perform public._require_role(p_token, array['admin', 'developer']);
-  delete from public.tournament_matches      where true;
-  delete from public.tournament_participants where true;
-  delete from public.tournament_draft_state  where true;
+  delete from public.tournament_matches       where true;
+  delete from public.tournament_participants  where true;
+  delete from public.tournament_draft_state   where true;
+  delete from public.tournament_draft_history where true;
 end;
 $$;
 
@@ -1775,14 +1866,38 @@ $$;
 -- 6c. Live Draft State (Phase 6 -- Spectator Page)
 -- ----------------------------------------------------------------------------
 
--- Fire-and-forget broadcast of the Draft Arena's local `tournament` state,
--- called by whichever admin/developer is actually driving the draft every
--- time it changes. Always replaces the one singleton row ("latest
--- snapshot wins"), same "replace the one active record" pattern as
--- save_tournament_settings()/enter_final_matchups().
+-- Re-running this file against a project provisioned by an earlier
+-- version of it: drop the old clear_draft_state() RPC (removed -- never
+-- called by the frontend anymore, see git history/handoff notes) and the
+-- old 2-argument sync_draft_state(uuid, jsonb) overload (replaced by the
+-- 3-argument version below, part of the tournament_draft_state /
+-- tournament_draft_history split). `create or replace function` cannot
+-- change a function's argument list -- a different arg count creates a
+-- new, separate overload rather than replacing the old one -- so without
+-- this the old signature would linger ungranted but still present.
+drop function if exists public.clear_draft_state(uuid);
+drop function if exists public.sync_draft_state(uuid, jsonb);
+
+-- Fire-and-forget persistence of the Draft Arena's local `tournament`
+-- state, called by whichever admin/developer is actually driving the
+-- draft every time it changes. Always replaces both singleton rows
+-- ("latest snapshot wins"), same "replace the one active record" pattern
+-- as save_tournament_settings()/enter_final_matchups() -- both writes
+-- happen in this one function call/transaction so the two tables can
+-- never drift out of sync with each other.
+--
+-- p_state and p_history are two separate JSON payloads, not one, for a
+-- concrete reason -- see tournament_draft_history's own comment further
+-- up: p_history (the Undo stack) is the part that can grow large enough
+-- to blow through Supabase Realtime's 1,024 KB Postgres Changes payload
+-- cap, so it's written to a table nothing subscribes to, while p_state
+-- (small, bounded by current team/pool size, not pick count) is written
+-- to the one table the Spectator Page and DraftArenaPage's resume
+-- actually subscribe/react to live.
 create or replace function public.sync_draft_state(
-  p_token uuid,
-  p_state jsonb
+  p_token   uuid,
+  p_state   jsonb,
+  p_history jsonb default '[]'::jsonb
 )
 returns public.tournament_draft_state
 language plpgsql
@@ -1798,6 +1913,9 @@ begin
   if p_state is null or jsonb_typeof(p_state) <> 'object' then
     raise exception 'invalid_draft_state' using errcode = '22000';
   end if;
+  if p_history is null or jsonb_typeof(p_history) <> 'array' then
+    raise exception 'invalid_draft_state' using errcode = '22000';
+  end if;
 
   insert into public.tournament_draft_state (id, state, updated_at, updated_by)
   values (true, p_state, now(), v_actor.id)
@@ -1807,24 +1925,13 @@ begin
         updated_by = excluded.updated_by
   returning * into v_row;
 
-  return v_row;
-end;
-$$;
+  insert into public.tournament_draft_history (id, history, updated_at)
+  values (true, p_history, now())
+  on conflict (id) do update
+    set history    = excluded.history,
+        updated_at = excluded.updated_at;
 
--- Clears the broadcast draft state outright -- called when the admin
--- leaves the Draft Arena before finishing the draft, so the Spectator
--- Page doesn't keep mirroring a draft nobody is running anymore.
--- enter_final_matchups()/end_tournament() already clear this row
--- themselves too, for the same reason at those two other exit points.
-create or replace function public.clear_draft_state(p_token uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public, extensions, pg_temp
-as $$
-begin
-  perform public._require_role(p_token, array['admin', 'developer']);
-  delete from public.tournament_draft_state where true;
+  return v_row;
 end;
 $$;
 
@@ -1931,8 +2038,7 @@ grant execute on function
   public.lock_tournament_matchup(uuid, integer, boolean),
   public.reset_tournament_matchups(uuid),
   public.end_tournament(uuid),
-  public.sync_draft_state(uuid, jsonb),
-  public.clear_draft_state(uuid),
+  public.sync_draft_state(uuid, jsonb, jsonb),
   public.list_invite_codes(uuid),
   public.create_invite_code(uuid, integer, timestamptz),
   public.delete_invite_code(uuid, uuid)
