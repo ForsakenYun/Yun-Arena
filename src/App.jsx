@@ -7,6 +7,7 @@ import DraftArena from './components/DraftArena.jsx'
 import SpectatorPage from './components/SpectatorPage.jsx'
 import DisconnectedModal from './components/DisconnectedModal.jsx'
 import { restoreSession, logout as logoutRequest, getStoredToken } from './lib/auth.js'
+import { subscribeDraftState } from './lib/tournamentApi.js'
 import { startSessionMonitor } from './lib/sessionMonitor.js'
 
 // Hash-based view switch. `account` (restored from a persisted session
@@ -89,6 +90,28 @@ export default function App() {
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
   }, [])
+
+  // Auto-redirect non-drafting users to 观赛 the moment a draft starts.
+  // tournament_draft_state has no row until the first admin/developer to
+  // open the Draft Arena syncs its initial board (see the comment above
+  // fetchDraftState/subscribeDraftState in tournamentApi.js) -- so that
+  // row's very first INSERT *is* "the draft just started," system-wide,
+  // for every connected account. Whoever triggered it already has their
+  // own tab on #draft by the time DraftArenaPage's mount effect performs
+  // that first sync (TournamentLobby's 开始比赛 sets the hash synchronously,
+  // before navigating there), so checking the live hash here -- not
+  // touching DraftArenaPage or 开始比赛 at all -- naturally excludes the
+  // host/drafter and only redirects everyone else (Lobby, Admin
+  // Dashboard, or anyone already spectating a previous draft).
+  useEffect(() => {
+    if (!account) return
+    const unsubscribe = subscribeDraftState((payload) => {
+      if (payload.eventType === 'INSERT' && window.location.hash !== '#draft') {
+        window.location.hash = 'spectate'
+      }
+    })
+    return unsubscribe
+  }, [account?.id])
 
   function handleLoggedIn(loggedInAccount) {
     setLoginMessage(null)
