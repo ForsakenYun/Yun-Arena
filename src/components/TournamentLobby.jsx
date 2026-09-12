@@ -235,7 +235,7 @@ function StatusBadge({ online }) {
         online ? 'bg-success/10 text-success border-success/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
-      <span className={`w-3 h-3 rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-danger'}`} />
+      <span className={`w-[9.6px] h-[9.6px] rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-[#ff0000]'}`} />
       {online ? '在线' : '离线'}
     </span>
   )
