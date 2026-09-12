@@ -7,12 +7,26 @@ import {
   subscribeFinalMatchups,
 } from '../lib/tournamentApi.js'
 import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
+import AppShell from './AppShell.jsx'
 
 /* ════════════════════════════════════════════════════════════════════════
-   SPECTATOR PAGE (Phase 6) — a read-only window onto the live tournament,
-   built on the exact same public/Realtime backend as everything else in
-   this project (Section 6, DEVLOG.md): no separate data source, no fake/
-   demo data.
+   SPECTATOR PAGE — a read-only window onto the tournament's persisted
+   state, built on the exact same public/Realtime backend as everything
+   else in this project (Section 6, DEVLOG.md): no separate data source,
+   no fake/demo data.
+
+   Persistence-first, by design (Section 9, DEVLOG.md): every Admin/
+   Developer action that changes the draft or the final matchups is
+   already saved to Supabase (`tournament_draft_state` /
+   `tournament_matches`, both plain public-read tables) the moment it
+   happens. Opening this page always reads whatever is currently saved —
+   it never depends on an Admin/Developer being on the Draft Arena at the
+   same time, being online, or having any live connection at all. A
+   Realtime subscription on top of that initial read is a pure
+   enhancement: if this page is already open when something changes
+   elsewhere, it updates without a manual refresh; if that connection
+   ever drops, the page simply shows the last state it read/received
+   until it reconnects — it never blocks or gates what's displayed.
 
    Deliberately scoped to the live drafting process only (Captain
    Drafting → Player Drafting → Matchup/Bracket Roll) — general
@@ -30,22 +44,25 @@ import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
          the draft side, 定角锁定/随机生成/重置/结束锦标赛/per-match
          lock-unlock-remove on the Final Matchups side; and
      (b) make every click handler that would mutate the draft a no-op, so
-         a spectator's click can never diverge local state from the live
-         broadcast this page renders.
+         a spectator's click can never diverge local state from the saved
+         state this page renders.
    Only a thin identity/exit strip (this file's own header) is unique to
-   this page, in the main app's Tailwind teal theme (Section 3).
+   this page, in the main app's Tailwind accent theme (Section 3). The
+   account chip itself (avatar, name, 退出登录) is the same shared
+   AppShell control every other page uses -- see the note on `account`/
+   `onLogout` below for why this page now forwards both instead of
+   hard-coding `viewerMode`.
 
-   View, switched purely by what's currently in the database (never by
-   anything this page writes):
+   View, switched purely by what's currently saved in the database:
      - 'final'    — a tournament_matches row exists (Final Matchups stage
-                    reached).
+                    reached, whether or not anyone is still on that page).
      - 'drafting' — no Final Matchups yet, but a tournament_draft_state row
-                    exists (an admin/developer is actively running the
-                    Captain/Teammate draft — see the broadcast effect in
+                    exists (a draft has been started and has saved
+                    progress — see the persistence effect in
                     DraftArena.jsx's DraftArenaPage).
-     - otherwise  — neither exists yet: a lightweight "waiting for the
-                    draft to start" placeholder (no roster/stats — that's
-                    the Tournament Lobby's job, not duplicated here).
+     - otherwise  — neither has ever been saved: a lightweight "no draft
+                    yet" placeholder (no roster/stats — that's the
+                    Tournament Lobby's job, not duplicated here).
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ---------- inline icons (kept consistent with TournamentLobby.jsx) ---------- */
@@ -58,24 +75,24 @@ const Icon = {
   ),
 }
 
-/* ---------- placeholder view — draft hasn't started yet ---------- */
+/* ---------- empty view — nothing has ever been saved yet ---------- */
 // Deliberately minimal: general roster/participant info already lives in
 // the Tournament Lobby (per explicit product decision), so it's not
 // duplicated here — this page is scoped to the live drafting process.
-function WaitingSpectatorView() {
+// Shown purely because no tournament_draft_state/tournament_matches row
+// exists in Supabase yet (no draft has ever been started) — not because
+// of any live-connection state, so it renders identically whether or not
+// an Admin/Developer happens to be online right now.
+function EmptySpectatorView() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
-      <span className="w-14 h-14 rounded-2xl bg-teal/10 border border-teal/30 flex items-center justify-center shadow-teal-glow">
-        <Icon.eye className="w-7 h-7 text-teal" />
+      <span className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center shadow-accent-glow">
+        <Icon.eye className="w-7 h-7 text-accent" />
       </span>
-      <h2 className="font-display text-lg font-semibold text-ink-primary">选秀尚未开始</h2>
+      <h2 className="font-display text-lg font-semibold text-ink-primary">暂无选秀数据</h2>
       <p className="text-sm text-ink-muted max-w-sm">
-        请等待管理员开始选秀，队长分配、队员选秀与最终对阵将在开始后自动在此实时更新。
+        锦标赛选秀开始后，队长分配、队员选秀与最终对阵将会显示在这里。
       </p>
-      <span className="inline-flex items-center gap-1.5 text-xs text-ink-faint mt-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-teal animate-pulseGlow" />
-        实时等待中…
-      </span>
     </div>
   )
 }
@@ -88,11 +105,13 @@ function WaitingSpectatorView() {
 function noop() {}
 
 /* ---------- top-level page ---------- */
-export default function SpectatorPage({ onExitToLobby }) {
+export default function SpectatorPage({ onExitToLobby, account, onLogout }) {
   const [tournamentName, setTournamentName] = useState('')
   const [draftState, setDraftState] = useState(null)
   const [finalMatches, setFinalMatches] = useState(null) // { teams, matchups } | null
-  const [initialLoading, setInitialLoading] = useState(true)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const [finalLoaded, setFinalLoaded] = useState(false)
+  const initialLoading = !draftLoaded || !finalLoaded
 
   // Tournament name (fetch-on-open, same as the Lobby's own Tournament
   // Settings dialog -- not on the Realtime publication, so this is not
@@ -101,63 +120,127 @@ export default function SpectatorPage({ onExitToLobby }) {
     let cancelled = false
     fetchTournamentSettings()
       .then((s) => { if (!cancelled) setTournamentName(s.tournamentName || '') })
-      .catch(() => {})
+      .catch((err) => console.error('fetchTournamentSettings failed:', err))
     return () => { cancelled = true }
   }, [])
 
-  // Live Draft State (Phase 6) -- mirrors whichever admin/developer is
-  // currently running the Captain/Teammate draft.
+  // Saved Draft State: the single source of truth for the drafting view is
+  // whatever is currently persisted in `tournament_draft_state` -- read
+  // once immediately (this is what makes the page correct even if no
+  // Admin/Developer is online right now), then kept live via Realtime for
+  // as long as this page stays open. This is the exact same
+  // fetch-then-subscribe / reconnect-and-refetch pattern DraftArena.jsx
+  // uses for `tournament_matches`, kept identical on purpose so there's
+  // one way this project handles Realtime resilience, not a
+  // Spectator-specific variant: Supabase's client retries the underlying
+  // WebSocket on its own, but a channel that was live through a long
+  // backgrounded tab or a rough network patch can come back reporting
+  // 'CHANNEL_ERROR'/'TIMED_OUT' without ever cleanly re-subscribing, so on
+  // any non-SUBSCRIBED status this tears the channel down and reconnects
+  // shortly; every SUBSCRIBED (the first connect *and* every later
+  // reconnect) re-reads the saved state once, so anything that changed
+  // while disconnected is never silently lost.
   useEffect(() => {
     let cancelled = false
+    let unsubscribe = null
+    let retryTimer = null
+
     fetchDraftState()
       .then((state) => { if (!cancelled) setDraftState(state) })
-      .catch(() => {})
+      .catch((err) => console.error('fetchDraftState (initial) failed:', err))
+      .finally(() => { if (!cancelled) setDraftLoaded(true) })
 
-    const unsubscribe = subscribeDraftState((payload) => {
-      if (payload.eventType === 'DELETE') { setDraftState(null); return }
-      const row = payload.new
-      if (!row || !row.state || typeof row.state !== 'object') { setDraftState(null); return }
-      setDraftState({ ...row.state })
-    })
-    return () => { cancelled = true; unsubscribe() }
+    function connect() {
+      unsubscribe = subscribeDraftState(
+        (payload) => {
+          if (cancelled) return
+          if (payload.eventType === 'DELETE') { setDraftState(null); return }
+          const row = payload.new
+          if (!row || !row.state || typeof row.state !== 'object') { setDraftState(null); return }
+          setDraftState({ ...row.state })
+        },
+        (status) => {
+          if (cancelled) return
+          if (status === 'SUBSCRIBED') {
+            fetchDraftState().then((state) => { if (!cancelled) setDraftState(state) }).catch((err) => console.error('fetchDraftState (reconnect) failed:', err))
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            unsubscribe?.()
+            unsubscribe = null
+            if (!cancelled) retryTimer = setTimeout(connect, 2000)
+          }
+        }
+      )
+    }
+    connect()
+
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+      unsubscribe?.()
+    }
   }, [])
 
-  // Final Matchups -- same table/channel the Draft Arena itself uses.
-  // Ending the tournament (DELETE) sends every connected client, spectators
-  // included, back to the Tournament Lobby -- same behavior as everywhere
-  // else in the project (DEVLOG.md, Final Matchups section).
+  // Saved Final Matchups -- same table/channel/pattern the Draft Arena
+  // itself uses (see the comment above). Ending the tournament (DELETE)
+  // sends every connected client, spectators included, back to the
+  // Tournament Lobby -- same behavior as everywhere else in the project
+  // (DEVLOG.md, Final Matchups section).
   useEffect(() => {
     let cancelled = false
+    let unsubscribe = null
+    let retryTimer = null
+
     fetchFinalMatchups()
       .then((row) => { if (!cancelled && row) setFinalMatches(row) })
-      .catch(() => {})
+      .catch((err) => console.error('fetchFinalMatchups (initial) failed:', err))
+      .finally(() => { if (!cancelled) setFinalLoaded(true) })
 
-    const unsubscribe = subscribeFinalMatchups((payload) => {
-      if (payload.eventType === 'DELETE') {
-        setFinalMatches(null)
-        ;(onExitToLobby || (() => {}))()
-        return
-      }
-      const row = payload.new
-      if (!row) return
-      setFinalMatches({
-        teams: Array.isArray(row.teams) ? row.teams : [],
-        matchups: Array.isArray(row.matchups) ? row.matchups : [],
-      })
-    })
-    return () => { cancelled = true; unsubscribe() }
+    function connect() {
+      unsubscribe = subscribeFinalMatchups(
+        (payload) => {
+          if (cancelled) return
+          if (payload.eventType === 'DELETE') {
+            setFinalMatches(null)
+            ;(onExitToLobby || (() => {}))()
+            return
+          }
+          const row = payload.new
+          if (!row) return
+          // See the matching comment in DraftArena.jsx's own subscription:
+          // `teams` never changes after creation, but a matchups-only update
+          // can still arrive here with `teams` missing due to Postgres
+          // logical replication omitting an unchanged TOASTed jsonb column.
+          // Keep whatever non-empty teams we already have instead of wiping
+          // the roster.
+          const incomingTeams = Array.isArray(row.teams) ? row.teams : []
+          setFinalMatches((prev) => ({
+            teams: incomingTeams.length > 0 ? incomingTeams : prev?.teams ?? [],
+            matchups: Array.isArray(row.matchups) ? row.matchups : [],
+          }))
+        },
+        (status) => {
+          if (cancelled) return
+          if (status === 'SUBSCRIBED') {
+            fetchFinalMatchups().then((row) => { if (!cancelled && row) setFinalMatches(row) }).catch((err) => console.error('fetchFinalMatchups (reconnect) failed:', err))
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            unsubscribe?.()
+            unsubscribe = null
+            if (!cancelled) retryTimer = setTimeout(connect, 2000)
+          }
+        }
+      )
+    }
+    connect()
+
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+      unsubscribe?.()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    Promise.allSettled([fetchTournamentSettings(), fetchDraftState(), fetchFinalMatchups()]).then(() => {
-      if (!cancelled) setInitialLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [])
-
-  const stage = finalMatches ? 'final' : draftState && Array.isArray(draftState.teams) && draftState.teams.length > 0 ? 'drafting' : 'waiting'
+  const stage = finalMatches ? 'final' : draftState && Array.isArray(draftState.teams) && draftState.teams.length > 0 ? 'drafting' : 'empty'
 
   // The exact shape DraftArena's `tournament` prop expects (see
   // DraftArenaPage's own seedTournament()/setTournament in DraftArena.jsx)
@@ -176,65 +259,39 @@ export default function SpectatorPage({ onExitToLobby }) {
   }, [draftState])
 
   return (
-    <div className="min-h-screen w-full bg-void text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
+    <AppShell
+      account={account}
+      onLogout={onLogout}
+      backAction={onExitToLobby}
+      backLabel="返回锦标赛大厅"
+      title={tournamentName ? `${tournamentName} · 观赛` : '观赛'}
+      bgVariant="default"
+    >
       {/* Orbitron font/scrollbar styling used by the reused DraftArena/
           FinalMatchupsStage bodies below, so they render pixel-identical
           to the admin's own Draft Arena (same .font-display, etc.). */}
       <GlobalStyle />
-      <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-5">
-        {/* header -- no admin actions of any kind; a single compact back
-            button, styled/positioned like the admin Draft Arena's own
-            back button (top-left, small ghost button), instead of a full
-            title bar, so the main Spectator UI gets the space back.
-            Suppressed during the 'drafting' and 'final' stages: those two
-            reused components (DraftArena / FinalMatchupsStage) each
-            render this exact same button themselves, in their own exact
-            position/style -- via showBackButton/backLabel below -- so
-            reusing the admin's own markup guarantees a pixel-perfect
-            match to their respective admin pages, rather than sitting in
-            a separate row above with a different (Draft-Arena-teal)
-            style than what Final Matchups actually uses. */}
-        {stage !== 'drafting' && stage !== 'final' && (
-          <header className="flex items-center shrink-0">
-            <button
-              type="button"
-              onClick={onExitToLobby}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
-              style={{ background: "rgba(0,245,212,0.05)", borderColor: "rgba(0,245,212,0.28)", color: "#7df3e1" }}
-            >
-              ← 返回锦标赛大厅
-            </button>
-          </header>
-        )}
-
-        {initialLoading ? (
-          <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">加载中…</div>
-        ) : stage === 'final' && finalMatches ? (
-          <FinalMatchupsStage
-            tournamentName={tournamentName}
-            teams={finalMatches.teams}
-            matchups={finalMatches.matchups}
-            isStaff={false}
-            onBack={onExitToLobby}
-            showBackButton={true}
-            backLabel="← 返回锦标赛大厅"
-          />
-        ) : stage === 'drafting' && draftArenaTournament ? (
-          <DraftArena
-            tournament={draftArenaTournament}
-            setTournament={noop}
-            onBack={onExitToLobby}
-            onProceed={noop}
-            tournamentName={tournamentName}
-            isStaff={false}
-            externalSelectedCaptainId={draftState?.selectedCaptainId ?? null}
-            showBackButton={true}
-            backLabel="← 返回锦标赛大厅"
-          />
-        ) : (
-          <WaitingSpectatorView />
-        )}
-      </div>
-    </div>
+      {initialLoading ? (
+        <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">加载中…</div>
+      ) : stage === 'final' && finalMatches ? (
+        <FinalMatchupsStage
+          tournamentName={tournamentName}
+          teams={finalMatches.teams}
+          matchups={finalMatches.matchups}
+          isStaff={false}
+        />
+      ) : stage === 'drafting' && draftArenaTournament ? (
+        <DraftArena
+          tournament={draftArenaTournament}
+          setTournament={noop}
+          onProceed={noop}
+          tournamentName={tournamentName}
+          isStaff={false}
+          externalSelectedCaptainId={draftState?.selectedCaptainId ?? null}
+        />
+      ) : (
+        <EmptySpectatorView />
+      )}
+    </AppShell>
   )
 }

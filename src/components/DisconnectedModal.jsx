@@ -21,8 +21,8 @@ export default function DisconnectedModal({ onReconnect }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/85 backdrop-blur-sm" />
-      <div className="relative w-full max-w-sm bg-panel border border-teal/15 rounded-2xl shadow-teal-glow px-7 py-8 text-center">
-        <span className="mx-auto w-12 h-12 rounded-full bg-danger/10 border border-danger/30 flex items-center justify-center mb-4">
+      <div className="relative w-full max-w-sm bg-panel/95 backdrop-blur-md border border-danger/25 rounded-2xl shadow-[0_0_30px_rgba(255,77,109,0.15)] px-7 py-8 text-center">
+        <span className="mx-auto w-12 h-12 rounded-full bg-danger/10 border border-danger/30 flex items-center justify-center mb-4 animate-pulseGlow">
           <Icon.wifiOff className="w-6 h-6 text-danger" />
         </span>
         <h3 className="text-base font-display font-semibold tracking-wide text-ink-primary mb-2">
@@ -34,7 +34,7 @@ export default function DisconnectedModal({ onReconnect }) {
         <button
           type="button"
           onClick={onReconnect}
-          className="inline-flex items-center gap-2 bg-teal text-void font-semibold tracking-wide text-sm px-5 py-2.5 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99]"
+          className="btn-primary px-5 py-2.5 text-sm"
         >
           <Icon.refresh className="w-4 h-4" />
           重新连接
