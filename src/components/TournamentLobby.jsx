@@ -14,8 +14,6 @@ import {
 } from '../lib/tournamentApi.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import TournamentSettingsDialog from './TournamentSettingsDialog.jsx'
-import AppShell from './AppShell.jsx'
-import { LiveDot } from './ui.jsx'
 
 /* ---------- inline icons (kept consistent with AuthPage.jsx / AdminDashboard.jsx) ---------- */
 const Icon = {
@@ -77,14 +75,6 @@ const Icon = {
       <circle cx="9" cy="8" r="3" />
       <path d="M3.3 19c1-3.1 3.1-4.7 5.7-4.7s4.7 1.6 5.7 4.7" strokeLinecap="round" />
       <path d="M15.5 10h6" strokeLinecap="round" />
-    </svg>
-  ),
-  // Identical markup to AdminDashboard.jsx's own `trash` icon -- kept as an
-  // exact duplicate (not a shared import) so this page's delete action
-  // renders pixel-identical to the Admin Dashboard's, per explicit request.
-  trash: (p) => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
-      <path d="M5 7h14M9.5 7V5.2A1.2 1.2 0 0 1 10.7 4h2.6a1.2 1.2 0 0 1 1.2 1.2V7M7.5 7l.7 11.2A1.6 1.6 0 0 0 9.8 19.7h4.4a1.6 1.6 0 0 0 1.6-1.5L16.5 7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   userPlus: (p) => (
@@ -189,7 +179,7 @@ function RoleBadge({ role }) {
   return (
     <span
       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
-        isCaptain ? 'bg-gold/10 text-gold border-gold/40' : 'bg-panel-alt text-ink-muted border-panel-line'
+        isCaptain ? 'bg-teal/10 text-teal border-teal/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
       {ROLE_LABEL[role]}
@@ -197,45 +187,14 @@ function RoleBadge({ role }) {
   )
 }
 
-function RailStat({ icon, label, value }) {
-  const IconCmp = Icon[icon]
-  return (
-    <div className="flex flex-col items-center gap-1.5 rounded-lg bg-panel-alt/60 border border-panel-line py-3">
-      <IconCmp className="w-4 h-4 text-accent2" />
-      <span className="text-lg font-display font-bold text-ink-primary leading-none tabular-nums">{value}</span>
-      <span className="text-[10px] text-ink-muted leading-none">{label}</span>
-    </div>
-  )
-}
-
-function RailAction({ icon, label, onClick, disabled, tone = 'default', title }) {
-  const IconCmp = Icon[icon]
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition disabled:opacity-50 disabled:pointer-events-none ${
-        tone === 'danger'
-          ? 'border-panel-line text-ink-muted hover:text-danger hover:border-danger/40 hover:bg-danger/5'
-          : 'border-panel-line text-ink-muted hover:text-ink-primary hover:border-accent2/40 hover:bg-accent/5'
-      }`}
-    >
-      <IconCmp className="w-4 h-4 shrink-0" />
-      {label}
-    </button>
-  )
-}
-
 function StatusBadge({ online }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${
-        online ? 'bg-success/10 text-success border-success/40' : 'bg-panel-alt text-ink-muted border-panel-line'
+        online ? 'bg-teal/10 text-teal border-teal/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
-      <span className={`w-[9.6px] h-[9.6px] rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-[#ff0000]'}`} />
+      <span>{online ? '🟢' : '🔴'}</span>
       {online ? '在线' : '离线'}
     </span>
   )
@@ -244,15 +203,13 @@ function StatusBadge({ online }) {
 function StatCard({ icon, label, value }) {
   const IconCmp = Icon[icon]
   return (
-    <div className="accent-frame shadow-accent-glow">
-      <div className="bg-panel/90 backdrop-blur-sm rounded-[calc(1rem-1px)] px-5 py-5 flex items-center gap-4">
-        <span className="w-11 h-11 rounded-xl bg-accent-gradient flex items-center justify-center shrink-0 shadow-accent-glow">
-          <IconCmp className="w-5 h-5 text-void" />
-        </span>
-        <div className="leading-tight">
-          <p className="text-2xl font-display font-bold text-ink-primary tabular-nums">{value}</p>
-          <p className="text-xs text-ink-muted mt-0.5">{label}</p>
-        </div>
+    <div className="bg-panel border border-teal/15 rounded-2xl shadow-teal-glow px-5 py-5 flex items-center gap-4">
+      <span className="w-11 h-11 rounded-xl bg-teal/10 border border-teal/40 flex items-center justify-center shrink-0">
+        <IconCmp className="w-5 h-5 text-teal" />
+      </span>
+      <div className="leading-tight">
+        <p className="text-2xl font-display font-semibold text-ink-primary">{value}</p>
+        <p className="text-xs text-ink-muted mt-0.5">{label}</p>
       </div>
     </div>
   )
@@ -270,7 +227,7 @@ function StartValidationRow({ label, current, required }) {
     <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-panel-alt border border-panel-line">
       <span className="text-xs text-ink-muted">{label}</span>
       <span className="text-sm font-semibold tabular-nums">
-        <span className={ok ? 'text-success' : 'text-danger'}>{current}</span>
+        <span className={ok ? 'text-teal' : 'text-danger'}>{current}</span>
         <span className="text-ink-faint"> / {required}</span>
       </span>
     </div>
@@ -292,7 +249,7 @@ function StartValidationDialog({ result, onClose }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-panel/95 backdrop-blur-md border border-danger/25 shadow-[0_0_28px_rgba(255,77,109,0.18)] rounded-2xl px-6 py-6">
+      <div className="relative w-full max-w-md bg-panel border border-danger/25 shadow-[0_0_20px_rgba(255,84,112,0.15)] rounded-2xl px-6 py-6">
         <div className="flex items-start gap-3 mb-5">
           <span className="w-9 h-9 rounded-full border flex items-center justify-center shrink-0 bg-danger/10 border-danger/30 text-danger">
             <Icon.alert className="w-4.5 h-4.5" />
@@ -612,174 +569,245 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
     window.location.hash = 'draft'
   }
 
-  const nav = [
-    ...(isStaff ? [{ key: 'admin', icon: 'admin', label: '管理后台' }] : []),
-    { key: 'lobby', icon: 'lobby', label: '锦标赛大厅' },
-    { key: 'spectate', icon: 'spectate', label: '观赛' },
-  ]
-
-  function handleNavigate(key) {
-    if (key === 'admin') return onOpenAdmin?.()
-    window.location.hash = key
-  }
-
   return (
-    <AppShell
-      account={account}
-      section="lobby"
-      nav={nav}
-      onNavigate={handleNavigate}
-      onLogout={() => setConfirmingLogout(true)}
-    >
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
-        {/* ═══ MAIN: roster ═══ */}
-        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
-          <div className="px-5 pt-5 pb-4 shrink-0 flex items-center justify-between gap-3 border-b border-panel-line">
+    <div className="min-h-screen w-full bg-void text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
+      <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-5">
+        {/* header */}
+        <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-teal/10 border border-teal/40 flex items-center justify-center shadow-teal-glow">
+              <Icon.flag className="w-5 h-5 text-teal" />
+            </span>
             <div>
-              <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">参赛名单</h1>
-              <p className="text-xs text-ink-muted mt-0.5">实时同步 · {participants.length} 人已加入</p>
-            </div>
-            <div className="hidden sm:flex items-center gap-4 text-xs text-ink-muted">
-              <span className="flex items-center gap-1.5"><LiveDot active /> {stats.onlineCaptains + stats.onlinePlayers} 人在线</span>
+              <h1 className="font-display text-xl font-semibold tracking-wide text-ink-primary">锦标赛大厅</h1>
+              <p className="text-xs text-ink-muted">选秀台 · 锦标赛参赛</p>
             </div>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-auto px-3 py-2">
-            {sortedParticipants.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full py-16 text-center text-ink-faint text-sm gap-2">
-                <Icon.users className="w-8 h-8 opacity-40" />
-                暂无玩家参赛，成为第一个参赛的人吧
+          <div className="flex items-center gap-3">
+            {/* Phase 6 -- Spectator Page: read-only live view of the
+                tournament, open to every logged-in account (not just
+                staff). No admin/staff controls of any kind live there. */}
+            <button
+              type="button"
+              onClick={() => (window.location.hash = 'spectate')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
+            >
+              <Icon.eye className="w-4 h-4" />
+              观赛
+            </button>
+            {isStaff && (
+              <button
+                type="button"
+                onClick={onOpenAdmin}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
+              >
+                <Icon.dashboard className="w-4 h-4" />
+                管理后台
+              </button>
+            )}
+            <div className="flex items-center gap-3 bg-panel border border-teal/15 rounded-xl pl-2.5 pr-2 py-2">
+              <Avatar src={account.avatar_url} alt={`${account.display_name} 的头像`} size="w-8 h-8" />
+              <div className="leading-tight">
+                <p className="text-xs text-ink-muted">当前登录</p>
+                <p className="text-sm text-ink-primary font-medium">{account.display_name}</p>
               </div>
+              <button
+                type="button"
+                onClick={() => setConfirmingLogout(true)}
+                className="inline-flex items-center gap-1.5 ml-2 pl-3 border-l border-panel-line text-xs text-ink-muted hover:text-danger transition"
+              >
+                <Icon.logout className="w-4 h-4" />
+                退出登录
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* stats + join/leave: side by side on desktop instead of stacked */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 shrink-0">
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatCard icon="users" label="参赛总人数" value={stats.total} />
+            <StatCard icon="crown" label="在线队长" value={stats.onlineCaptains} />
+            <StatCard icon="bolt" label="在线队员" value={stats.onlinePlayers} />
+          </div>
+
+          {/* join / leave */}
+          <section className="lg:col-span-5 bg-panel border border-teal/15 rounded-2xl shadow-teal-glow px-5 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary mb-1">
+                {joined ? '你已加入锦标赛' : '尚未加入锦标赛'}
+              </h2>
+              <p className="text-xs text-ink-muted leading-relaxed">
+                {joined
+                  ? '断开连接不会让你退出比赛，只有点击“退出比赛”才会永久移除参赛资格。'
+                  : '点击“参加比赛”加入本次锦标赛，实时同步到所有在线用户。'}
+              </p>
+            </div>
+            {joined ? (
+              <button
+                type="button"
+                onClick={handleLeave}
+                className="inline-flex items-center justify-center gap-2 shrink-0 bg-danger text-void font-semibold tracking-wide text-sm px-6 py-3 rounded-lg transition hover:brightness-110 active:scale-[0.99]"
+              >
+                <Icon.door className="w-4 h-4" />
+                退出比赛
+              </button>
             ) : (
-              <table className="w-full text-sm border-collapse">
-                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm">
-                  <tr className="text-left text-xs text-ink-muted border-b border-panel-line">
-                    <th className="px-3 py-2.5 font-medium">头像</th>
-                    <th className="px-3 py-2.5 font-medium">昵称</th>
-                    <th className="px-3 py-2.5 font-medium">性别</th>
-                    <th className="px-3 py-2.5 font-medium">抽签号</th>
-                    <th className="px-3 py-2.5 font-medium">身份</th>
-                    <th className="px-3 py-2.5 font-medium">加入时间</th>
-                    <th className="px-3 py-2.5 font-medium">状态</th>
-                    <th className="px-3 py-2.5 font-medium text-right">操作</th>
+              <button
+                type="button"
+                onClick={handleJoin}
+                disabled={busy}
+                className="inline-flex items-center justify-center gap-2 shrink-0 bg-teal text-void font-semibold tracking-wide text-sm px-6 py-3 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+              >
+                <Icon.flag className="w-4 h-4" />
+                {busy ? '处理中…' : '参加比赛'}
+              </button>
+            )}
+          </section>
+        </div>
+
+        {/* admin/developer tournament controls */}
+        {isStaff && (
+          <div className="flex items-center gap-3 flex-wrap shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
+            >
+              <Icon.gear className="w-4 h-4" />
+              锦标赛设置
+            </button>
+            <button
+              type="button"
+              onClick={handleRoll}
+              disabled={rolling}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition disabled:opacity-60 disabled:pointer-events-none"
+            >
+              <Icon.dice className="w-4 h-4" />
+              {rolling ? '摇号中…' : '随机摇号'}
+            </button>
+            <button
+              type="button"
+              onClick={handleClear}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-danger/40 text-danger text-sm font-medium tracking-wide hover:bg-danger/10 transition"
+            >
+              <Icon.sweep className="w-4 h-4" />
+              清空参赛名单
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateTempPlayers}
+              disabled={creatingTemp || !settings}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition disabled:opacity-60 disabled:pointer-events-none"
+              title="开发测试用：根据当前锦标赛设置自动生成并加入临时队长与队员"
+            >
+              <Icon.userPlus className="w-4 h-4" />
+              {creatingTemp ? '创建中…' : '创建临时玩家'}
+            </button>
+            <button
+              type="button"
+              onClick={handleRemoveTempPlayers}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-danger/40 text-danger text-sm font-medium tracking-wide hover:bg-danger/10 transition"
+              title="开发测试用：移除所有由“创建临时玩家”生成的测试用户"
+            >
+              <Icon.userMinus className="w-4 h-4" />
+              移除临时玩家
+            </button>
+            <button
+              type="button"
+              onClick={handleStartTournament}
+              className="inline-flex items-center gap-2 bg-teal text-void font-semibold tracking-wide text-sm px-4 py-2.5 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99]"
+            >
+              <Icon.play className="w-4 h-4" />
+              开始比赛
+            </button>
+          </div>
+        )}
+
+        {/* participant list — fills remaining height on desktop; only this area scrolls */}
+        <section className="bg-panel border border-teal/15 rounded-2xl shadow-teal-glow flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
+          <div className="px-5 pt-6 pb-4 sm:px-6 shrink-0 flex items-center justify-between gap-3">
+            <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary">参赛玩家</h2>
+            <span className="text-xs text-ink-muted">{participants.length} 人参赛</span>
+          </div>
+
+          <div className="flex-1 lg:min-h-0 overflow-y-auto px-5 pb-6 sm:px-6">
+            <div className="rounded-xl border border-panel-line overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-panel-alt text-ink-muted text-xs uppercase tracking-wide">
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">头像</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">昵称</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">性别</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">抽签号</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">身份</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">加入时间</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">状态</th>
+                    {isStaff && <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">操作</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {sortedParticipants.map((p) => (
-                    <tr key={p.accountId} className="border-b border-panel-line/60 hover:bg-panel-alt/40 transition">
-                      <td className="px-3 py-2.5">
-                        <Avatar src={p.avatarUrl} alt={`${p.displayName} 的头像`} size="w-9 h-9" />
+                    <tr key={p.accountId} className="border-t border-panel-line hover:bg-panel-alt/60 transition">
+                      <td className="px-4 py-3">
+                        <Avatar src={p.avatarUrl} alt={`${p.displayName} 的头像`} />
                       </td>
-                      <td className="px-3 py-2.5">
-                        <span className="text-sm text-ink-primary font-medium">
-                          {p.displayName}
-                          {p.accountId === account.id && <span className="text-accent2 font-normal"> （我）</span>}
-                        </span>
+                      <td className="px-4 py-3 text-ink-primary">
+                        {p.displayName}
+                        {p.accountId === account.id && <span className="ml-2 text-[11px] text-teal">（我）</span>}
                       </td>
-                      <td className="px-3 py-2.5"><GenderIcon gender={p.gender} className="w-4 h-4" /></td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-4 py-3">
+                        <GenderIcon gender={p.gender} />
+                      </td>
+                      <td className="px-4 py-3">
                         {p.rollNumber != null ? (
-                          <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-1 rounded-md bg-accent-gradient text-void text-xs font-bold font-mono shadow-accent-glow">
+                          <span className="inline-flex items-center justify-center min-w-[2.25rem] px-2 py-1 rounded-lg bg-teal/10 border border-teal/40 text-teal text-xs font-semibold tabular-nums">
                             {p.rollNumber}
                           </span>
                         ) : (
                           <span className="text-ink-faint text-xs">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5"><RoleBadge role={p.tournamentRole} /></td>
-                      <td className="px-3 py-2.5 text-xs text-ink-muted whitespace-nowrap">{formatDateTime(p.joinedAt)}</td>
-                      {/* Real-time online/offline: `isOnline` is re-evaluated
-                          against `now` (ticked every 3s, see the effect
-                          above) and `p.lastSeenAt` (kept live by the same
-                          Realtime roster subscription every other column on
-                          this row already depends on) -- no separate sync
-                          path needed, this just displays what the rest of
-                          the table already tracks. */}
-                      <td className="px-3 py-2.5"><StatusBadge online={isOnline(p.lastSeenAt, now)} /></td>
-                      <td className="px-3 py-2.5 text-right">
-                        {isStaff && (
+                      <td className="px-4 py-3">
+                        <RoleBadge role={p.tournamentRole} />
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted">{formatDateTime(p.joinedAt)}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge online={isOnline(p.lastSeenAt, now)} />
+                      </td>
+                      {isStaff && (
+                        <td className="px-4 py-3">
                           <button
                             type="button"
                             onClick={() => setRemovingParticipant(p)}
-                            title="删除"
-                            className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-panel-line text-ink-muted hover:text-danger hover:border-danger/40 transition"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
                           >
-                            <Icon.trash className="w-3.5 h-3.5" />
+                            <Icon.userMinus className="w-3.5 h-3.5" />
+                            移除
                           </button>
-                        )}
-                      </td>
+                        </td>
+                      )}
                     </tr>
                   ))}
+                  {participants.length === 0 && (
+                    <tr>
+                      <td colSpan={isStaff ? 8 : 7} className="px-4 py-8 text-center text-ink-faint text-xs">
+                        暂无玩家参赛，成为第一个参赛的人吧
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
-            )}
+            </div>
           </div>
         </section>
-
-        {/* ═══ RIGHT RAIL: status + actions, the tournament's control panel ═══ */}
-        <aside className="lg:w-[340px] shrink-0 flex flex-col gap-4 lg:overflow-y-auto lg:pr-1">
-          {/* join/leave — the single most important action for a non-staff visitor */}
-          <div className="accent-frame shadow-accent-glow shrink-0">
-            <div className="bg-panel/90 backdrop-blur-sm rounded-[calc(1rem-1px)] px-5 py-5">
-              <div className="flex items-center gap-2 mb-1.5">
-                <LiveDot active={joined} />
-                <h2 className="font-display text-sm font-bold tracking-wide text-ink-primary">
-                  {joined ? '你已加入锦标赛' : '尚未加入锦标赛'}
-                </h2>
-              </div>
-              <p className="text-xs text-ink-muted leading-relaxed mb-4">
-                {joined
-                  ? '断开连接不会让你退出比赛，只有点击下方按钮才会永久移除参赛资格。'
-                  : '点击下方按钮加入本次锦标赛，实时同步到所有在线用户。'}
-              </p>
-              {joined ? (
-                <button type="button" onClick={handleLeave} className="btn-danger w-full bg-danger/10 py-2.5 text-sm">
-                  <Icon.door className="w-4 h-4" />
-                  退出比赛
-                </button>
-              ) : (
-                <button type="button" onClick={handleJoin} disabled={busy} className="btn-primary w-full py-2.5 text-sm">
-                  <Icon.flag className="w-4 h-4" />
-                  {busy ? '处理中…' : '参加比赛'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* live stats */}
-          <div className="glass-panel border-panel-line px-4 py-4 shrink-0">
-            <p className="eyebrow mb-3">实时统计</p>
-            <div className="grid grid-cols-3 gap-2">
-              <RailStat icon="users" label="总人数" value={stats.total} />
-              <RailStat icon="crown" label="在线队长" value={stats.onlineCaptains} />
-              <RailStat icon="bolt" label="在线队员" value={stats.onlinePlayers} />
-            </div>
-          </div>
-
-          {/* staff control panel */}
-          {isStaff && (
-            <div className="glass-panel border-panel-line px-4 py-4 flex-1 lg:min-h-0 flex flex-col shrink-0">
-              <p className="eyebrow mb-3">赛事管理</p>
-              <div className="flex flex-col gap-1.5">
-                <RailAction icon="gear" label="锦标赛设置" onClick={() => setShowSettings(true)} />
-                <RailAction icon="dice" label={rolling ? '摇号中…' : '随机摇号'} onClick={handleRoll} disabled={rolling} />
-                <RailAction icon="userPlus" label={creatingTemp ? '创建中…' : '创建临时玩家'} onClick={handleCreateTempPlayers} disabled={creatingTemp || !settings} title="开发测试用：根据当前锦标赛设置自动生成并加入临时队长与队员" />
-                <RailAction icon="userMinus" label="移除临时玩家" onClick={handleRemoveTempPlayers} tone="danger" title="开发测试用：移除所有由“创建临时玩家”生成的测试用户" />
-                <RailAction icon="sweep" label="清空参赛名单" onClick={handleClear} tone="danger" />
-              </div>
-              <button type="button" onClick={handleStartTournament} className="btn-primary w-full py-3 text-sm mt-4">
-                <Icon.play className="w-4 h-4" />
-                开始比赛
-              </button>
-            </div>
-          )}
-        </aside>
       </div>
 
       {/* toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt/95 backdrop-blur border border-accent2/40 shadow-accent-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent2 animate-pulseGlow" />
+        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt border border-teal/40 shadow-teal-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-teal" />
           {toast}
         </div>
       )}
@@ -857,6 +885,6 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
           }}
         />
       )}
-    </AppShell>
+    </div>
   )
 }

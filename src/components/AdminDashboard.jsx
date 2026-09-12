@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ConfirmDialog from './ConfirmDialog.jsx'
-import AppShell from './AppShell.jsx'
-import { TileRow } from './ui.jsx'
 import { uploadAvatar } from '../lib/auth.js'
 import {
   fetchUsers,
@@ -157,7 +155,7 @@ function Field({ icon, ...props }) {
       {IconCmp && <IconCmp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />}
       <input
         {...props}
-        className={`w-full bg-panel-alt/70 border border-panel-line rounded-lg ${IconCmp ? 'pl-10' : 'pl-3'} pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-alt focus:shadow-accent-glow`}
+        className={`w-full bg-panel-alt border border-panel-line rounded-lg ${IconCmp ? 'pl-10' : 'pl-3'} pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-teal focus:shadow-teal-glow`}
       />
     </div>
   )
@@ -171,13 +169,13 @@ function PasswordField({ icon, visible, onToggle, ...props }) {
       <input
         {...props}
         type={visible ? 'text' : 'password'}
-        className="w-full bg-panel-alt/70 border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-alt focus:shadow-accent-glow"
+        className="w-full bg-panel-alt border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-teal focus:shadow-teal-glow"
       />
       <button
         type="button"
         onClick={onToggle}
         tabIndex={-1}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-accent2 transition"
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-teal transition"
         aria-label={visible ? '隐藏密码' : '显示密码'}
       >
         {visible ? <Icon.eyeOff className="w-4 h-4" /> : <Icon.eye className="w-4 h-4" />}
@@ -197,7 +195,7 @@ function RoleToggle({ value, onChange }) {
           key={opt.value}
           className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
             value === opt.value
-              ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
+              ? 'bg-teal/10 border-teal text-teal shadow-teal-glow'
               : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
           }`}
         >
@@ -227,7 +225,7 @@ function GenderToggle({ value, onChange }) {
           key={opt.value}
           className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
             value === opt.value
-              ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
+              ? 'bg-teal/10 border-teal text-teal shadow-teal-glow'
               : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
           }`}
         >
@@ -288,7 +286,7 @@ function RoleBadge({ role }) {
     <span
       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
         isCaptain
-          ? 'bg-gold/10 text-gold border-gold/40'
+          ? 'bg-teal/10 text-teal border-teal/40'
           : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
@@ -299,8 +297,8 @@ function RoleBadge({ role }) {
 
 function PermissionBadge({ role }) {
   const styles = {
-    developer: 'bg-accent-gradient text-void border-transparent shadow-accent-glow font-bold',
-    admin: 'bg-accent2/10 text-accent2 border-accent2/40',
+    developer: 'bg-teal text-void border-teal shadow-teal-glow font-semibold',
+    admin: 'bg-teal/10 text-teal border-teal/40',
     user: 'bg-panel-alt text-ink-muted border-panel-line',
   }
   return (
@@ -313,36 +311,9 @@ function PermissionBadge({ role }) {
 function StatChip({ label, value }) {
   return (
     <div className="inline-flex items-center gap-2 bg-panel-alt border border-panel-line rounded-lg px-3.5 py-2 shrink-0">
-      <span className="text-sm font-display font-bold text-accent2 tabular-nums leading-none">{value}</span>
+      <span className="text-sm font-display font-semibold text-teal tabular-nums leading-none">{value}</span>
       <span className="text-[11px] text-ink-muted leading-none">{label}</span>
     </div>
-  )
-}
-
-function RailStat({ icon, label, value }) {
-  const IconCmp = Icon[icon]
-  return (
-    <div className="flex flex-col items-center gap-1 rounded-lg bg-panel-alt/60 border border-panel-line py-2.5">
-      <IconCmp className="w-3.5 h-3.5 text-accent2" />
-      <span className="text-sm font-display font-bold text-ink-primary leading-none tabular-nums">{value}</span>
-      <span className="text-[9px] text-ink-muted leading-none">{label}</span>
-    </div>
-  )
-}
-
-function IconAction({ icon, title, onClick, tone = 'default' }) {
-  const IconCmp = Icon[icon]
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded-lg border border-panel-line transition ${
-        tone === 'danger' ? 'text-ink-muted hover:text-danger hover:border-danger/40' : 'text-ink-muted hover:text-accent2 hover:border-accent2/40'
-      }`}
-    >
-      <IconCmp className="w-3.5 h-3.5" />
-    </button>
   )
 }
 
@@ -352,14 +323,14 @@ function ModalShell({ title, onClose, children, wide }) {
     <div className="fixed inset-0 z-30 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onClose} />
       <div
-        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel/95 backdrop-blur-md border border-accent/20 rounded-2xl shadow-accent-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto`}
+        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel border border-teal/15 rounded-2xl shadow-teal-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto`}
       >
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-display font-semibold tracking-wide text-gradient">{title}</h3>
+          <h3 className="text-base font-display font-semibold tracking-wide text-ink-primary">{title}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-ink-muted hover:text-accent2 transition"
+            className="text-ink-muted hover:text-teal transition"
             aria-label="关闭"
           >
             <Icon.x className="w-4.5 h-4.5" />
@@ -422,14 +393,14 @@ function EditUserModal({ user, onClose, onSave, onError, saving }) {
       <form onSubmit={submit} className="space-y-4">
         <div className="flex flex-col items-center gap-2 pb-1">
           <label className="relative cursor-pointer group">
-            <div className="w-20 h-20 rounded-xl bg-panel-alt border border-panel-line overflow-hidden flex items-center justify-center transition group-hover:border-accent2/60 group-hover:shadow-accent-glow">
+            <div className="w-20 h-20 rounded-lg bg-panel-alt border border-panel-line overflow-hidden flex items-center justify-center transition group-hover:border-teal">
               {avatarPreview ? (
                 <img src={avatarPreview} alt="头像预览" className="w-full h-full object-cover" />
               ) : (
                 <Icon.user className="w-8 h-8 text-ink-muted" />
               )}
             </div>
-            <span className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-accent-gradient flex items-center justify-center border-2 border-panel shadow-accent-glow">
+            <span className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-teal flex items-center justify-center border-2 border-panel">
               <Icon.camera className="w-3 h-3 text-void" />
             </span>
             <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
@@ -497,7 +468,7 @@ function EditUserModal({ user, onClose, onSave, onError, saving }) {
           <button
             type="submit"
             disabled={uploading || saving}
-            className="btn-primary flex-1 text-sm py-2.5"
+            className="flex-1 bg-teal text-void font-semibold tracking-wide text-sm py-2.5 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
           >
             {uploading ? '上传头像中…' : saving ? '保存中…' : '保存修改'}
           </button>
@@ -512,7 +483,7 @@ function ConfirmDeleteModal({ title, description, onCancel, onConfirm, confirmin
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative w-full max-w-sm bg-panel/95 backdrop-blur-md border border-danger/25 rounded-2xl px-6 py-6 shadow-[0_0_28px_rgba(255,77,109,0.18)]">
+      <div className="relative w-full max-w-sm bg-panel border border-danger/25 rounded-2xl px-6 py-6 shadow-[0_0_20px_rgba(255,84,112,0.15)]">
         <div className="flex items-start gap-3 mb-5">
           <span className="w-9 h-9 rounded-full bg-danger/10 border border-danger/30 flex items-center justify-center shrink-0">
             <Icon.alert className="w-4.5 h-4.5 text-danger" />
@@ -534,7 +505,7 @@ function ConfirmDeleteModal({ title, description, onCancel, onConfirm, confirmin
             type="button"
             onClick={onConfirm}
             disabled={confirming}
-            className="flex-1 bg-gradient-to-r from-danger to-hot text-void font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition shadow-hot-glow hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+            className="flex-1 bg-danger text-void font-semibold tracking-wide text-sm py-2.5 rounded-lg transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
           >
             {confirming ? '处理中…' : '确认删除'}
           </button>
@@ -597,8 +568,8 @@ function CreateInviteModal({ onClose, onCreate, creating }) {
                 key={opt.value}
                 className={`flex items-center justify-center text-center py-2 rounded-lg border text-xs cursor-pointer select-none transition ${
                   expiryMode === opt.value
-                    ? 'bg-accent-gradient border-transparent text-void shadow-accent-glow font-semibold'
-                    : 'bg-panel-alt/70 border-panel-line text-ink-muted hover:text-ink-primary hover:border-accent2/40'
+                    ? 'bg-teal/10 border-teal text-teal shadow-teal-glow'
+                    : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
                 }`}
               >
                 <input
@@ -635,7 +606,7 @@ function CreateInviteModal({ onClose, onCreate, creating }) {
           <button
             type="submit"
             disabled={creating}
-            className="btn-primary flex-1 text-sm py-2.5"
+            className="flex-1 bg-teal text-void font-semibold tracking-wide text-sm py-2.5 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
           >
             {creating ? '生成中…' : '生成邀请码'}
           </button>
@@ -649,7 +620,7 @@ function InviteCodeCell({ code, revealed, onReveal }) {
   const mask = code.replace(/[^-]/g, '•')
   return (
     <div className="inline-flex items-center gap-2">
-      <span className="inline-flex items-center gap-2 font-mono tracking-wider text-accent2">
+      <span className="inline-flex items-center gap-2 font-mono tracking-wider text-teal">
         <Icon.ticket className="w-3.5 h-3.5" />
         {revealed ? code : mask}
       </span>
@@ -657,7 +628,7 @@ function InviteCodeCell({ code, revealed, onReveal }) {
         <button
           type="button"
           onClick={onReveal}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-panel-line text-[11px] text-ink-muted hover:text-accent2 hover:border-accent2/40 transition"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-panel-line text-[11px] text-ink-muted hover:text-teal hover:border-teal/40 transition"
         >
           <Icon.eye className="w-3 h-3" />
           显示
@@ -680,7 +651,7 @@ const DASHBOARD_TABS = [
 
 function TabNav({ tabs, activeTab, onChange }) {
   return (
-    <div className="flex gap-1 overflow-x-auto bg-panel/80 backdrop-blur-sm border border-panel-line rounded-xl p-1.5">
+    <div className="flex gap-1 overflow-x-auto bg-panel border border-teal/15 rounded-xl p-1.5">
       {tabs.map((tab) => {
         const TabIcon = Icon[tab.icon]
         const isActive = activeTab === tab.id
@@ -689,9 +660,9 @@ function TabNav({ tabs, activeTab, onChange }) {
             key={tab.id}
             type="button"
             onClick={() => onChange(tab.id)}
-            className={`inline-flex items-center gap-2 shrink-0 px-4 py-2.5 rounded-lg text-sm font-heading font-semibold tracking-wide transition ${
+            className={`inline-flex items-center gap-2 shrink-0 px-4 py-2.5 rounded-lg text-sm font-medium tracking-wide transition ${
               isActive
-                ? 'bg-accent-gradient text-void shadow-accent-glow'
+                ? 'bg-teal/10 text-teal border border-teal/40 shadow-teal-glow'
                 : 'text-ink-muted border border-transparent hover:text-ink-primary hover:bg-panel-alt'
             }`}
           >
@@ -901,66 +872,66 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
     showToast(`已复制邀请码 ${code}`)
   }
 
-  const nav = [
-    { key: 'admin', icon: 'admin', label: '管理后台' },
-    { key: 'lobby', icon: 'lobby', label: '锦标赛大厅' },
-    { key: 'spectate', icon: 'spectate', label: '观赛' },
-  ]
-  function handleNavigate(key) {
-    if (key === 'lobby') return onOpenLobby?.()
-    window.location.hash = key
-  }
-
   return (
-    <AppShell
-      account={account}
-      section="admin"
-      nav={nav}
-      onNavigate={handleNavigate}
-      onLogout={() => setConfirmingLogout(true)}
-    >
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
-        {/* ═══ SIDEBAR: console section switcher ═══ */}
-        <aside className="lg:w-[220px] shrink-0 flex flex-col gap-1.5">
-          <p className="eyebrow px-2 mb-1">控制台</p>
-          {DASHBOARD_TABS.map((tab) => {
-            const TabIcon = Icon[tab.icon]
-            const isActive = activeTab === tab.id
-            const count = tab.id === 'users' ? userCounts.total : inviteCounts.total
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-heading font-semibold tracking-wide transition ${
-                  isActive
-                    ? 'bg-accent-gradient text-void shadow-accent-glow'
-                    : 'text-ink-muted hover:text-ink-primary hover:bg-panel-alt'
-                }`}
-              >
-                <TabIcon className="w-4 h-4 shrink-0" />
-                <span className="flex-1 text-left">{tab.label}</span>
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isActive ? 'bg-void/20' : 'bg-panel-alt text-ink-faint'}`}>{count}</span>
-              </button>
-            )
-          })}
-
-          <div className="hidden lg:block mt-4 pt-4 border-t border-panel-line">
-            <p className="eyebrow px-2 mb-2">概览</p>
-            <div className="grid grid-cols-2 gap-2 px-1">
-              <RailStat icon="user" label="队长" value={userCounts.captains} />
-              <RailStat icon="user" label="队员" value={userCounts.players} />
+    <div className="min-h-screen w-full bg-void text-ink-primary font-body flex flex-col lg:h-screen lg:overflow-hidden">
+      <div className="w-full flex flex-col flex-1 lg:min-h-0 px-4 sm:px-5 lg:px-6 py-5 gap-5">
+        {/* header */}
+        <header className="flex items-center justify-between gap-3 flex-wrap shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-teal/10 border border-teal/40 flex items-center justify-center shadow-teal-glow">
+              <Icon.shield className="w-5 h-5 text-teal" />
+            </span>
+            <div>
+              <h1 className="font-display text-xl font-semibold tracking-wide text-ink-primary">管理后台</h1>
+              <p className="text-xs text-ink-muted">选秀台 · 管理员控制面板</p>
             </div>
           </div>
-        </aside>
 
-        {/* ═══ MAIN: active console section ═══ */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onOpenLobby}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-teal/40 text-teal text-sm font-medium tracking-wide hover:bg-teal/10 hover:shadow-teal-glow transition"
+            >
+              <Icon.flag className="w-4 h-4" />
+              锦标赛大厅
+            </button>
+            <div className="flex items-center gap-3 bg-panel border border-teal/15 rounded-xl pl-2.5 pr-2 py-2">
+              <Avatar
+                src={account.avatar_url}
+                alt={`${account.display_name} 的头像`}
+                size="w-8 h-8"
+              />
+              <div className="leading-tight">
+                <p className="text-xs text-ink-muted">当前登录</p>
+                <p className="text-sm text-ink-primary font-medium">{account.display_name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmingLogout(true)}
+                className="inline-flex items-center gap-1.5 ml-2 pl-3 border-l border-panel-line text-xs text-ink-muted hover:text-danger transition"
+              >
+                <Icon.logout className="w-4 h-4" />
+                退出登录
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* tab navigation */}
+        <div className="shrink-0">
+          <TabNav tabs={DASHBOARD_TABS} activeTab={activeTab} onChange={setActiveTab} />
+        </div>
+
+        {/* registered users */}
         {activeTab === 'users' && (
-        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
-            <div>
-              <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">已注册用户</h1>
-              <p className="text-xs text-ink-muted mt-0.5">共 {userCounts.total} 人 · {userCounts.captains} 队长 · {userCounts.players} 队员</p>
+        <section className="bg-panel border border-teal/15 rounded-2xl shadow-teal-glow flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 px-5 pt-6 pb-4 sm:px-6 shrink-0">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary shrink-0">已注册用户</h2>
+              <StatChip label="总用户" value={userCounts.total} />
+              <StatChip label="队长" value={userCounts.captains} />
+              <StatChip label="队员" value={userCounts.players} />
             </div>
             <div className="w-full lg:w-64 shrink-0">
               <Field
@@ -973,97 +944,185 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
             </div>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-y-auto px-3 py-2">
-            {filteredUsers.length === 0 && (
-              <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">未找到匹配的用户</div>
-            )}
-            {filteredUsers.map((u) => (
-              <TileRow
-                key={u.id}
-                leading={<Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />}
-                title={u.display_name}
-                subtitle={<span className="font-mono">{u.username}</span>}
-                badges={
-                  <span className="flex items-center gap-1.5 shrink-0">
-                    <GenderIcon gender={u.gender} />
-                    <RoleBadge role={u.tournament_role} />
-                    <PermissionBadge role={u.permission_role} />
-                  </span>
-                }
-                trailing={
-                  <div className="flex gap-1.5 transition">
-                    {isDeveloper && u.permission_role === 'user' && (
-                      <IconAction icon="promote" title="提升为管理员" onClick={() => handlePromote(u)} />
-                    )}
-                    {isDeveloper && u.permission_role === 'admin' && (
-                      <IconAction icon="demote" title="降级为普通用户" tone="danger" onClick={() => handleDemote(u)} />
-                    )}
-                    {(isDeveloper || u.permission_role !== 'developer') && (
-                      <IconAction icon="edit" title="编辑" onClick={() => setEditingUser(u)} />
-                    )}
-                    {u.permission_role !== 'developer' && (
-                      <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingUser(u)} />
-                    )}
-                  </div>
-                }
-              />
-            ))}
+          <div className="flex-1 lg:min-h-0 overflow-y-auto px-5 pb-6 sm:px-6">
+            <div className="rounded-xl border border-panel-line overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-panel-alt text-ink-muted text-xs uppercase tracking-wide">
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">用户名</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">头像</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">昵称</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">性别</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">身份</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">角色</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-right font-medium px-4 py-3">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((u) => (
+                    <tr key={u.id} className="border-t border-panel-line hover:bg-panel-alt/60 transition">
+                      <td className="px-4 py-3 text-ink-primary">{u.username}</td>
+                      <td className="px-4 py-3">
+                        <Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />
+                      </td>
+                      <td className="px-4 py-3 text-ink-primary">{u.display_name}</td>
+                      <td className="px-4 py-3">
+                        <GenderIcon gender={u.gender} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <RoleBadge role={u.tournament_role} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <PermissionBadge role={u.permission_role} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2 flex-wrap">
+                          {isDeveloper && u.permission_role === 'user' && (
+                            <button
+                              type="button"
+                              onClick={() => handlePromote(u)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-teal hover:border-teal/40 transition"
+                            >
+                              <Icon.promote className="w-3.5 h-3.5" />
+                              提升为管理员
+                            </button>
+                          )}
+                          {isDeveloper && u.permission_role === 'admin' && (
+                            <button
+                              type="button"
+                              onClick={() => handleDemote(u)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
+                            >
+                              <Icon.demote className="w-3.5 h-3.5" />
+                              降级为普通用户
+                            </button>
+                          )}
+                          {(isDeveloper || u.permission_role !== 'developer') && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingUser(u)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-teal hover:border-teal/40 transition"
+                            >
+                              <Icon.edit className="w-3.5 h-3.5" />
+                              编辑
+                            </button>
+                          )}
+                          {u.permission_role !== 'developer' && (
+                            <button
+                              type="button"
+                              onClick={() => setDeletingUser(u)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
+                            >
+                              <Icon.trash className="w-3.5 h-3.5" />
+                              删除
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-ink-faint text-xs">
+                        未找到匹配的用户
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
         )}
 
         {/* invite code management */}
         {activeTab === 'invites' && (
-        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
-            <div>
-              <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">邀请码管理</h1>
-              <p className="text-xs text-ink-muted mt-0.5">共 {inviteCounts.total} 个 · {inviteCounts.active} 个有效</p>
+        <section className="bg-panel border border-teal/15 rounded-2xl shadow-teal-glow flex flex-col lg:flex-1 lg:min-h-0 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 px-5 pt-6 pb-4 sm:px-6 shrink-0">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="font-display text-base font-semibold tracking-wide text-ink-primary shrink-0">邀请码管理</h2>
+              <StatChip label="总数" value={inviteCounts.total} />
+              <StatChip label="有效" value={inviteCounts.active} />
             </div>
             <button
               type="button"
               onClick={() => setCreatingInvite(true)}
-              className="btn-primary text-xs px-3.5 py-2 shrink-0"
+              className="inline-flex items-center gap-1.5 bg-teal text-void font-semibold text-xs tracking-wide px-3.5 py-2 rounded-lg transition hover:shadow-teal-glow-lg hover:brightness-110 active:scale-[0.99] shrink-0"
             >
               <Icon.plus className="w-3.5 h-3.5" />
               生成邀请码
             </button>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-y-auto px-3 py-2">
-            {invites.length === 0 && (
-              <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">暂无邀请码，点击右上角生成</div>
-            )}
-            {invites.map((inv) => {
-              const expired = isExpired(inv.expires_at)
-              return (
-                <TileRow
-                  key={inv.id}
-                  leading={
-                    <span className="w-9 h-9 rounded-lg bg-panel-alt border border-panel-line flex items-center justify-center shrink-0">
-                      <Icon.ticket className="w-4 h-4 text-accent2" />
-                    </span>
-                  }
-                  title={<InviteCodeCell code={inv.code} revealed={revealedInvites.has(inv.id)} onReveal={() => revealInvite(inv.id)} />}
-                  subtitle={
-                    <span className="flex items-center gap-3">
-                      <span className="font-mono">{inv.used_count} / {inv.max_uses} 次</span>
-                      {inv.expires_at ? (
-                        <span className={expired ? 'text-danger' : ''}>{formatExpiry(inv.expires_at)}{expired && ' （已过期）'}</span>
-                      ) : (
-                        <span>永不过期</span>
-                      )}
-                    </span>
-                  }
-                  trailing={
-                    <div className="flex gap-1.5 transition">
-                      <IconAction icon="copy" title="复制" onClick={() => copyInvite(inv.code)} />
-                      <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingInvite(inv)} />
-                    </div>
-                  }
-                />
-              )
-            })}
+          <div className="flex-1 lg:min-h-0 overflow-y-auto px-5 pb-6 sm:px-6">
+            <div className="rounded-xl border border-panel-line overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-panel-alt text-ink-muted text-xs uppercase tracking-wide">
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">邀请码</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">使用情况</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-left font-medium px-4 py-3">过期时间</th>
+                    <th className="sticky top-0 z-10 bg-panel-alt text-right font-medium px-4 py-3">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invites.map((inv) => {
+                    const expired = isExpired(inv.expires_at)
+                    return (
+                      <tr key={inv.id} className="border-t border-panel-line hover:bg-panel-alt/60 transition">
+                        <td className="px-4 py-3">
+                          <InviteCodeCell
+                            code={inv.code}
+                            revealed={revealedInvites.has(inv.id)}
+                            onReveal={() => revealInvite(inv.id)}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-ink-primary font-mono">
+                          {inv.used_count} / {inv.max_uses}
+                        </td>
+                        <td className="px-4 py-3">
+                          {inv.expires_at ? (
+                            <span className={expired ? 'text-danger' : 'text-ink-primary'}>
+                              {formatExpiry(inv.expires_at)}
+                              {expired && <span className="ml-1.5 text-[11px]">（已过期）</span>}
+                            </span>
+                          ) : (
+                            <span className="text-ink-muted">永不过期</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => copyInvite(inv.code)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-teal hover:border-teal/40 transition"
+                            >
+                              <Icon.copy className="w-3.5 h-3.5" />
+                              复制
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingInvite(inv)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-panel-line text-xs text-ink-muted hover:text-danger hover:border-danger/40 transition"
+                            >
+                              <Icon.trash className="w-3.5 h-3.5" />
+                              删除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {invites.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-ink-faint text-xs">
+                        暂无邀请码，点击右上角生成
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
         )}
@@ -1130,11 +1189,11 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
 
       {/* toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt/95 backdrop-blur border border-accent2/40 shadow-accent-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent2 animate-pulseGlow" />
+        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt border border-teal/40 shadow-teal-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-teal" />
           {toast}
         </div>
       )}
-    </AppShell>
+    </div>
   )
 }
