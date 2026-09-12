@@ -320,6 +320,27 @@ function StatPill({ label, value, color }) {
   );
 }
 
+// Shared by both pool "done" states below (队长候选池 emptied, 待选选手
+// exhausted) so their icon-in-a-box treatment can never visually drift
+// apart between the two -- one definition, one set of classes, only the
+// icon path and label differ per caller. Matches SpectatorPage.jsx's own
+// empty-state icon box verbatim (Section 3's shared-look intent).
+function EmptyPoolState({ icon, label }) {
+  return (
+    <div className="flex flex-col items-center gap-3 text-center">
+      <span
+        className="w-14 h-14 rounded-2xl flex items-center justify-center"
+        style={{ background: `${ACCENT}1a`, border: `1px solid ${ACCENT}4d`, boxShadow: `0 0 20px ${ACCENT}47, 0 0 60px #22E5FF1a` }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7" style={{ opacity: 1 }}>
+          {icon}
+        </svg>
+      </span>
+      <h2 className="font-display text-lg font-bold text-white">{label}</h2>
+    </div>
+  );
+}
+
 function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
   const stats = placeholderStats(player.id);
   return (
@@ -1013,7 +1034,14 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   {captainCandidates.map((c) => (
                     <PlayerStatCard key={c.id} player={c} onClick={() => handleCaptainClick(c)} selected={effectiveSelectedCaptain?.id === c.id} badge="队长" />
                   ))}
-                  {captainCandidates.length === 0 && <div className="flex flex-col items-center py-8 text-white/30 text-center col-span-full"><div className="text-3xl mb-2">✅</div><div className="text-sm">所有队长已分配完毕！</div></div>}
+                  {captainCandidates.length === 0 && (
+                    <div className="col-span-full py-8">
+                      <EmptyPoolState
+                        icon={<path d="M5 13l4 4L19 7" />}
+                        label="所有队长已分配完毕！"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1036,9 +1064,18 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center py-10 text-white/30 pt-3">
-                  <div className="text-4xl mb-2">🏆</div>
-                  <div className="font-display text-sm tracking-widest">选秀完成</div>
+                <div className="flex-1 flex flex-col items-center justify-center pt-3">
+                  <EmptyPoolState
+                    icon={<>
+                      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                      <path d="M4 22h16" />
+                      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                    </>}
+                    label="选秀完成"
+                  />
                 </div>
               )}
             </div>

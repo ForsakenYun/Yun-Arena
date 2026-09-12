@@ -11,7 +11,7 @@ reference for that; see `README.md` for setup/build). It describes the
 **The project is feature-complete** (see Section 2). From here on,
 this document should stay short: record architecture, product
 decisions, and genuinely important behavior/limitations — not a
-changelog of every fix, refactor, or small UI tweak. See Section 12 for
+changelog of every fix, refactor, or small UI tweak. See Section 11 for
 the full rule on what belongs here.
 
 Read this before making changes, and keep it current as the project
@@ -113,6 +113,18 @@ Development rules:
   Realtime," it's "never make the acting client wait on it for its own
   action." Any new admin-mutating button added to Draft Arena or
   Admin Dashboard should be checked against this before shipping.
+- **Every top-level page (Tournament Lobby, Admin Dashboard, Draft
+  Arena/Final Matchups, Spectator) must receive `account` and
+  `onLogout` from `App.jsx` and forward both into its own `<AppShell>`
+  call — there is no other source for either.** Found as a real,
+  shipped bug twice over: Draft Arena/Final Matchups (they share one
+  `<AppShell>` mount in `DraftArenaPage`) was missing `onLogout`, so
+  its 退出登录 button silently called `undefined()`; the Spectator Page
+  was hard-coding `account={null}` plus a `viewerMode` flag that
+  stripped the account chip entirely, rather than forwarding the real
+  `account`/`onLogout` it was already being passed. Any new top-level
+  page added later needs this wiring checked explicitly — don't assume
+  it's covered just because other pages already do it right.
 
 **Browser Layout Standard** (permanent — applies to main pages only,
 not dialogs/modals):
@@ -129,6 +141,28 @@ not dialogs/modals):
 - The UI must still remain responsive for smaller screens: below the
   `lg` breakpoint, everything falls back to normal stacked, full-page
   scroll for mobile.
+- `min-h-0` belongs on the outer container that's actually meant to
+  size-cap and internally scroll (paired with `overflow-y-auto`/
+  `overflow-hidden` on that same element) — never on an individual
+  `shrink-0` content card nested inside it. Putting it on the card
+  itself removes that card's own content-height floor, letting the
+  card get squeezed shorter than its own content on a short viewport
+  instead of its scrollable ancestor absorbing the overflow. Real,
+  reported bug: the Tournament Lobby's 赛事管理 panel had its buttons
+  spill out past its own border because `min-h-0` had ended up on the
+  panel itself rather than on its scrollable `<aside>` parent.
+- A `backdrop-blur`/`filter` element with no explicit `z-index` still
+  forms its own stacking context, but sits at an implicit `z-index: 0`
+  when ordered against *other* stacking-context-forming siblings (any
+  element also using `backdrop-blur`/`transform`/`opacity`) — ties are
+  broken by DOM order, so later page content can silently paint over
+  an earlier header/dropdown that visually "should" be on top. Real,
+  reported bug: `AppShell`'s header bar (`backdrop-blur-md`) needed an
+  explicit `relative z-20` for exactly this reason — its own account
+  dropdown (already `z-20` internally, relative to the header) was
+  still rendering behind ordinary page content elsewhere on the page.
+  Give any always-on-top chrome an explicit `z-index` — don't rely on
+  DOM order alone to keep it on top.
 - Applied to `TournamentLobby`, `AdminDashboard`, and `DraftArena`'s own
   pages (`AuthPage` is exempt — it stays a single centered card by
   design).
@@ -252,6 +286,21 @@ relying on a graceful client-side logout.
   or an `extensions`-inclusive `search_path`; never write DDL against
   the `storage` schema in `schema.sql` itself (see Avatars, above) —
   that's a manual one-time Dashboard/CLI step.
+- **Realtime channel names must be unique among every *concurrently
+  open* channel, not just per call site.** Reusing a fixed channel
+  name (e.g. `supabase.channel('some-fixed-name')`) while a previous
+  `.subscribe()` on that exact same name hasn't been torn down yet
+  throws (`cannot add 'postgres_changes' callbacks... after
+  'subscribe()'`) instead of quietly multiplexing — and an uncaught
+  throw during render takes down the whole component tree. Real,
+  shipped bug: `subscribeDraftState` (`tournamentApi.js`) used one
+  fixed channel name, which was fine while only the Spectator Page
+  ever called it — until `App.jsx`'s system-wide draft-start listener
+  (Section 8) added a second, permanently-open subscriber and crashed
+  the Spectator Page on load. Fixed by suffixing the channel name with
+  an incrementing counter per call. Any `tournamentApi.js`/`adminApi.js`
+  subscribe function that might ever gain a second concurrent
+  subscriber needs this same per-call-unique-name treatment.
 
 ## 7. Tournament Lobby
 
@@ -324,12 +373,29 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
   removes every temp account automatically once the tournament ends —
   see that section's "Temp-player cleanup on end" note. That behavior
   exists solely because this feature exists; it should be removed
-  along with 创建临时玩家/移除临时玩家 if this feature ever is.
+  along with 创建临时玩家/移除临时玩家 if this feature ever is. 创建临时玩家
+  is a one-shot action while any temp accounts exist — the button
+  locks (disabled, label switches to 已创建临时玩家) the moment the
+  roster shows any temp participant, and re-enables itself the instant
+  移除临时玩家 clears the last one. This is derived live from
+  `accounts.is_temp` (now returned as `isTemp` on every participant
+  from `fetchLobby()`), not local component state — so the lock stays
+  correct across a page reload or a second admin's tab. Don't
+  reintroduce a local-only "did I just click create" flag here.
 - **开始比赛** validates the joined roster against Tournament Settings
   exactly (`requiredCaptains` = team count, `requiredPlayers` = team
   count × (players per team − 1), `requiredTotal` = their sum, all
   three checked independently) before navigating to the Draft Arena;
   any mismatch blocks navigation with a breakdown of what's needed.
+- 参赛名单 (this page) and Admin Dashboard's 已注册用户 both render as
+  real `<table>` elements with a sticky header row — column headers,
+  cell padding, row borders/hover, and status-badge styling are
+  deliberately identical between the two (copied verbatim, not
+  independently derived). Neither uses the shared `TileRow` list
+  component (`ui.jsx`) that other lists in the app (e.g. the
+  invite-code list) still use. If either table's structure or styling
+  changes, mirror the change in the other rather than letting them
+  drift apart.
 - Gender (`accounts.gender`, `'male'|'female'`, nullable): required at
   registration, editable in Admin Dashboard's edit-user dialog,
   display-only everywhere (icon only, no text label) — has no effect
@@ -559,6 +625,15 @@ guarantee described further down.
 **Workflow (admin-controlled, blank canvas -- nothing auto-generated):**
 entering this stage snapshots the drafted teams (captain identity
 only) with zero matchups. From there, freely mixable:
+- Team selection for both Manual Pairing and Random Roll happens
+  directly in the 参赛战队 roster list -- clicking an eligible (not yet
+  paired/bye) row toggles it into the current selection; there is no
+  separate picker list alongside it. Rows have three visual states:
+  idle, **selected** (violet/`accent` -- the same color this stage
+  already uses for "in progress" via the 对阵抽签 status badge), and
+  **paired/bye** (cyan/`accent2` -- matching 对阵已就绪). Keep that
+  violet-selecting/cyan-settled convention for any new state added
+  here later rather than introducing a third color.
 - **Manual Pairing** -- select exactly 2 remaining teams -> 定角锁定 ->
   creates an already-**locked** matchup.
 - **Random Roll** -- select any number of teams (or none, defaulting to
@@ -703,6 +778,22 @@ page mid-draft no longer loses progress. The ephemeral "captain clicked
 but not yet assigned" highlight is intentionally **not** restored on
 resume (would read as a click that never happened).
 
+**Auto-redirect to Spectator when a draft starts.** `App.jsx` holds its
+own `subscribeDraftState` subscription for the entire logged-in session
+(independent of whichever page is currently mounted) and treats that
+table's first `INSERT` — the same event that means "a draft just began"
+above — as the signal to send every *other* connected client straight
+to `#spectate`. The host needs no special-casing: 开始比赛 (Tournament
+Lobby) sets `window.location.hash = 'draft'` synchronously, before
+`DraftArenaPage` even mounts and performs the sync that creates this
+row, so by the time the `INSERT` fires the host's own tab is already on
+`#draft` and the hash check skips them. **Watch out:** this relies on
+`subscribeDraftState` giving every call its own uniquely-suffixed
+Realtime channel (Section 6) so this listener and the Spectator Page's
+own separate `subscribeDraftState` call can stay open at the same
+time — reverting that suffixing breaks this feature immediately with a
+Realtime crash on the Spectator Page.
+
 ## 9. Spectator Page
 
 **⚠ This page is not independent of Draft Arena (Section 8) — see
@@ -712,14 +803,19 @@ against that change before considering it done.**
 
 `src/components/SpectatorPage.jsx`, reached via a **观赛** button (open
 to every logged-in account, staff or not) on the Tournament Lobby,
-routed at `#spectate`. Uses the main app's Tailwind dark/neon-teal
-theme only for its own thin identity/exit header — the Captain/Teammate
-draft and Final Matchups bodies are the **exact same `DraftArena`/
-`FinalMatchupsStage` components** the admin's own Draft Arena renders,
-mounted with `isStaff={false}` — pixel-identical layout to what staff
-see, not a reimplementation. Deliberately scoped to the live drafting
-process only — general tournament/roster info already lives in the
-Tournament Lobby.
+routed at `#spectate`. Mounts the exact same shared `<AppShell>` every
+other page uses — same nav, same account chip, same working 退出登录 —
+not a stripped-down or page-specific header; `account`/`onLogout` are
+forwarded straight through from `App.jsx` exactly like every other
+top-level page (Section 3's AppShell-wiring rule — this page used to
+hard-code a `viewerMode` flag that stripped the account chip entirely,
+which was the real bug that rule now guards against). Only the body is
+page-specific: the Captain/Teammate draft and Final Matchups content
+are the **exact same `DraftArena`/`FinalMatchupsStage` components** the
+admin's own Draft Arena renders, mounted with `isStaff={false}` —
+pixel-identical layout to what staff see, not a reimplementation.
+Deliberately scoped to the live drafting process only — general
+tournament/roster info already lives in the Tournament Lobby.
 
 `isStaff={false}` means every admin-only control is not rendered at
 all (not merely disabled), and every mutating click handler no-ops —
