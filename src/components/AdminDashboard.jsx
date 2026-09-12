@@ -973,41 +973,58 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
             </div>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-y-auto px-3 py-2">
-            {filteredUsers.length === 0 && (
+          <div className="flex-1 lg:min-h-0 overflow-auto px-3 py-2">
+            {filteredUsers.length === 0 ? (
               <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">未找到匹配的用户</div>
+            ) : (
+              <table className="w-full text-sm border-collapse">
+                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm">
+                  <tr className="text-left text-xs text-ink-muted border-b border-panel-line">
+                    <th className="px-3 py-2.5 font-medium">头像</th>
+                    <th className="px-3 py-2.5 font-medium">用户名</th>
+                    <th className="px-3 py-2.5 font-medium">昵称</th>
+                    <th className="px-3 py-2.5 font-medium">性别</th>
+                    <th className="px-3 py-2.5 font-medium">身份</th>
+                    <th className="px-3 py-2.5 font-medium">角色</th>
+                    <th className="px-3 py-2.5 font-medium text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((u) => (
+                    <tr key={u.id} className="border-b border-panel-line/60 hover:bg-panel-alt/40 transition">
+                      <td className="px-3 py-2.5">
+                        <Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-sm text-ink-primary font-medium font-mono">{u.username}</span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-sm text-ink-primary font-medium">{u.display_name}</span>
+                      </td>
+                      <td className="px-3 py-2.5"><GenderIcon gender={u.gender} /></td>
+                      <td className="px-3 py-2.5"><RoleBadge role={u.tournament_role} /></td>
+                      <td className="px-3 py-2.5"><PermissionBadge role={u.permission_role} /></td>
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex gap-1.5 justify-end">
+                          {isDeveloper && u.permission_role === 'user' && (
+                            <IconAction icon="promote" title="提升为管理员" onClick={() => handlePromote(u)} />
+                          )}
+                          {isDeveloper && u.permission_role === 'admin' && (
+                            <IconAction icon="demote" title="降级为普通用户" tone="danger" onClick={() => handleDemote(u)} />
+                          )}
+                          {(isDeveloper || u.permission_role !== 'developer') && (
+                            <IconAction icon="edit" title="编辑" onClick={() => setEditingUser(u)} />
+                          )}
+                          {u.permission_role !== 'developer' && (
+                            <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingUser(u)} />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
-            {filteredUsers.map((u) => (
-              <TileRow
-                key={u.id}
-                leading={<Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />}
-                title={u.display_name}
-                subtitle={<span className="font-mono">{u.username}</span>}
-                badges={
-                  <span className="flex items-center gap-1.5 shrink-0">
-                    <GenderIcon gender={u.gender} />
-                    <RoleBadge role={u.tournament_role} />
-                    <PermissionBadge role={u.permission_role} />
-                  </span>
-                }
-                trailing={
-                  <div className="flex gap-1.5 transition">
-                    {isDeveloper && u.permission_role === 'user' && (
-                      <IconAction icon="promote" title="提升为管理员" onClick={() => handlePromote(u)} />
-                    )}
-                    {isDeveloper && u.permission_role === 'admin' && (
-                      <IconAction icon="demote" title="降级为普通用户" tone="danger" onClick={() => handleDemote(u)} />
-                    )}
-                    {(isDeveloper || u.permission_role !== 'developer') && (
-                      <IconAction icon="edit" title="编辑" onClick={() => setEditingUser(u)} />
-                    )}
-                    {u.permission_role !== 'developer' && (
-                      <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingUser(u)} />
-                    )}
-                  </div>
-                }
-              />
-            ))}
           </div>
         </section>
         )}
