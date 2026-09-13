@@ -339,7 +339,7 @@ function EmptyPoolState({ icon, label }) {
   return (
     <div className="relative z-10 flex flex-col items-center gap-3 text-center">
       <span className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center shadow-accent-glow">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-7 h-7 text-accent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7 text-accent">
           {icon}
         </svg>
       </span>
@@ -390,16 +390,13 @@ const MatchupIcon = {
   ),
 };
 
-// Compact variant of TournamentLobby.jsx's RailAction: same structure,
-// border/hover/disabled treatment and tone split, but sized down
-// (text-xs, w-3.5 icons, tighter padding) per explicit follow-up
-// feedback that RailAction's own literal classes (text-sm, w-4 icons,
-// px-3 py-2.5 -- verified against TournamentLobby.jsx's source, which
-// really does declare exactly that) still rendered visibly larger here
-// than intended. Kept as a separate local component since
-// TournamentLobby.jsx doesn't export RailAction and each page already
-// keeps its own local Icon/action-button definitions (see the
-// MatchupIcon comment above).
+// Verbatim copy of TournamentLobby.jsx's RailAction -- same classes,
+// same structure, same disabled/hover treatment -- so Final Matchups'
+// admin action buttons are pixel-identical to the 赛事管理 panel's
+// buttons rather than an approximation of that style. Kept as a
+// separate local component (not imported) since TournamentLobby.jsx
+// doesn't export RailAction and each page already keeps its own local
+// Icon/action-button definitions (see the MatchupIcon comment above).
 function MatchupAction({ icon: IconCmp, label, onClick, disabled, tone = "default", title }) {
   return (
     <button
@@ -407,13 +404,13 @@ function MatchupAction({ icon: IconCmp, label, onClick, disabled, tone = "defaul
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${
+      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition disabled:opacity-50 disabled:pointer-events-none ${
         tone === "danger"
-          ? "border-panel-line text-ink-muted enabled:hover:text-danger enabled:hover:border-danger/40 enabled:hover:bg-danger/5"
-          : "border-panel-line text-ink-muted enabled:hover:text-ink-primary enabled:hover:border-accent2/40 enabled:hover:bg-accent/5"
+          ? "border-panel-line text-ink-muted hover:text-danger hover:border-danger/40 hover:bg-danger/5"
+          : "border-panel-line text-ink-muted hover:text-ink-primary hover:border-accent2/40 hover:bg-accent/5"
       }`}
     >
-      <IconCmp className="w-3.5 h-3.5 shrink-0" />
+      <IconCmp className="w-4 h-4 shrink-0" />
       {label}
     </button>
   );
@@ -1115,7 +1112,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   {captainCandidates.length === 0 && (
                     <div className="col-span-full py-8">
                       <EmptyPoolState
-                        icon={<path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />}
+                        icon={<path d="M5 13l4 4L19 7" />}
                         label="所有队长已分配完毕！"
                       />
                     </div>
@@ -1145,12 +1142,12 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                 <div className="flex-1 flex flex-col items-center justify-center pt-3">
                   <EmptyPoolState
                     icon={<>
-                      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M4 22h16" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                      <path d="M4 22h16" />
+                      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
                     </>}
                     label="选秀完成"
                   />

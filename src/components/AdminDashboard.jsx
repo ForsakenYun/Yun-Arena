@@ -534,7 +534,7 @@ function ConfirmDeleteModal({ title, description, onCancel, onConfirm, confirmin
             type="button"
             onClick={onConfirm}
             disabled={confirming}
-            className="flex-1 bg-gradient-to-r from-danger to-hot text-void font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition shadow-hot-glow enabled:hover:brightness-110 enabled:active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
+            className="flex-1 bg-gradient-to-r from-danger to-hot text-void font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition shadow-hot-glow hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
           >
             {confirming ? '处理中…' : '确认删除'}
           </button>
@@ -973,7 +973,7 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
             </div>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-auto px-3 py-2">
+          <div className="flex-1 lg:min-h-0 overflow-auto px-3 pt-0 pb-2">
             {filteredUsers.length === 0 ? (
               <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">未找到匹配的用户</div>
             ) : (

@@ -232,7 +232,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="flex-1 py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted enabled:hover:text-ink-primary enabled:hover:border-ink-muted transition disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted hover:text-ink-primary hover:border-ink-muted transition disabled:opacity-60 disabled:pointer-events-none"
               >
                 取消
               </button>
