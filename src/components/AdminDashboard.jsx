@@ -355,7 +355,7 @@ function ModalShell({ title, onClose, children, wide }) {
         className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel/95 backdrop-blur-md border border-accent/20 rounded-2xl shadow-accent-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto`}
       >
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-display font-semibold tracking-wide text-gradient">{title}</h3>
+          <h3 className="text-base font-display font-semibold tracking-wide text-ink-primary">{title}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -978,8 +978,8 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
               <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">未找到匹配的用户</div>
             ) : (
               <table className="w-full text-sm border-collapse">
-                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm">
-                  <tr className="text-left text-xs text-ink-muted border-b border-panel-line">
+                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:border-b after:border-panel-line">
+                  <tr className="text-left text-xs text-ink-muted">
                     <th className="px-3 py-2.5 font-medium">头像</th>
                     <th className="px-3 py-2.5 font-medium">用户名</th>
                     <th className="px-3 py-2.5 font-medium">昵称</th>

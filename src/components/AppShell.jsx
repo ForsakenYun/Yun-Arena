@@ -188,7 +188,7 @@ export default function AppShell({
             {title && (
               <>
                 <span className="w-px h-5 bg-panel-line shrink-0" />
-                <span className="text-sm font-display font-bold text-gradient truncate">{title}</span>
+                <span className="text-sm font-display font-bold text-ink-primary truncate">{title}</span>
               </>
             )}
           </div>

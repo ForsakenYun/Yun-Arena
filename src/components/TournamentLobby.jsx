@@ -660,8 +660,8 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
               </div>
             ) : (
               <table className="w-full text-sm border-collapse">
-                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm">
-                  <tr className="text-left text-xs text-ink-muted border-b border-panel-line">
+                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:border-b after:border-panel-line">
+                  <tr className="text-left text-xs text-ink-muted">
                     <th className="px-3 py-2.5 font-medium">头像</th>
                     <th className="px-3 py-2.5 font-medium">昵称</th>
                     <th className="px-3 py-2.5 font-medium">性别</th>

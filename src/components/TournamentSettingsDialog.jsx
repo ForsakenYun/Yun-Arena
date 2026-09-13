@@ -143,7 +143,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
       <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-panel/95 backdrop-blur-md border border-accent/20 shadow-accent-glow rounded-2xl px-6 py-6">
-        <h3 className="font-display text-base font-semibold tracking-wide text-gradient mb-5 shrink-0">锦标赛设置</h3>
+        <h3 className="font-display text-base font-semibold tracking-wide text-ink-primary mb-5 shrink-0">锦标赛设置</h3>
 
         {loading ? (
           <p className="text-xs text-ink-muted py-8 text-center">加载中…</p>

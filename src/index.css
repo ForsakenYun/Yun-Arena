@@ -108,14 +108,6 @@ input:-webkit-autofill:focus {
       hover:bg-danger/10 hover:border-danger disabled:opacity-50 disabled:pointer-events-none;
   }
 
-  /* gradient text for hero titles */
-  .text-gradient {
-    background: linear-gradient(90deg, #f4f2ff, #cfc7ff 45%, #22e5ff);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
   /* thin uppercase eyebrow label */
   .eyebrow {
     @apply font-heading text-[11px] font-semibold uppercase tracking-[0.28em] text-accent2/80;

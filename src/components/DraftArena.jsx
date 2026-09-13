@@ -145,7 +145,7 @@ function Avatar({ avatarId = DEFAULT_AVATAR_ID, avatarUrl = null, size = 36, glo
 
 function GlowHeading({ children, size = "text-2xl", className = "" }) {
   return (
-    <h1 className={`${size} font-display font-black tracking-wide text-gradient ${className}`}
+    <h1 className={`${size} font-display font-black tracking-wide text-ink-primary ${className}`}
       style={{ filter: "drop-shadow(0 0 18px rgba(124,92,255,0.45)) drop-shadow(0 0 34px rgba(34,229,255,0.25))", letterSpacing: "0.04em" }}>
       {children}
     </h1>
@@ -160,6 +160,26 @@ function PanelFrame({ children, className = "", onClick, style, ...rest }) {
       {children}
     </div>
   );
+}
+
+function GenderIcon({ gender, className = 'w-4 h-4' }) {
+  if (gender === 'male') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className={`${className} text-sky-400`} aria-label="男生">
+        <circle cx="10" cy="14" r="6" />
+        <path d="M14.3 9.7L21 3M21 3h-5.5M21 3v5.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (gender === 'female') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className={`${className} text-pink-400`} aria-label="女生">
+        <circle cx="12" cy="9" r="6.5" />
+        <path d="M12 15.5V22M8.5 19h7" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  return null
 }
 
 function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assignable = false, onAssignCaptain, hiddenKeys }) {
@@ -208,7 +228,10 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
           <>
             <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={26} glow />
             <div className="min-w-0 flex-1">
-              <div className="text-[10.5px] font-bold text-white truncate leading-tight">{team.captain.name}</div>
+              <div className="flex items-center gap-1 text-[10.5px] font-bold text-white truncate leading-tight">
+                <span className="truncate">{team.captain.name}</span>
+                <GenderIcon gender={team.captain.gender} className="w-3 h-3 shrink-0" />
+              </div>
             </div>
             <CaptainBadge />
           </>
@@ -236,7 +259,10 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
               {slot ? (
                 <>
                   <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={17} />
-                  <div className="min-w-0 flex-1 truncate font-semibold text-white text-[10px]">{slot.name}</div>
+                  <div className="min-w-0 flex-1 flex items-center gap-1 truncate font-semibold text-white text-[10px]">
+                    <span className="truncate">{slot.name}</span>
+                    <GenderIcon gender={slot.gender} className="w-2.5 h-2.5 shrink-0" />
+                  </div>
                 </>
               ) : <span className="italic">空位</span>}
             </div>
@@ -1772,7 +1798,7 @@ function buildRoundOrders(settings) {
 // omitted -- this project only has avatarUrl-or-default, no id-based
 // avatar selection (see Avatar/SquareAvatar below).
 function toDraftPlayer(participant) {
-  return { id: participant.accountId, name: participant.displayName, avatarUrl: participant.avatarUrl }
+  return { id: participant.accountId, name: participant.displayName, avatarUrl: participant.avatarUrl, gender: participant.gender }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
