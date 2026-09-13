@@ -90,22 +90,22 @@ input:-webkit-autofill:focus {
   .btn-primary {
     @apply relative inline-flex items-center justify-center gap-2 font-heading font-bold tracking-wide text-void
       bg-accent-gradient rounded-lg transition-all duration-200 shadow-accent-glow
-      hover:shadow-accent-glow-lg hover:brightness-110 active:scale-[0.98]
-      disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none;
+      enabled:hover:shadow-accent-glow-lg enabled:hover:brightness-110 enabled:active:scale-[0.98]
+      disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none;
   }
 
   /* ghost / outline button using the accent color */
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 font-heading font-semibold tracking-wide
       text-accent2 border border-accent/40 rounded-lg transition-all duration-200
-      hover:bg-accent/10 hover:border-accent hover:shadow-accent-glow
-      disabled:opacity-50 disabled:pointer-events-none;
+      enabled:hover:bg-accent/10 enabled:hover:border-accent enabled:hover:shadow-accent-glow
+      disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 font-heading font-semibold tracking-wide
       text-danger border border-danger/40 rounded-lg transition-all duration-200
-      hover:bg-danger/10 hover:border-danger disabled:opacity-50 disabled:pointer-events-none;
+      enabled:hover:bg-danger/10 enabled:hover:border-danger disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   /* gradient text for hero titles */

@@ -325,19 +325,97 @@ function StatPill({ label, value, color }) {
 // apart between the two -- one definition, one set of classes, only the
 // icon path and label differ per caller. Matches SpectatorPage.jsx's own
 // empty-state icon box verbatim (Section 3's shared-look intent).
+// Shared by both pool "done" states below (队长候选池 emptied, 待选选手
+// exhausted) so their icon-in-a-box treatment can never visually drift
+// apart between the two -- one definition, one set of classes, only the
+// icon path and label differ per caller. Matches SpectatorPage.jsx's own
+// empty-state icon box verbatim (Section 3's shared-look intent).
+// `relative z-10`: AppBackground.jsx's fixed vignette sits behind all
+// page content already via normal DOM order, but this pins that
+// explicitly so this box and its label are never at risk of picking up
+// any darkening from whatever's behind them, regardless of where on the
+// page they land.
 function EmptyPoolState({ icon, label }) {
   return (
-    <div className="flex flex-col items-center gap-3 text-center">
-      <span
-        className="w-14 h-14 rounded-2xl flex items-center justify-center"
-        style={{ background: `${ACCENT}1a`, border: `1px solid ${ACCENT}4d`, boxShadow: `0 0 20px ${ACCENT}47, 0 0 60px #22E5FF1a` }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-7 h-7" style={{ opacity: 1 }}>
+    <div className="relative z-10 flex flex-col items-center gap-3 text-center">
+      <span className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center shadow-accent-glow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-7 h-7 text-accent">
           {icon}
         </svg>
       </span>
-      <h2 className="font-display text-lg font-bold text-white">{label}</h2>
+      <h2 className="font-display text-lg font-semibold text-ink-primary">{label}</h2>
     </div>
+  );
+}
+
+// Site-wide stroke-icon style (viewBox 24, stroke=currentColor,
+// strokeWidth 1.8) reused verbatim from TournamentLobby.jsx/
+// AdminDashboard.jsx's own local Icon sets, so Final Matchups' admin
+// action buttons render with the same icon language as the rest of the
+// app instead of emoji. Each file keeps its own local Icon object (no
+// shared icon module exists yet) -- this one is Final Matchups' copy.
+const MatchupIcon = {
+  lock: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <rect x="4.5" y="10.5" width="15" height="9.5" rx="1.6" />
+      <path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" strokeLinecap="round" />
+    </svg>
+  ),
+  dice: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <circle cx="8.3" cy="8.3" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15.7" cy="8.3" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="8.3" cy="15.7" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15.7" cy="15.7" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  refresh: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M20 12a8 8 0 1 1-2.34-5.66" strokeLinecap="round" />
+      <path d="M20 4v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  x: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M5 5l14 14M19 5L5 19" strokeLinecap="round" />
+    </svg>
+  ),
+  flag: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M6 3.5v17" strokeLinecap="round" />
+      <path d="M6 4.5c2-1 4-1 6 0s4 1 6 0v9c-2 1-4 1-6 0s-4-1-6 0v-9Z" strokeLinejoin="round" />
+    </svg>
+  ),
+};
+
+// Compact variant of TournamentLobby.jsx's RailAction: same structure,
+// border/hover/disabled treatment and tone split, but sized down
+// (text-xs, w-3.5 icons, tighter padding) per explicit follow-up
+// feedback that RailAction's own literal classes (text-sm, w-4 icons,
+// px-3 py-2.5 -- verified against TournamentLobby.jsx's source, which
+// really does declare exactly that) still rendered visibly larger here
+// than intended. Kept as a separate local component since
+// TournamentLobby.jsx doesn't export RailAction and each page already
+// keeps its own local Icon/action-button definitions (see the
+// MatchupIcon comment above).
+function MatchupAction({ icon: IconCmp, label, onClick, disabled, tone = "default", title }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${
+        tone === "danger"
+          ? "border-panel-line text-ink-muted enabled:hover:text-danger enabled:hover:border-danger/40 enabled:hover:bg-danger/5"
+          : "border-panel-line text-ink-muted enabled:hover:text-ink-primary enabled:hover:border-accent2/40 enabled:hover:bg-accent/5"
+      }`}
+    >
+      <IconCmp className="w-3.5 h-3.5 shrink-0" />
+      {label}
+    </button>
   );
 }
 
@@ -1037,7 +1115,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   {captainCandidates.length === 0 && (
                     <div className="col-span-full py-8">
                       <EmptyPoolState
-                        icon={<path d="M5 13l4 4L19 7" />}
+                        icon={<path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />}
                         label="所有队长已分配完毕！"
                       />
                     </div>
@@ -1067,12 +1145,12 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                 <div className="flex-1 flex flex-col items-center justify-center pt-3">
                   <EmptyPoolState
                     icon={<>
-                      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-                      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-                      <path d="M4 22h16" />
-                      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-                      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-                      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M4 22h16" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" strokeLinecap="round" strokeLinejoin="round" />
                     </>}
                     label="选秀完成"
                   />
@@ -1580,31 +1658,24 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
             </div>
           )}
 
-          {/* actions */}
+          {/* actions -- refactored onto MatchupAction (a verbatim copy of
+              TournamentLobby.jsx's RailAction, see its comment above)
+              instead of the btn-primary/btn-ghost/btn-danger pill
+              classes, per explicit request to match the 赛事管理 panel's
+              exact button component/classes rather than the site's other
+              CTA-style buttons. Still an intentional, requested, scoped
+              exception to Section 3's "Draft Arena stays its own visual
+              system" rule -- limited to just these five buttons. tone
+              mirrors RailAction's own default/danger split: default for
+              the two matchup-generating actions and the non-destructive
+              重置, danger for the two that undo/end something. */}
           {isStaff && (
             <div className="shrink-0 flex items-center gap-3 flex-wrap">
-              <button type="button" onClick={handleLockOrRoll} disabled={lockDisabled} className="btn-primary px-4 py-2.5 text-sm">
-                🎬 定角锁定
-              </button>
-              <button type="button" onClick={handleRoll} disabled={rollDisabled} className="btn-primary px-4 py-2.5 text-sm">
-                🎞️ 随机生成剩余对阵
-              </button>
-              <button type="button" onClick={handleResetClick} disabled={busyAction || !!reveal} className="btn-ghost px-4 py-2.5 text-sm">
-                🔄 重置
-              </button>
-              <button onClick={handleRemove} disabled={!featured || busyAction || !!reveal}
-                className="shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-bold border transition-all whitespace-nowrap"
-                style={{
-                  background: featured ? "rgba(255,77,109,.08)" : "rgba(0,0,0,.2)",
-                  borderColor: featured ? "#FF4D6D66" : "rgba(255,255,255,.06)",
-                  color: featured ? "#FF4D6D" : "rgba(255,255,255,.15)",
-                  cursor: featured ? "pointer" : "not-allowed",
-                }}>
-                ✕ 解除本场对阵
-              </button>
-              <button type="button" onClick={handleEndClick} disabled={busyAction || !!reveal} className="btn-danger px-4 py-2.5 text-sm">
-                🏁 结束锦标赛
-              </button>
+              <MatchupAction icon={MatchupIcon.lock} label="定角锁定" onClick={handleLockOrRoll} disabled={lockDisabled} />
+              <MatchupAction icon={MatchupIcon.dice} label="随机生成剩余对阵" onClick={handleRoll} disabled={rollDisabled} />
+              <MatchupAction icon={MatchupIcon.refresh} label="重置" onClick={handleResetClick} disabled={busyAction || !!reveal} />
+              <MatchupAction icon={MatchupIcon.x} label="解除本场对阵" onClick={handleRemove} disabled={!featured || busyAction || !!reveal} tone="danger" />
+              <MatchupAction icon={MatchupIcon.flag} label="结束锦标赛" onClick={handleEndClick} disabled={busyAction || !!reveal} tone="danger" />
               <span className="text-xs text-ink-muted ml-auto">
                 {selected.length > 0 ? `已选择 ${selected.length} 支战队` : remaining.length > 0 ? `未选择 · 将随机排位剩余 ${remaining.length} 支战队` : ""}
               </span>

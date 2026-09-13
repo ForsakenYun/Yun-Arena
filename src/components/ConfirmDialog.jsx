@@ -17,7 +17,7 @@ const TONE_STYLES = {
   danger: {
     iconWrap: 'bg-danger/10 border-danger/30 text-danger',
     panel: 'border-danger/25 shadow-[0_0_24px_rgba(255,77,109,0.18)]',
-    confirmBtn: 'bg-gradient-to-r from-danger to-hot text-void hover:brightness-110 shadow-hot-glow',
+    confirmBtn: 'bg-gradient-to-r from-danger to-hot text-void enabled:hover:brightness-110 shadow-hot-glow',
   },
   neutral: {
     iconWrap: 'bg-accent/10 border-accent/40 text-accent2',
@@ -56,7 +56,7 @@ export default function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="flex-1 py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted hover:text-ink-primary hover:border-ink-muted transition disabled:opacity-60 disabled:pointer-events-none"
+            className="flex-1 py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted enabled:hover:text-ink-primary enabled:hover:border-ink-muted transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {cancelLabel}
           </button>
@@ -64,7 +64,7 @@ export default function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className={`flex-1 font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none ${styles.confirmBtn}`}
+            className={`flex-1 font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition enabled:active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed ${styles.confirmBtn}`}
           >
             {busy ? '处理中…' : confirmLabel}
           </button>

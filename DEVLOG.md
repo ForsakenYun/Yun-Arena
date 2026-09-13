@@ -54,7 +54,18 @@ Core decisions — do not change these without an explicit request:
   Draft Arena, which is an intentionally separate self-contained gold/
   Cinzel-Orbitron visual system (see Section 8) that was delivered
   pre-built and is not meant to be restyled to match the rest of the
-  app.
+  app. **Exception, by explicit request:** Final Matchups' five admin
+  action buttons (定角锁定/随机生成剩余对阵/重置/解除本场对阵/结束锦标赛)
+  now render through `MatchupAction`, a verbatim copy of Tournament
+  Lobby's own `RailAction` (same classes: `flex items-center gap-2.5
+  px-3 py-2.5 rounded-lg border text-sm font-medium`, same default/
+  danger hover treatment, same `disabled:opacity-50`), paired with a
+  local `MatchupIcon` stroke-icon set matching the site's icon style —
+  replacing emoji and one previously hand-rolled inline-styled button.
+  This is scoped to just those five buttons — the rest of Final
+  Matchups and all of the Captain/Teammate draft screens keep the
+  gold/Cinzel system untouched. Don't read this as license to restyle
+  more of Draft Arena without being asked again.
 - **Login/Registration stays a single centered card** — no side panels
   or decorative graphics.
 - **Validation is deliberately low-friction** (e.g. `1` is a valid

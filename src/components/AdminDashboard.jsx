@@ -534,7 +534,7 @@ function ConfirmDeleteModal({ title, description, onCancel, onConfirm, confirmin
             type="button"
             onClick={onConfirm}
             disabled={confirming}
-            className="flex-1 bg-gradient-to-r from-danger to-hot text-void font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition shadow-hot-glow hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+            className="flex-1 bg-gradient-to-r from-danger to-hot text-void font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition shadow-hot-glow enabled:hover:brightness-110 enabled:active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {confirming ? '处理中…' : '确认删除'}
           </button>

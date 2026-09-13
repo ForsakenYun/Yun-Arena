@@ -216,10 +216,10 @@ function RailAction({ icon, label, onClick, disabled, tone = 'default', title })
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition disabled:opacity-50 disabled:pointer-events-none ${
+      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${
         tone === 'danger'
-          ? 'border-panel-line text-ink-muted hover:text-danger hover:border-danger/40 hover:bg-danger/5'
-          : 'border-panel-line text-ink-muted hover:text-ink-primary hover:border-accent2/40 hover:bg-accent/5'
+          ? 'border-panel-line text-ink-muted enabled:hover:text-danger enabled:hover:border-danger/40 enabled:hover:bg-danger/5'
+          : 'border-panel-line text-ink-muted enabled:hover:text-ink-primary enabled:hover:border-accent2/40 enabled:hover:bg-accent/5'
       }`}
     >
       <IconCmp className="w-4 h-4 shrink-0" />
