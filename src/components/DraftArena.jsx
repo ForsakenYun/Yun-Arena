@@ -444,6 +444,7 @@ function MatchupAction({ icon: IconCmp, label, onClick, disabled, tone = "defaul
 
 function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
   const stats = placeholderStats(player.id);
+  const badgeColors = badge === "队员" ? { background: "#475569", color: "#e0f2fe" } : { background: "#22c55e", color: "#04150a" };
   return (
     <button onClick={onClick} disabled={disabled} type="button" data-card-id={player.id}
       className={`relative text-left rounded-xl transition-all duration-200 w-full ${disabled ? "" : "hover:-translate-y-0.5"}`}
@@ -453,11 +454,20 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
         boxShadow: selected ? "0 0 0 3px rgba(34,197,94,0.3), 0 0 18px rgba(34,197,94,0.35)" : "0 0 0 1px rgba(124,92,255,0.08), 0 6px 16px rgba(4,3,15,0.4)",
         opacity: disabled ? 0.35 : 1, cursor: disabled ? "not-allowed" : "pointer",
       }}>
-      {badge && (
-        <span className="absolute z-10 font-black rounded-full"
-          style={{ top: 6, right: 6, background: "#22c55e", color: "#04150a", fontSize: 8, padding: "2px 6px" }}>
-          {badge}
-        </span>
+      {(badge || player.gender) && (
+        <div className="absolute top-1.5 right-1.5 z-10 flex flex-col items-center">
+          {badge && (
+            <span className="font-black rounded-full"
+              style={{ background: badgeColors.background, color: badgeColors.color, fontSize: 8, padding: "2px 6px" }}>
+              {badge}
+            </span>
+          )}
+          {player.gender && (
+            <span className="mt-2">
+              <GenderIcon gender={player.gender} className="w-4 h-4" />
+            </span>
+          )}
+        </div>
       )}
       {/* header row: avatar + name side-by-side, not stacked -- shorter
           card, better information density in a grid at 1920px */}
@@ -1160,7 +1170,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                 <div className="flex-1 lg:min-h-0 overflow-y-auto pt-3">
                   <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
                     {pool.map((p) => (
-                      <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} />
+                      <PlayerStatCard key={p.id} player={p} onClick={() => handlePlayerCardClick(p)} disabled={allDrafted} badge="队员" />
                     ))}
                   </div>
                 </div>
