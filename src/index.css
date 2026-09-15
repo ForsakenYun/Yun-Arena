@@ -2,6 +2,64 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------- Theme Switcher: surface/text tokens ----------
+   Dark is the baseline (`:root`) -- these are just names for the colors
+   this app always used, stored as "R G B" triples (not hex/rgba) because
+   tailwind.config.js's withOpacityValue() plugs them into
+   `rgb(var(--x) / <alpha>)`, which is what makes opacity-modified classes
+   like `bg-panel-alt/60` or `border-panel-line/40` work against a
+   variable. `[data-theme="light"]` overrides them; App.jsx sets that
+   attribute on <html> from the account's saved theme (Theme Switcher
+   Step 1). Every existing `bg-panel`, `text-ink-muted`, etc. class
+   anywhere in the app follows automatically, opacity modifier or not.
+
+   Draft Arena / Final Matchups deliberately opts OUT of this (DEVLOG
+   Section 3: it's a self-contained gold/Cinzel visual system "not meant
+   to be restyled") by re-declaring these same variables back to their
+   dark values on its own wrapper -- see DARK_THEME_LOCK_STYLE /
+   DraftVisualLock in AppShell.jsx, used by DraftArena.jsx's
+   DraftArenaPage and SpectatorPage.jsx.
+
+   accent/accent-hover/accent-soft/accent2 joined this same system for
+   the "Cyber-Teal" light identity: dark's values below are exactly the
+   app's existing brand purple (#7C5CFF) / cyan (#22E5FF), so every
+   bg-accent-gradient, shadow-accent-glow, text-accent2, btn-primary,
+   badge, focus ring, etc. across the whole app (tailwind.config.js plus
+   the shared classes further down this file) is completely unchanged in
+   dark mode -- only the light override actually differs. */
+:root {
+  --color-void: 6 7 15;
+  --color-panel: 14 16 32;
+  --color-panel-alt: 22 26 51;
+  --color-panel-2: 27 32 64;
+  --color-panel-line: 43 49 89;
+  --color-ink-primary: 244 242 255;
+  --color-ink-muted: 146 141 190;
+  --color-ink-faint: 76 74 121;
+  --color-accent: 124 92 255;
+  --color-accent-hover: 167 139 250;
+  --color-accent-soft: 46 38 92;
+  --color-accent2: 34 229 255;
+  --bg-vignette: rgba(6, 7, 15, 0.55);
+}
+
+[data-theme='light'] {
+  --color-void: 241 245 249;
+  --color-panel: 255 255 255;
+  --color-panel-alt: 248 250 252;
+  --color-panel-2: 226 232 240;
+  --color-panel-line: 203 213 225;
+  --color-ink-primary: 15 23 42;
+  --color-ink-muted: 71 85 105;
+  --color-ink-faint: 148 163 184;
+  /* Cyber-Teal light identity */
+  --color-accent: 13 148 136;
+  --color-accent-hover: 15 118 110;
+  --color-accent-soft: 204 251 241;
+  --color-accent2: 13 148 136;
+  --bg-vignette: rgba(148, 163, 184, 0.3);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -14,10 +72,11 @@ body,
 
 body {
   margin: 0;
-  background-color: #06070f;
-  color: #f4f2ff;
+  background-color: rgb(var(--color-void));
+  color: rgb(var(--color-ink-primary));
   font-family: 'Noto Sans SC', sans-serif;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 ::selection {
@@ -31,7 +90,7 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #0e1020;
+  background: rgb(var(--color-panel-alt));
 }
 ::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, #7c5cff, #22e5ff);
@@ -44,8 +103,8 @@ body {
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #f4f2ff;
-  -webkit-box-shadow: 0 0 0px 1000px #161a33 inset;
+  -webkit-text-fill-color: rgb(var(--color-ink-primary));
+  -webkit-box-shadow: 0 0 0px 1000px rgb(var(--color-panel-alt)) inset;
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -66,16 +125,48 @@ input:-webkit-autofill:focus {
   .glass-panel {
     @apply relative bg-panel/80 backdrop-blur-sm border border-panel-line rounded-2xl shadow-card-lift;
   }
+  /* Cyber-Teal light identity: every primary Lobby/Admin card is a
+     .glass-panel, so giving it the accent elevation + top line here
+     covers all of them in one place instead of touching every call
+     site. No-op in dark mode (existing shadow-card-lift is untouched). */
+  [data-theme='light'] .glass-panel {
+    box-shadow: 0 4px 20px -2px rgb(var(--color-accent) / 0.12), 0 0 0 1px rgb(var(--color-accent) / 0.15);
+    border-top: 4px solid rgb(var(--color-accent)) !important;
+  }
 
-  /* gradient-bordered accent panel (used for hero/emphasis cards) */
+  /* gradient-bordered accent panel (used for hero/emphasis cards) --
+     fully driven by the accent/accent2/panel-line variables above now,
+     so it renders as the app's brand purple->cyan border in dark and the
+     Cyber-Teal border in light automatically. */
   .accent-frame {
     position: relative;
     border-radius: 1rem;
-    background: linear-gradient(155deg, rgba(124, 92, 255, 0.5), rgba(34, 229, 255, 0.12) 40%, rgba(43, 49, 89, 0.6) 100%);
+    background: linear-gradient(155deg, rgb(var(--color-accent) / 0.5), rgb(var(--color-accent2) / 0.12) 40%, rgb(var(--color-panel-line) / 0.6) 100%);
     padding: 1px;
   }
   .accent-frame > * {
     border-radius: inherit;
+  }
+
+  /* Cyber-Teal light identity: card elevation + accent header line.
+     Both are no-ops in dark mode by design -- dark cards already have
+     their own shadow-card-lift/shadow-accent-glow treatment and never
+     had a top accent line, so gating these behind [data-theme='light']
+     means applying the classNames below anywhere is safe in dark mode
+     (dark mode stays pixel-identical) while flat white-on-white light
+     cards get a depth cue and a gaming-style accent header. */
+  [data-theme='light'] .light-glow-card {
+    box-shadow: 0 4px 20px -2px rgb(var(--color-accent) / 0.15), 0 0 0 1px rgb(var(--color-accent) / 0.2);
+  }
+  [data-theme='light'] .accent-top-line {
+    /* !important is needed here specifically: this class is meant to be
+       combined with Tailwind's own `border`/`border-{color}` utilities
+       (e.g. ConfirmDialog's `border ${styles.panel}`), which live in
+       Tailwind's utilities layer and load after this components-layer
+       rule -- without it, `border-width:1px`/`border-color:...` from
+       those utilities would silently win on the top edge and the accent
+       line would never show. */
+    border-top: 4px solid rgb(var(--color-accent)) !important;
   }
 
   /* clipped-corner esports card shape */

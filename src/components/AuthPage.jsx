@@ -56,7 +56,7 @@ function Field({ icon, ...props }) {
       <IconCmp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />
       <input
         {...props}
-        className="w-full bg-panel-alt/70 border border-panel-line rounded-lg pl-10 pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:shadow-accent-glow focus:bg-panel-alt"
+        className="w-full bg-panel-2/60 border border-panel-line rounded-lg pl-10 pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:shadow-accent-glow focus:bg-panel-2"
       />
     </div>
   )
@@ -70,7 +70,7 @@ function PasswordField({ icon, visible, onToggle, ...props }) {
       <input
         {...props}
         type={visible ? 'text' : 'password'}
-        className="w-full bg-panel-alt/70 border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:shadow-accent-glow focus:bg-panel-alt"
+        className="w-full bg-panel-2/60 border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:shadow-accent-glow focus:bg-panel-2"
       />
       <button
         type="button"

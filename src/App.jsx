@@ -6,9 +6,10 @@ import TournamentLobby from './components/TournamentLobby.jsx'
 import DraftArena from './components/DraftArena.jsx'
 import SpectatorPage from './components/SpectatorPage.jsx'
 import DisconnectedModal from './components/DisconnectedModal.jsx'
-import { restoreSession, logout as logoutRequest, getStoredToken } from './lib/auth.js'
+import { restoreSession, logout as logoutRequest, getStoredToken, updateThemePreference } from './lib/auth.js'
 import { subscribeDraftState } from './lib/tournamentApi.js'
 import { startSessionMonitor } from './lib/sessionMonitor.js'
+import { getStoredTheme, setStoredTheme } from './lib/theme.js'
 
 // Hash-based view switch. `account` (restored from a persisted session
 // token, or set right after login) is the single source of truth for who's
@@ -28,7 +29,24 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(true)
   const [connectionStatus, setConnectionStatus] = useState('connected')
   const [loginMessage, setLoginMessage] = useState(null)
+  // Theme Switcher -- initialized from localStorage so a reload doesn't
+  // flash back to the 'dark' default before restoreSession resolves.
+  // Overwritten with the account's own saved value below the moment a
+  // session is restored or a login succeeds (DEVLOG: "if a logged-in user
+  // has saved 'light' in their profile, load that setting upon login").
+  const [theme, setTheme] = useState(() => getStoredTheme())
   const monitorRef = useRef(null)
+
+  // Theme Switcher (Step 2): the single place this state actually becomes
+  // pixels. `[data-theme='light']` in index.css overrides the CSS
+  // variables tailwind.config.js's void/panel/panel-alt/panel-2/
+  // panel-line/ink.* tokens point at, so every themed class in the app
+  // follows this attribute -- except Draft Arena/Final Matchups, which
+  // re-lock those same variables back to dark on their own wrapper
+  // (AppShell.jsx's DraftVisualLock) regardless of what this is set to.
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
 
   useEffect(() => {
     const onHashChange = () => setRoute(window.location.hash)
@@ -41,6 +59,11 @@ export default function App() {
       .then((restored) => {
         if (restored) {
           setAccount(restored)
+          // Theme Switcher (Step 1): the account row is the source of
+          // truth once one exists -- adopt its saved value over whatever
+          // localStorage/the 'dark' default guessed before this resolved.
+          setTheme(restored.theme)
+          setStoredTheme(restored.theme)
           if (restored.permission_role === 'admin' || restored.permission_role === 'developer') {
             window.location.hash = 'admin'
           } else {
@@ -116,6 +139,10 @@ export default function App() {
   function handleLoggedIn(loggedInAccount) {
     setLoginMessage(null)
     setAccount(loggedInAccount)
+    // Theme Switcher (Step 1): same adoption as session-restore above --
+    // whatever this account last saved wins over the pre-login default.
+    setTheme(loggedInAccount.theme)
+    setStoredTheme(loggedInAccount.theme)
     if (loggedInAccount.permission_role === 'admin' || loggedInAccount.permission_role === 'developer') {
       window.location.hash = 'admin'
     } else {
@@ -126,7 +153,31 @@ export default function App() {
   async function handleLogout() {
     await logoutRequest()
     setAccount(null)
+    // Theme Switcher (Step 1): logging out returns to the guest default
+    // ('dark') rather than leaving the previous account's saved theme
+    // showing on a shared browser for whoever logs in next.
+    setTheme('dark')
+    setStoredTheme('dark')
     window.location.hash = ''
+  }
+
+  // Theme Switcher (Step 1): local state + localStorage update
+  // immediately and unconditionally (this is what makes the toggle work
+  // for a guest too, once one exists) -- for a logged-in account, also
+  // persist to Supabase. Best-effort on the DB write, same idiom as
+  // heartbeat/logout elsewhere in this file: the UI has already reflected
+  // the choice either way, so a failed/offline save just means it isn't
+  // remembered next login, not that the toggle itself failed.
+  async function handleThemeChange(nextTheme) {
+    setTheme(nextTheme)
+    setStoredTheme(nextTheme)
+    if (!account) return
+    try {
+      const updated = await updateThemePreference(getStoredToken(), nextTheme)
+      setAccount((prev) => (prev ? { ...prev, theme: updated.theme } : prev))
+    } catch {
+      // Best-effort persistence -- see comment above.
+    }
   }
 
   if (checkingSession) {
@@ -151,11 +202,35 @@ export default function App() {
 
   let view
   if (isDashboard) {
-    view = <AdminDashboard account={account} onLogout={handleLogout} onOpenLobby={() => (window.location.hash = 'lobby')} />
+    view = (
+      <AdminDashboard
+        account={account}
+        onLogout={handleLogout}
+        onOpenLobby={() => (window.location.hash = 'lobby')}
+        theme={theme}
+        onThemeChange={handleThemeChange}
+      />
+    )
   } else if (isDraft) {
-    view = <DraftArena onExitToLobby={() => (window.location.hash = 'lobby')} account={account} onLogout={handleLogout} />
+    view = (
+      <DraftArena
+        onExitToLobby={() => (window.location.hash = 'lobby')}
+        account={account}
+        onLogout={handleLogout}
+        theme={theme}
+        onThemeChange={handleThemeChange}
+      />
+    )
   } else if (isSpectate) {
-    view = <SpectatorPage onExitToLobby={() => (window.location.hash = 'lobby')} account={account} onLogout={handleLogout} />
+    view = (
+      <SpectatorPage
+        onExitToLobby={() => (window.location.hash = 'lobby')}
+        account={account}
+        onLogout={handleLogout}
+        theme={theme}
+        onThemeChange={handleThemeChange}
+      />
+    )
   } else if (account) {
     // Default logged-in destination for everyone (Section: navigation).
     // Admin/Developer accounts can reach this from the dashboard's
@@ -165,6 +240,8 @@ export default function App() {
         account={account}
         onLogout={handleLogout}
         onOpenAdmin={isStaff ? () => (window.location.hash = 'admin') : undefined}
+        theme={theme}
+        onThemeChange={handleThemeChange}
       />
     )
   } else {

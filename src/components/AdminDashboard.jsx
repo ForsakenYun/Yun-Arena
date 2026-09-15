@@ -157,7 +157,7 @@ function Field({ icon, ...props }) {
       {IconCmp && <IconCmp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />}
       <input
         {...props}
-        className={`w-full bg-panel-alt/70 border border-panel-line rounded-lg ${IconCmp ? 'pl-10' : 'pl-3'} pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-alt focus:shadow-accent-glow`}
+        className={`w-full bg-panel-2/60 border border-panel-line rounded-lg ${IconCmp ? 'pl-10' : 'pl-3'} pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-2 focus:shadow-accent-glow`}
       />
     </div>
   )
@@ -171,7 +171,7 @@ function PasswordField({ icon, visible, onToggle, ...props }) {
       <input
         {...props}
         type={visible ? 'text' : 'password'}
-        className="w-full bg-panel-alt/70 border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-alt focus:shadow-accent-glow"
+        className="w-full bg-panel-2/60 border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-2 focus:shadow-accent-glow"
       />
       <button
         type="button"
@@ -352,7 +352,7 @@ function ModalShell({ title, onClose, children, wide }) {
     <div className="fixed inset-0 z-30 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onClose} />
       <div
-        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel/95 backdrop-blur-md border border-accent/20 rounded-2xl shadow-accent-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto`}
+        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel/95 backdrop-blur-md border border-accent/20 rounded-2xl shadow-accent-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto light-glow-card accent-top-line`}
       >
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-display font-semibold tracking-wide text-ink-primary">{title}</h3>
@@ -705,7 +705,7 @@ function TabNav({ tabs, activeTab, onChange }) {
 }
 
 /* ---------- main dashboard ---------- */
-export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
+export default function AdminDashboard({ account, onLogout, onOpenLobby, theme, onThemeChange }) {
   const isDeveloper = account.permission_role === 'developer'
 
   const [users, setUsers] = useState([])
@@ -918,6 +918,8 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
       nav={nav}
       onNavigate={handleNavigate}
       onLogout={() => setConfirmingLogout(true)}
+      theme={theme}
+      onThemeChange={onThemeChange}
     >
       <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
         {/* ═══ SIDEBAR: console section switcher ═══ */}
@@ -940,7 +942,27 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby }) {
               >
                 <TabIcon className="w-4 h-4 shrink-0" />
                 <span className="flex-1 text-left">{tab.label}</span>
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isActive ? 'bg-void/20' : 'bg-panel-alt text-ink-faint'}`}>{count}</span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                    isActive
+                      ? // The chip sits directly on bg-accent-gradient, a fixed
+                        // purple→cyan gradient that doesn't change with the
+                        // theme -- so its overlay is a literal white, not the
+                        // void token (which flips from near-black to
+                        // near-white between dark/light and has no reason to
+                        // track the page background here).
+                        'bg-white/20 text-white'
+                      : // ink-faint (slate-400 in light) reads fine on the
+                        // page canvas but is too low-contrast against
+                        // panel-alt specifically; ink-muted (slate-600 in
+                        // light / soft lavender in dark) is the token this
+                        // project already uses for exactly this situation
+                        // (see the equivalent badge in TileRow/Badge, ui.jsx).
+                        'bg-panel-alt text-ink-muted'
+                  }`}
+                >
+                  {count}
+                </span>
               </button>
             )
           })}

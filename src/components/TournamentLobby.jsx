@@ -235,7 +235,7 @@ function StatusBadge({ online }) {
         online ? 'bg-success/10 text-success border-success/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
-      <span className={`w-[9.6px] h-[9.6px] rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-[#ff0000]'}`} />
+      <span className={`w-[9.6px] h-[9.6px] rounded-full ${online ? 'bg-success animate-pulseGlow' : 'bg-danger'}`} />
       {online ? '在线' : '离线'}
     </span>
   )
@@ -337,7 +337,7 @@ function StartValidationDialog({ result, onClose }) {
   )
 }
 
-export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
+export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme, onThemeChange }) {
   const isStaff = account.permission_role === 'admin' || account.permission_role === 'developer'
 
   const [participants, setParticipants] = useState([])
@@ -638,6 +638,8 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin }) {
       nav={nav}
       onNavigate={handleNavigate}
       onLogout={() => setConfirmingLogout(true)}
+      theme={theme}
+      onThemeChange={onThemeChange}
     >
       <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
         {/* ═══ MAIN: roster ═══ */}

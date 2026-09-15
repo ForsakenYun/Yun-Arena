@@ -102,6 +102,16 @@ alter table public.accounts
 alter table public.accounts
   add column if not exists is_temp boolean not null default false;
 
+-- Theme Switcher (Step 1): dark/light UI preference, saved per-account so a
+-- logged-in user's choice follows them across logins/devices. Every new
+-- account (real registration or a temp account) starts on 'dark' --
+-- guests/new logins always default to 'dark' too, enforced client-side in
+-- src/lib/theme.js since there's no account row to read from yet. Same
+-- "add column if not exists" pattern as gender/is_temp above since `create
+-- table if not exists` won't add this to an already-existing table.
+alter table public.accounts
+  add column if not exists theme text not null default 'dark' check (theme in ('dark', 'light'));
+
 create table if not exists public.credentials (
   account_id     uuid primary key references public.accounts(id) on delete cascade,
   password_hash  text not null
@@ -778,6 +788,42 @@ begin
   on conflict (account_id) do update set last_seen_at = excluded.last_seen_at;
 
   return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- Theme Switcher (Step 1): the only write path for accounts.theme -- direct
+-- table writes are revoked from anon/authenticated like every other
+-- accounts column (Section 6's "all writes go through functions" rule).
+-- Session-gated like every other authenticated mutation (goes through
+-- _current_session_account, which also doubles as a heartbeat), but
+-- deliberately NOT role-gated via _require_role -- every account (User,
+-- Admin, or Developer) may change its own theme, this is a personal
+-- preference, not a privileged action.
+create or replace function public.update_theme_preference(
+  p_token uuid,
+  p_theme text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_account public.accounts;
+  v_updated public.accounts;
+begin
+  v_account := public._current_session_account(p_token);
+
+  if p_theme not in ('dark', 'light') then
+    raise exception 'invalid_theme' using errcode = '22000';
+  end if;
+
+  update public.accounts
+  set theme = p_theme
+  where id = v_account.id
+  returning * into v_updated;
+
+  return jsonb_build_object('account', to_jsonb(v_updated));
 end;
 $$;
 

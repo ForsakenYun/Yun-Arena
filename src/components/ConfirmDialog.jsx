@@ -41,7 +41,7 @@ export default function ConfirmDialog({
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onCancel} />
-      <div className={`relative w-full max-w-sm bg-panel/95 backdrop-blur-md border rounded-2xl px-6 py-6 ${styles.panel}`}>
+      <div className={`relative w-full max-w-sm bg-panel/95 backdrop-blur-md border rounded-2xl px-6 py-6 light-glow-card accent-top-line ${styles.panel}`}>
         <div className="flex items-start gap-3 mb-5">
           <span className={`w-9 h-9 rounded-full border flex items-center justify-center shrink-0 ${styles.iconWrap}`}>
             <Icon.alert className="w-4.5 h-4.5" />

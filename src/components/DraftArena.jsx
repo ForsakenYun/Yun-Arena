@@ -7,7 +7,7 @@ import {
   removeTempParticipants,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
-import AppShell from "./AppShell.jsx";
+import AppShell, { DraftVisualLock } from "./AppShell.jsx";
 
 /* ════════════════════════════════════════════════════════════════════════
    CONSTANTS & THEME (unchanged from Dashboard.jsx)
@@ -1833,7 +1833,7 @@ function toDraftPlayer(participant) {
    so in the normal flow the pools this seeds with are never empty or
    mismatched in size -- but this page doesn't re-validate that itself.
    ════════════════════════════════════════════════════════════════════════ */
-export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
+export default function DraftArenaPage({ onExitToLobby, account, onLogout, theme, onThemeChange }) {
   const [tournamentName, setTournamentName] = useState('')
   const [settingsMeta, setSettingsMeta] = useState({ teamCount: 0, playersPerTeam: 0 })
   const [tournament, setTournament] = useState(() => initialTournament([]))
@@ -2285,40 +2285,44 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout }) {
     <AppShell
       account={account}
       onLogout={onLogout}
+      theme={theme}
+      onThemeChange={onThemeChange}
       backAction={onExitToLobby}
       backLabel="返回锦标赛大厅"
       title={tournamentName}
       bgVariant="default"
     >
-      <GlobalStyle />
-      {stage === 'final' && finalMatches ? (
-        <FinalMatchupsStage
-          tournamentName={tournamentName}
-          teams={finalMatches.teams}
-          matchups={finalMatches.matchups}
-          isStaff={isStaff}
-          onEnded={onExitToLobby}
-        />
-      ) : !ready ? (
-        <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>
-      ) : (
-        <DraftArena
-          tournament={tournament}
-          setTournament={setTournament}
-          onProceed={handleProceed}
-          tournamentName={tournamentName}
-          isStaff={isStaff}
-          onSelectedCaptainChange={(captain) => setSelectedCaptainId(captain?.id ?? null)}
-          initialDraftHistory={seededDraftHistory}
-          onDraftHistoryChange={setDraftHistory}
-        />
-      )}
-      {proceedError && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer bg-panel-alt/95 backdrop-blur border border-danger/40 text-danger shadow-[0_0_24px_rgba(255,77,109,0.25)]"
-          onClick={() => setProceedError(null)}>
-          ⚠ {proceedError}（点击关闭）
-        </div>
-      )}
+      <DraftVisualLock>
+        <GlobalStyle />
+        {stage === 'final' && finalMatches ? (
+          <FinalMatchupsStage
+            tournamentName={tournamentName}
+            teams={finalMatches.teams}
+            matchups={finalMatches.matchups}
+            isStaff={isStaff}
+            onEnded={onExitToLobby}
+          />
+        ) : !ready ? (
+          <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>
+        ) : (
+          <DraftArena
+            tournament={tournament}
+            setTournament={setTournament}
+            onProceed={handleProceed}
+            tournamentName={tournamentName}
+            isStaff={isStaff}
+            onSelectedCaptainChange={(captain) => setSelectedCaptainId(captain?.id ?? null)}
+            initialDraftHistory={seededDraftHistory}
+            onDraftHistoryChange={setDraftHistory}
+          />
+        )}
+        {proceedError && (
+          <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer bg-panel-alt/95 backdrop-blur border border-danger/40 text-danger shadow-[0_0_24px_rgba(255,77,109,0.25)]"
+            onClick={() => setProceedError(null)}>
+            ⚠ {proceedError}（点击关闭）
+          </div>
+        )}
+      </DraftVisualLock>
     </AppShell>
   );
 }

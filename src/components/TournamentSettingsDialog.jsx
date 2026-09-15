@@ -142,7 +142,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
-      <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-panel/95 backdrop-blur-md border border-accent/20 shadow-accent-glow rounded-2xl px-6 py-6">
+      <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-panel/95 backdrop-blur-md border border-accent/20 shadow-accent-glow rounded-2xl px-6 py-6 light-glow-card accent-top-line">
         <h3 className="font-display text-base font-semibold tracking-wide text-ink-primary mb-5 shrink-0">锦标赛设置</h3>
 
         {loading ? (
@@ -159,7 +159,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                   maxLength={60}
                   required
                   placeholder="请输入锦标赛名称"
-                  className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
+                  className="w-full bg-panel-2/60 border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary placeholder:text-ink-faint focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -172,7 +172,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                     value={teamCount}
                     onChange={(e) => handleTeamCountChange(e.target.value)}
                     required
-                    className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
+                    className="w-full bg-panel-2/60 border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
                   />
                 </div>
                 <div>
@@ -184,7 +184,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                     value={playersPerTeam}
                     onChange={(e) => handlePlayersPerTeamChange(e.target.value)}
                     required
-                    className="w-full bg-panel-alt border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
+                    className="w-full bg-panel-2/60 border border-panel-line rounded-lg px-3 py-2.5 text-sm text-ink-primary focus:outline-none focus:border-accent2/60 focus:shadow-accent-glow transition"
                   />
                 </div>
               </div>
@@ -213,7 +213,7 @@ export default function TournamentSettingsDialog({ onClose, onSaved }) {
                           inputMode="numeric"
                           value={text}
                           onChange={(e) => handleRoundChange(index, e.target.value)}
-                          className={`w-full bg-panel-alt border rounded-lg px-3 py-2.5 text-sm text-ink-primary tabular-nums focus:outline-none transition ${
+                          className={`w-full bg-panel-2/60 border rounded-lg px-3 py-2.5 text-sm text-ink-primary tabular-nums focus:outline-none transition ${
                             roundErrors[index] ? 'border-danger/50 focus:border-danger' : 'border-panel-line focus:border-accent2/60'
                           }`}
                         />

@@ -32,10 +32,12 @@ export default function AppBackground({ variant = 'default' }) {
           <div className="absolute top-1/3 right-1/4 w-[360px] h-[360px] rounded-full bg-hot/10 blur-[130px] animate-drift" style={{ animationDelay: '-3s' }} />
         </>
       )}
-      {/* vignette to keep edges/corners moody */}
+      {/* vignette to keep edges/corners moody -- var(--bg-vignette) flips
+          from a dark corner-shadow to a soft light tint with the theme
+          (index.css), same as everything else driven by those variables. */}
       <div
         className="absolute inset-0"
-        style={{ background: 'radial-gradient(ellipse 90% 80% at 50% 30%, transparent 40%, rgba(6,7,15,0.55) 100%)' }}
+        style={{ background: 'radial-gradient(ellipse 90% 80% at 50% 30%, transparent 40%, var(--bg-vignette) 100%)' }}
       />
       {/* fine grain */}
       <div

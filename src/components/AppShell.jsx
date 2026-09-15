@@ -1,6 +1,46 @@
 import { useState } from 'react'
 import AppBackground from './AppBackground.jsx'
 
+// Theme Switcher (Step 2): Draft Arena / Final Matchups is an
+// intentionally separate, self-contained dark gold/Cinzel-Orbitron visual
+// system (DEVLOG Section 3 -- "not meant to be restyled to match the rest
+// of the app") that opts OUT of the Theme Switcher entirely. It always
+// renders dark, no matter what the account's saved theme is.
+//
+// index.css's `[data-theme='light']` override works by overriding the
+// CSS variables that tailwind.config.js's void/panel/panel-alt/panel-2/
+// panel-line/ink.* tokens read from. Re-declaring those same variables
+// back to their dark values here, on a wrapper placed around Draft
+// Arena's/Final Matchups' own body content (not the shared AppShell
+// header around it), re-scopes every `bg-panel`/`text-ink-muted`/etc.
+// class nested inside back to dark regardless of the theme active
+// everywhere else -- CSS custom properties inherit through the DOM tree,
+// not through layout, so `display: contents` below keeps this wrapper
+// out of the box model entirely while still passing the override down.
+export const DARK_THEME_LOCK_STYLE = {
+  '--color-void': '6 7 15',
+  '--color-panel': '14 16 32',
+  '--color-panel-alt': '22 26 51',
+  '--color-panel-2': '27 32 64',
+  '--color-panel-line': '43 49 89',
+  '--color-ink-primary': '244 242 255',
+  '--color-ink-muted': '146 141 190',
+  '--color-ink-faint': '76 74 121',
+  '--color-accent': '124 92 255',
+  '--color-accent-hover': '167 139 250',
+  '--color-accent-soft': '46 38 92',
+  '--color-accent2': '34 229 255',
+  '--bg-vignette': 'rgba(6, 7, 15, 0.55)',
+}
+
+export function DraftVisualLock({ children }) {
+  return (
+    <div className="contents" style={DARK_THEME_LOCK_STYLE}>
+      {children}
+    </div>
+  )
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    APP SHELL — the one piece of chrome every full page in the product now
    mounts through: brand mark, primary navigation, and the account/session
@@ -17,6 +57,9 @@ import AppBackground from './AppBackground.jsx'
      of nav tabs they get a single contextual back/exit action. Spectator
      additionally passes `viewerMode` to strip the account chip entirely,
      since a spectator's job is to watch, not administrate.
+
+   Draft Arena / Final Matchups' own body content (not this header) opts
+   out of the Theme Switcher -- see DraftVisualLock above.
    ════════════════════════════════════════════════════════════════════════ */
 
 const NAV_ICONS = {
@@ -55,31 +98,72 @@ const NAV_ICONS = {
       <path d="M15 6l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  // Theme Switcher (Step 1): the dropdown item shows the icon for the
+  // theme you'd *switch to*, not the one currently active -- sun while
+  // on dark (switch to light), moon while on light (switch to dark).
+  sun: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <circle cx="12" cy="12" r="4.2" />
+      <path
+        d="M12 2.5v2.4M12 19.1v2.4M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
+  moon: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M20 14.2A8.5 8.5 0 1 1 9.8 4a6.7 6.7 0 0 0 10.2 10.2Z" strokeLinejoin="round" />
+    </svg>
+  ),
 }
 
-function NavTab({ icon, label, active, onClick }) {
+function NavTab({ icon, label, active, onClick, theme }) {
   const IconCmp = NAV_ICONS[icon]
+  const isLight = theme === 'light'
   return (
     <button
       type="button"
       onClick={onClick}
       className={`relative flex items-center gap-2 px-4 h-full text-sm font-heading font-semibold tracking-wide transition-colors ${
-        active ? 'text-ink-primary' : 'text-ink-muted hover:text-ink-primary'
+        active
+          ? isLight
+            ? // Cyber-Teal light identity: bold teal label + a soft teal
+              // wash behind it, on top of the solid border-bottom bar
+              // below (rather than dark's glow gradient bar) -- flat
+              // colored fills read as "selected" in a light UI in a way
+              // a glow doesn't.
+              'text-accent font-bold bg-accent-soft/60'
+            : 'text-ink-primary'
+          : isLight
+          ? 'text-ink-muted hover:text-ink-primary hover:bg-panel-2/50'
+          : 'text-ink-muted hover:text-ink-primary'
       }`}
     >
       <IconCmp className="w-4 h-4" />
       {label}
-      <span
-        className={`absolute left-3 right-3 bottom-0 h-[2.5px] rounded-full bg-accent-gradient transition-opacity ${
-          active ? 'opacity-100' : 'opacity-0'
-        }`}
-      />
+      {isLight ? (
+        // Solid indicator bar instead of dark's soft gradient glow --
+        // flat and crisp reads better against a light bar than a glow
+        // that has nothing dark to glow against.
+        <span
+          className={`absolute left-3 right-3 bottom-0 h-[2.5px] rounded-full bg-accent transition-opacity ${
+            active ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      ) : (
+        <span
+          className={`absolute left-3 right-3 bottom-0 h-[2.5px] rounded-full bg-accent-gradient transition-opacity ${
+            active ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+      )}
     </button>
   )
 }
 
-function AccountChip({ account, onLogout }) {
+function AccountChip({ account, onLogout, theme = 'dark', onThemeChange }) {
   const [open, setOpen] = useState(false)
+  const isLight = theme === 'light'
   return (
     <div className="relative">
       <button
@@ -101,6 +185,22 @@ function AccountChip({ account, onLogout }) {
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute right-0 top-full mt-2 z-20 w-44 bg-panel/95 backdrop-blur-md border border-panel-line rounded-xl shadow-card-lift overflow-hidden py-1">
+            {onThemeChange && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false)
+                    onThemeChange(isLight ? 'dark' : 'light')
+                  }}
+                  className="w-full flex items-center gap-2 px-3.5 py-2.5 text-xs text-ink-muted hover:text-ink-primary hover:bg-panel-alt/60 transition"
+                >
+                  {isLight ? <NAV_ICONS.moon className="w-4 h-4" /> : <NAV_ICONS.sun className="w-4 h-4" />}
+                  {isLight ? '深色主题' : '浅色主题'}
+                </button>
+                <div className="h-px bg-panel-line mx-1.5 my-1" />
+              </>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -125,6 +225,8 @@ export default function AppShell({
   nav,
   onNavigate,
   onLogout,
+  theme,
+  onThemeChange,
   backAction,
   backLabel = '返回',
   title,
@@ -150,7 +252,11 @@ export default function AppShell({
           the header's favor so the dropdown -- and the whole bar -- reliably
           paints over ordinary page content on every page, while staying
           below the real full-screen modals (z-30 and up). */}
-      <div className="shrink-0 h-16 border-b border-panel-line/80 bg-void/40 backdrop-blur-md flex items-center px-4 sm:px-6 gap-4 relative z-20">
+      <div
+        className={`shrink-0 h-16 border-b ${
+          theme === 'light' ? 'border-panel-line' : 'border-panel-line/80'
+        } bg-void/40 backdrop-blur-md flex items-center px-4 sm:px-6 gap-4 relative z-20`}
+      >
         {/* brand */}
         <div className="flex items-center gap-2.5 shrink-0">
           <span className="w-8 h-8 rounded-lg bg-accent-gradient flex items-center justify-center shadow-accent-glow rotate-3 shrink-0">
@@ -170,6 +276,7 @@ export default function AppShell({
                 label={item.label}
                 active={section === item.key}
                 onClick={() => onNavigate(item.key)}
+                theme={theme}
               />
             ))}
           </nav>
@@ -196,7 +303,7 @@ export default function AppShell({
 
         {!viewerMode && account && (
           <div className="shrink-0">
-            <AccountChip account={account} onLogout={onLogout} />
+            <AccountChip account={account} onLogout={onLogout} theme={theme} onThemeChange={onThemeChange} />
           </div>
         )}
       </div>

@@ -25,6 +25,7 @@ const ERROR_MESSAGES = {
   user_not_found_or_not_promotable: '该用户当前无法被提升',
   user_not_found_or_not_demotable: '该用户当前无法被降级',
   invalid_max_uses: '最大使用次数无效',
+  invalid_theme: '主题参数不正确',
 }
 
 function friendlyError(error, fallback) {
@@ -136,4 +137,17 @@ export async function heartbeat(token) {
   const { data, error } = await supabase.rpc('heartbeat', { p_token: token })
   if (error) throw error
   return data
+}
+
+/* ---------- theme preference (Theme Switcher, Step 1) ---------- */
+// Only called for a logged-in account -- App.jsx's handleThemeChange
+// updates local state/localStorage first regardless of login status, and
+// only calls this on top of that when there's a session to persist it to.
+export async function updateThemePreference(token, theme) {
+  const { data, error } = await supabase.rpc('update_theme_preference', {
+    p_token: token,
+    p_theme: theme,
+  })
+  if (error) throw new Error(friendlyError(error, '主题设置保存失败'))
+  return data.account
 }
