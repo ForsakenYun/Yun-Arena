@@ -18,6 +18,16 @@ function withOpacityValue(variableName) {
 
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  // Theme Switcher: no component in the app used Tailwind's `dark:` variant
+  // before now -- theming instead runs entirely through the CSS-variable
+  // tokens above, keyed off the `data-theme` attribute App.jsx sets on
+  // <html> (see index.css / App.jsx). This wires `dark:` to that same
+  // attribute (`data-theme="dark"`) rather than Tailwind's default
+  // `prefers-color-scheme` media query, so a `dark:` class actually follows
+  // the app's own saved theme instead of the OS setting. Safe to add: it
+  // only takes effect where `dark:` is explicitly used, which today is just
+  // the 队长 (Captain) badge in TournamentLobby.jsx/AdminDashboard.jsx.
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {

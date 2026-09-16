@@ -423,6 +423,27 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
   registration, editable in Admin Dashboard's edit-user dialog,
   display-only everywhere (icon only, no text label) — has no effect
   on permissions, matchmaking, or drafting.
+- The 队长 (Captain) `RoleBadge` (this page and Admin Dashboard's
+  已注册用户 table, same verbatim-copy rule as above) uses a sky-blue
+  identity that's deliberately *not* the same shade in both themes —
+  `bg-transparent border-sky-300 text-sky-700` in light (fully
+  transparent fill, sitting directly on the row like 队员's badge,
+  border-only aesthetic, with a deeper `sky-700` text for contrast
+  against the page background), `dark:bg-sky-950/40
+  dark:border-sky-500/30 dark:text-[#38BDF8]` in dark (a filled tint,
+  the brighter `#38BDF8` for contrast against a near-black fill) —
+  rather than the CSS-variable tokens (`--color-*`) everything else
+  themes through, since the intent is a fixed sky-blue *identity* for
+  this specific badge with each theme getting its own contrast-tuned
+  treatment, not a single literal style reused as-is across both. This
+  is also the app's *first* use
+  of Tailwind's `dark:` variant anywhere — `tailwind.config.js` now sets
+  `darkMode: ['selector', '[data-theme="dark"]']` so `dark:` tracks the
+  same `data-theme` attribute the CSS-variable system already keys off
+  (App.jsx), instead of Tailwind's default `prefers-color-scheme` media
+  query, which would silently ignore the in-app theme toggle. If `dark:`
+  gets used elsewhere in the future, it'll follow the same attribute
+  automatically — no further config needed.
 
 ## 8. Draft Arena
 

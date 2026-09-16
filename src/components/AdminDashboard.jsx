@@ -288,7 +288,7 @@ function RoleBadge({ role }) {
     <span
       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
         isCaptain
-          ? 'bg-gold/10 text-gold border-gold/40'
+          ? 'bg-transparent border-sky-300 text-sky-700 dark:bg-sky-950/40 dark:border-sky-500/30 dark:text-[#38BDF8]'
           : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
