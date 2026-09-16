@@ -1,22 +1,32 @@
 import { useState } from 'react'
 import AppBackground from './AppBackground.jsx'
 
-// Theme Switcher (Step 2): Draft Arena / Final Matchups is an
-// intentionally separate, self-contained dark gold/Cinzel-Orbitron visual
-// system (DEVLOG Section 3 -- "not meant to be restyled to match the rest
-// of the app") that opts OUT of the Theme Switcher entirely. It always
-// renders dark, no matter what the account's saved theme is.
+// DARK_THEME_LOCK_STYLE re-declares every CSS variable the Theme Switcher
+// exposes (index.css's `[data-theme='light']` overrides these; see
+// tailwind.config.js's void/panel/panel-alt/panel-2/panel-line/ink.*/
+// accent* tokens) back to their dark values. Since CSS custom properties
+// inherit through the DOM tree (not through layout), spreading this
+// object into any element's inline `style` re-scopes every themed class
+// nested inside it back to dark, regardless of what `[data-theme]` is set
+// to further up the tree.
 //
-// index.css's `[data-theme='light']` override works by overriding the
-// CSS variables that tailwind.config.js's void/panel/panel-alt/panel-2/
-// panel-line/ink.* tokens read from. Re-declaring those same variables
-// back to their dark values here, on a wrapper placed around Draft
-// Arena's/Final Matchups' own body content (not the shared AppShell
-// header around it), re-scopes every `bg-panel`/`text-ink-muted`/etc.
-// class nested inside back to dark regardless of the theme active
-// everywhere else -- CSS custom properties inherit through the DOM tree,
-// not through layout, so `display: contents` below keeps this wrapper
-// out of the box model entirely while still passing the override down.
+// As of the Theme Switcher's light-mode rollout, AuthPage.jsx (applied
+// directly to its own root element, no wrapper needed there) is the only
+// consumer: the login/register screen renders before any account --
+// and therefore any saved theme preference -- exists, so it has no
+// legitimate light/dark choice to reflect. It's the brand's front door
+// and always renders dark on purpose, even if a previous guest session
+// left `light` sitting in localStorage.
+//
+// Draft Arena / Final Matchups and the Spectator Page (DraftArena.jsx's
+// DraftArenaPage and SpectatorPage.jsx) used to opt out via this same
+// mechanism too, wrapped in DraftVisualLock below -- DEVLOG Section 3's
+// "Draft Arena and the Spectator Page are one system" rule required
+// removing that lock from *both* files together, not just one, once
+// theme-following was extended to them (see DEVLOG Sections 3/8/9). They
+// now follow the ambient theme like every other page instead; only
+// their gold/Cinzel-Orbitron brand fonts and neon glow colors stay
+// fixed (as literal hex in DraftArena.jsx, not CSS variables).
 export const DARK_THEME_LOCK_STYLE = {
   '--color-void': '6 7 15',
   '--color-panel': '14 16 32',
@@ -33,6 +43,16 @@ export const DARK_THEME_LOCK_STYLE = {
   '--bg-vignette': 'rgba(6, 7, 15, 0.55)',
 }
 
+// DraftVisualLock wraps DARK_THEME_LOCK_STYLE in a `display: contents`
+// element, for dropping the lock in the middle of an existing flex
+// layout (e.g. AppShell's children slot) without adding a box that would
+// disturb that layout -- AuthPage doesn't need this wrapper since it
+// applies DARK_THEME_LOCK_STYLE directly to its own real root element
+// instead (see AuthPage.jsx). Currently unused (see the note above on
+// DARK_THEME_LOCK_STYLE for why) but kept available: any future
+// screen that legitimately needs a hard dark-lock inside an existing
+// layout, the way Draft Arena/Spectator Page used to, can reach for
+// this instead of re-inventing it.
 export function DraftVisualLock({ children }) {
   return (
     <div className="contents" style={DARK_THEME_LOCK_STYLE}>
@@ -127,12 +147,11 @@ function NavTab({ icon, label, active, onClick, theme }) {
       className={`relative flex items-center gap-2 px-4 h-full text-sm font-heading font-semibold tracking-wide transition-colors ${
         active
           ? isLight
-            ? // Cyber-Teal light identity: bold teal label + a soft teal
-              // wash behind it, on top of the solid border-bottom bar
-              // below (rather than dark's glow gradient bar) -- flat
-              // colored fills read as "selected" in a light UI in a way
-              // a glow doesn't.
-              'text-accent font-bold bg-accent-soft/60'
+            ? // Cyber-Teal light identity: bold teal label sitting cleanly
+              // on the header surface -- no background wash behind it, just
+              // the subtle text color/weight change plus the crisp
+              // bottom-line indicator below.
+              'text-accent font-bold'
             : 'text-ink-primary'
           : isLight
           ? 'text-ink-muted hover:text-ink-primary hover:bg-panel-2/50'
@@ -142,17 +161,20 @@ function NavTab({ icon, label, active, onClick, theme }) {
       <IconCmp className="w-4 h-4" />
       {label}
       {isLight ? (
-        // Solid indicator bar instead of dark's soft gradient glow --
-        // flat and crisp reads better against a light bar than a glow
-        // that has nothing dark to glow against.
+        // Solid indicator bar instead of dark's soft gradient glow -- flat
+        // and crisp reads better against a light bar than a glow that has
+        // nothing dark to glow against. Dark-neutral (ink-primary, ~
+        // #0f172a) rather than the teal accent used elsewhere in this
+        // component, so the line reads as a crisp structural marker
+        // distinct from the accent-colored label above it.
         <span
-          className={`absolute left-3 right-3 bottom-0 h-[2.5px] rounded-full bg-accent transition-opacity ${
+          className={`absolute left-3 right-3 bottom-0 h-[2.5px] rounded-md bg-ink-primary transition-opacity ${
             active ? 'opacity-100' : 'opacity-0'
           }`}
         />
       ) : (
         <span
-          className={`absolute left-3 right-3 bottom-0 h-[2.5px] rounded-full bg-accent-gradient transition-opacity ${
+          className={`absolute left-3 right-3 bottom-0 h-[2.5px] rounded-md bg-accent-gradient transition-opacity ${
             active ? 'opacity-100' : 'opacity-0'
           }`}
         />
@@ -169,7 +191,7 @@ function AccountChip({ account, onLogout, theme = 'dark', onThemeChange }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full border border-panel-line bg-panel-alt/60 hover:border-accent2/40 transition"
+        className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-lg border border-panel-line bg-panel-alt/60 hover:border-accent2/40 transition"
       >
         <div className="w-7 h-7 rounded-full overflow-hidden bg-panel-alt border border-panel-line flex items-center justify-center shrink-0">
           {account.avatar_url ? (
@@ -196,7 +218,7 @@ function AccountChip({ account, onLogout, theme = 'dark', onThemeChange }) {
                   className="w-full flex items-center gap-2 px-3.5 py-2.5 text-xs text-ink-muted hover:text-ink-primary hover:bg-panel-alt/60 transition"
                 >
                   {isLight ? <NAV_ICONS.moon className="w-4 h-4" /> : <NAV_ICONS.sun className="w-4 h-4" />}
-                  {isLight ? '深色主题' : '浅色主题'}
+                  {isLight ? '暗色模式' : '亮色模式'}
                 </button>
                 <div className="h-px bg-panel-line mx-1.5 my-1" />
               </>

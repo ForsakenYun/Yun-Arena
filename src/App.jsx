@@ -37,13 +37,18 @@ export default function App() {
   const [theme, setTheme] = useState(() => getStoredTheme())
   const monitorRef = useRef(null)
 
-  // Theme Switcher (Step 2): the single place this state actually becomes
-  // pixels. `[data-theme='light']` in index.css overrides the CSS
-  // variables tailwind.config.js's void/panel/panel-alt/panel-2/
-  // panel-line/ink.* tokens point at, so every themed class in the app
-  // follows this attribute -- except Draft Arena/Final Matchups, which
-  // re-lock those same variables back to dark on their own wrapper
-  // (AppShell.jsx's DraftVisualLock) regardless of what this is set to.
+  // Theme Switcher: the single place this state actually becomes pixels.
+  // `[data-theme='light']` in index.css overrides the CSS variables
+  // tailwind.config.js's void/panel/panel-alt/panel-2/panel-line/ink.*/
+  // accent* tokens point at, so every themed class in the app follows
+  // this attribute -- except AuthPage.jsx, which re-locks those same
+  // variables back to dark on its own root element (AppShell.jsx's
+  // DARK_THEME_LOCK_STYLE) regardless of what this is set to, since it
+  // renders before any account/saved theme exists. Draft Arena and the
+  // Spectator Page used to do the same (DraftVisualLock), but as of the
+  // Theme Switcher's light-mode rollout they follow this attribute like
+  // everywhere else (DEVLOG Sections 3/8/9) -- only their brand fonts
+  // and neon glow colors stay fixed regardless of theme.
   useEffect(() => {
     document.documentElement.dataset.theme = theme
   }, [theme])

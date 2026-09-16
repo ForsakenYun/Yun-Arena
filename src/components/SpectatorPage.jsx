@@ -7,7 +7,7 @@ import {
   subscribeFinalMatchups,
 } from '../lib/tournamentApi.js'
 import { DraftArena, FinalMatchupsStage, GlobalStyle } from './DraftArena.jsx'
-import AppShell, { DraftVisualLock } from './AppShell.jsx'
+import AppShell from './AppShell.jsx'
 
 /* ════════════════════════════════════════════════════════════════════════
    SPECTATOR PAGE — a read-only window onto the tournament's persisted
@@ -272,33 +272,35 @@ export default function SpectatorPage({ onExitToLobby, account, onLogout, theme,
       {/* Orbitron font/scrollbar styling used by the reused DraftArena/
           FinalMatchupsStage bodies below, so they render pixel-identical
           to the admin's own Draft Arena (same .font-display, etc.).
-          DraftVisualLock keeps this body dark regardless of the viewer's
-          own theme choice, same as the admin's own Draft Arena -- it's
-          the same self-contained system either way (see DraftArena.jsx). */}
-      <DraftVisualLock>
-        <GlobalStyle />
-        {initialLoading ? (
-          <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">加载中…</div>
-        ) : stage === 'final' && finalMatches ? (
-          <FinalMatchupsStage
-            tournamentName={tournamentName}
-            teams={finalMatches.teams}
-            matchups={finalMatches.matchups}
-            isStaff={false}
-          />
-        ) : stage === 'drafting' && draftArenaTournament ? (
-          <DraftArena
-            tournament={draftArenaTournament}
-            setTournament={noop}
-            onProceed={noop}
-            tournamentName={tournamentName}
-            isStaff={false}
-            externalSelectedCaptainId={draftState?.selectedCaptainId ?? null}
-          />
-        ) : (
-          <EmptySpectatorView />
-        )}
-      </DraftVisualLock>
+          Draft Arena and Spectator Page are one system (DEVLOG Section
+          3), so this follows the ambient light/dark theme exactly like
+          the admin's own Draft Arena now does -- no DraftVisualLock here
+          any more; see DraftArena.jsx for the same tokenized styling
+          (bg-panel, text-ink-primary, border-panel-line, and the
+          Cyber-Teal light overrides in index.css) that this body
+          inherits. */}
+      <GlobalStyle />
+      {initialLoading ? (
+        <div className="flex-1 flex items-center justify-center text-ink-muted text-sm">加载中…</div>
+      ) : stage === 'final' && finalMatches ? (
+        <FinalMatchupsStage
+          tournamentName={tournamentName}
+          teams={finalMatches.teams}
+          matchups={finalMatches.matchups}
+          isStaff={false}
+        />
+      ) : stage === 'drafting' && draftArenaTournament ? (
+        <DraftArena
+          tournament={draftArenaTournament}
+          setTournament={noop}
+          onProceed={noop}
+          tournamentName={tournamentName}
+          isStaff={false}
+          externalSelectedCaptainId={draftState?.selectedCaptainId ?? null}
+        />
+      ) : (
+        <EmptySpectatorView />
+      )}
     </AppShell>
   )
 }

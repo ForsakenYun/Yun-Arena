@@ -183,12 +183,12 @@ function Avatar({ src, alt, size = 'w-9 h-9' }) {
 
 function RoleBadge({ role }) {
   if (!role) {
-    return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs text-ink-faint">—</span>
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs text-ink-faint">—</span>
   }
   const isCaptain = role === 'captain'
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
         isCaptain ? 'bg-gold/10 text-gold border-gold/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
@@ -231,7 +231,7 @@ function RailAction({ icon, label, onClick, disabled, tone = 'default', title })
 function StatusBadge({ online }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border ${
         online ? 'bg-success/10 text-success border-success/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
@@ -676,7 +676,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme,
                 </thead>
                 <tbody>
                   {sortedParticipants.map((p) => (
-                    <tr key={p.accountId} className="border-b border-panel-line/60 hover:bg-panel-alt/40 transition">
+                    <tr key={p.accountId} className="border-b border-panel-line/35 hover:bg-panel-alt/40 transition">
                       <td className="px-3 py-2.5">
                         <Avatar src={p.avatarUrl} alt={`${p.displayName} 的头像`} size="w-9 h-9" />
                       </td>

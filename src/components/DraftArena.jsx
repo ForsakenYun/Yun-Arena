@@ -7,7 +7,7 @@ import {
   removeTempParticipants,
 } from "../lib/tournamentApi.js";
 import ConfirmDialog from "./ConfirmDialog.jsx";
-import AppShell, { DraftVisualLock } from "./AppShell.jsx";
+import AppShell from "./AppShell.jsx";
 
 /* ════════════════════════════════════════════════════════════════════════
    CONSTANTS & THEME (unchanged from Dashboard.jsx)
@@ -154,8 +154,8 @@ function GlowHeading({ children, size = "text-2xl", className = "" }) {
 
 function PanelFrame({ children, className = "", onClick, style, ...rest }) {
   return (
-    <div className={`relative rounded-2xl border backdrop-blur-sm ${className}`} onClick={onClick}
-      style={{ background: "linear-gradient(160deg, rgba(22,26,51,0.92), rgba(14,16,32,0.96))", borderColor: "rgba(124,92,255,0.22)", boxShadow: "0 0 0 1px rgba(124,92,255,0.06), 0 0 30px rgba(124,92,255,0.10)", ...style }}
+    <div className={`relative rounded-2xl border backdrop-blur-sm light-glow-card ${className}`} onClick={onClick}
+      style={{ background: "linear-gradient(160deg, rgb(var(--color-panel-alt) / 0.92), rgb(var(--color-panel) / 0.96))", borderColor: "rgba(124,92,255,0.22)", boxShadow: "0 0 0 1px rgba(124,92,255,0.06), 0 0 30px rgba(124,92,255,0.10)", ...style }}
       {...rest}>
       {children}
     </div>
@@ -193,22 +193,22 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
     <div
       data-team-panel={teamIdx}
       onClick={canAssign ? () => onAssignCaptain(teamIdx) : undefined}
-      className={`relative rounded-xl border px-3 py-3 transition-all duration-300 scroll-m-8 ${canAssign ? "cursor-pointer" : ""}`}
+      className={`relative rounded-xl border px-3 py-3 transition-all duration-300 scroll-m-8 light-glow-card ${canAssign ? "cursor-pointer" : ""}`}
       style={{
-        background: isActive ? "linear-gradient(160deg, rgba(34,229,255,0.12), rgba(14,16,32,0.96))" : "linear-gradient(160deg, rgba(22,26,51,0.85), rgba(14,16,32,0.9))",
-        borderColor: isActive ? TEAL : canAssign ? "#22c55e" : "rgba(43,49,89,0.7)",
+        background: isActive ? "linear-gradient(160deg, rgba(34,229,255,0.12), rgb(var(--color-panel) / 0.96))" : "linear-gradient(160deg, rgb(var(--color-panel-alt) / 0.85), rgb(var(--color-panel) / 0.9))",
+        borderColor: isActive ? TEAL : canAssign ? "#22c55e" : "rgb(var(--color-panel-line) / 0.7)",
         borderStyle: canAssign ? "dashed" : "solid",
         boxShadow: isActive ? `0 0 0 1px ${TEAL}55, 0 0 22px ${TEAL}33` : canAssign ? "0 0 14px rgba(34,197,94,0.2)" : "none",
       }}>
       {/* header row: name + fill progress + live indicator, all on one line */}
       <div className="flex items-center gap-2 mb-2.5">
         <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0"
-          style={{ background: isActive ? TEAL : "rgba(255,255,255,0.06)", color: isActive ? "#06070F" : "rgba(255,255,255,0.4)" }}>
+          style={{ background: isActive ? TEAL : "rgb(var(--color-panel-2) / 0.6)", color: isActive ? "#06070F" : "rgb(var(--color-ink-muted))" }}>
           {teamIdx + 1}
         </span>
-        <span className="text-[11px] font-bold tracking-wide truncate flex-1" style={{ color: isActive ? TEAL : "rgba(255,255,255,0.85)" }}>{displayName}</span>
-        {isActive && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 animate-pulse" style={{ background: "linear-gradient(135deg,#7C5CFF,#22E5FF)", color: "#06070F" }}>选人中</span>}
-        <span className="text-[9px] font-mono text-white/30 shrink-0">{filled}/{total}</span>
+        <span className="text-[11px] font-bold tracking-wide truncate flex-1" style={{ color: isActive ? TEAL : "rgb(var(--color-ink-primary) / 0.85)" }}>{displayName}</span>
+        {isActive && <span className="text-[8px] font-black px-1.5 py-0.5 rounded-md shrink-0 animate-pulse" style={{ background: "linear-gradient(135deg,#7C5CFF,#22E5FF)", color: "#06070F" }}>选人中</span>}
+        <span className="text-[9px] font-mono text-ink-faint shrink-0">{filled}/{total}</span>
       </div>
 
       {/* captain slot */}
@@ -216,8 +216,8 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
         data-slot-key={`cap:${teamIdx}`}
         style={{
           height: CAPTAIN_SLOT_H, boxSizing: "border-box", overflow: "hidden", opacity: captainHidden ? 0 : 1,
-          background: canAssign ? "rgba(34,197,94,0.08)" : "rgba(0,0,0,0.3)",
-          border: canAssign ? "1px dashed #22c55e" : "1px solid rgba(255,255,255,0.04)",
+          background: canAssign ? "rgba(34,197,94,0.08)" : "rgb(var(--color-panel-2) / 0.5)",
+          border: canAssign ? "1px dashed #22c55e" : "1px solid rgb(var(--color-panel-line) / 0.3)",
         }}>
         {canAssign ? (
           <>
@@ -228,7 +228,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
           <>
             <Avatar avatarId={team.captain.avatarId} avatarUrl={team.captain.avatarUrl} size={26} glow />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1 text-[10.5px] font-bold text-white truncate leading-tight">
+              <div className="flex items-center gap-1 text-[10.5px] font-bold text-ink-primary truncate leading-tight">
                 <span className="truncate">{team.captain.name}</span>
                 <GenderIcon gender={team.captain.gender} className="w-3 h-3 shrink-0" />
               </div>
@@ -237,8 +237,8 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
           </>
         ) : (
           <div className="flex items-center gap-2 w-full">
-            <div className="w-[26px] h-[26px] rounded-md border border-dashed border-white/15 flex items-center justify-center text-white/20 text-[10px] flex-shrink-0">?</div>
-            <span className="text-[10px] italic text-white/25">等待队长</span>
+            <div className="w-[26px] h-[26px] rounded-md border border-dashed border-panel-line flex items-center justify-center text-ink-faint text-[10px] flex-shrink-0">?</div>
+            <span className="text-[10px] italic text-ink-faint">等待队长</span>
           </div>
         )}
       </div>
@@ -250,7 +250,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
           const slotHidden = !!hiddenKeys && hiddenKeys.has(slotKey);
           return (
             <div key={i} data-slot-key={slotKey}
-              className={`flex items-center gap-1.5 px-1.5 py-1 rounded-md border text-[10px] ${slot ? "bg-black/25" : "bg-black/10 border-dashed border-white/10 text-white/25"}`}
+              className={`flex items-center gap-1.5 px-1.5 py-1 rounded-md border text-[10px] ${slot ? "bg-panel-2/60" : "bg-panel-alt/30 border-dashed border-panel-line text-ink-faint"}`}
               style={{ ...(slot ? { borderColor: TEAL_DIM } : {}), opacity: slotHidden ? 0 : 1 }}>
               <span className="w-4 h-4 flex items-center justify-center rounded text-[8px] font-bold flex-shrink-0"
                 style={{ background: slot ? `${TEAL}22` : "transparent", color: slot ? TEAL : "#3a4a4a", border: `1px solid ${slot ? TEAL+"55" : "#1c2b2e"}` }}>
@@ -259,7 +259,7 @@ function TeamCard({ team, activeTeamIdx, teamIdx, useCaptainName = false, assign
               {slot ? (
                 <>
                   <Avatar avatarId={slot.avatarId} avatarUrl={slot.avatarUrl} size={17} />
-                  <div className="min-w-0 flex-1 flex items-center gap-1 truncate font-semibold text-white text-[10px]">
+                  <div className="min-w-0 flex-1 flex items-center gap-1 truncate font-semibold text-ink-primary text-[10px]">
                     <span className="truncate">{slot.name}</span>
                     <GenderIcon gender={slot.gender} className="w-2.5 h-2.5 shrink-0" />
                   </div>
@@ -296,11 +296,11 @@ const PLAYER_CARD_NAME_FONT = 13;
 const PLAYER_CARD_LABEL_FONT = 9;
 const PLAYER_CARD_VALUE_FONT = 13;
 const PLAYER_CARD_STAT_PAD = 7;
-const PLAYER_CARD_BG = "linear-gradient(155deg, #1B2040 0%, #12142A 100%)";
+const PLAYER_CARD_BG = "linear-gradient(155deg, rgb(var(--color-panel-2)) 0%, rgb(var(--color-panel)) 100%)";
 const PLAYER_CARD_BORDER = "rgba(124,92,255,0.4)";
-const PLAYER_CARD_STAT_BG = "rgba(6,7,15,0.55)";
+const PLAYER_CARD_STAT_BG = "rgb(var(--color-panel-2) / 0.6)";
 const PLAYER_CARD_STAT_BORDER = "rgba(124,92,255,0.2)";
-const PLAYER_CARD_TEXT = "#F4F2FF";
+const PLAYER_CARD_TEXT = "rgb(var(--color-ink-primary))";
 const STAT_PILL_COLORS = { winRate: "#2B7FB8", champion: "#C9862B", position: "#5B4FCF", rating: "#B84FA0" };
 
 function hashSeed(str) {
@@ -447,7 +447,7 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
   const badgeColors = badge === "队员" ? { background: "#475569", color: "#e0f2fe" } : { background: "#22c55e", color: "#04150a" };
   return (
     <button onClick={onClick} disabled={disabled} type="button" data-card-id={player.id}
-      className={`relative text-left rounded-xl transition-all duration-200 w-full ${disabled ? "" : "hover:-translate-y-0.5"}`}
+      className={`relative text-left rounded-xl transition-all duration-200 w-full light-glow-card ${disabled ? "" : "hover:-translate-y-0.5"}`}
       style={{
         padding: PLAYER_CARD_PAD,
         background: PLAYER_CARD_BG, border: `2px solid ${selected ? "#22c55e" : PLAYER_CARD_BORDER}`,
@@ -457,7 +457,7 @@ function PlayerStatCard({ player, onClick, disabled, selected, badge }) {
       {(badge || player.gender) && (
         <div className="absolute top-1.5 right-1.5 z-10 flex flex-col items-center">
           {badge && (
-            <span className="font-black rounded-full"
+            <span className="font-black rounded-md"
               style={{ background: badgeColors.background, color: badgeColors.color, fontSize: 8, padding: "2px 6px" }}>
               {badge}
             </span>
@@ -539,10 +539,10 @@ function DraftSequenceStrip({ customSnakeOrder, pickIndex, roundOrders, draftFin
           const isRoundStart = idx === 0 || pick.round !== customSnakeOrder[idx-1].round;
           return (
             <React.Fragment key={idx}>
-              {isRoundStart && idx > 0 && <div className="flex items-center mx-1"><div className="w-px h-7" style={{ background: "rgba(34,229,255,0.2)" }} /></div>}
+              {isRoundStart && idx > 0 && <div className="flex items-center mx-1"><div className="w-px h-7 seq-divider" style={{ background: "rgba(34,229,255,0.2)" }} /></div>}
               <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                <span className="text-[7px] font-black tracking-wider" style={{ color: isRoundStart ? "rgba(34,229,255,0.45)" : "transparent" }}>{isRoundStart ? `R${pick.round}` : "."}</span>
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black transition-all duration-200"
+                <span className={`text-[7px] font-black tracking-wider ${isRoundStart ? 'seq-round-label' : ''}`} style={{ color: isRoundStart ? "rgba(34,229,255,0.45)" : "transparent" }}>{isRoundStart ? `R${pick.round}` : "."}</span>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black transition-all duration-200 seq-pick-num ${isPast ? 'seq-pick-past' : !isCurrent ? 'seq-pick-upcoming' : ''}`}
                   style={isCurrent ? { background: "rgba(74,222,128,0.18)", color: "#4ade80", border: "1.5px solid rgba(74,222,128,0.75)", boxShadow: "0 0 10px rgba(74,222,128,0.8)", transform: "scale(1.25)" }
                     : isPast ? { background: "transparent", color: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.04)" }
                     : { background: "rgba(34,229,255,0.03)", color: "rgba(34,229,255,0.3)", border: "1px solid rgba(34,229,255,0.1)" }}>
@@ -1000,7 +1000,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
   const HEADER_RING_CIRC = 2 * Math.PI * HEADER_RING_R;
   const headerRingOffset = HEADER_RING_CIRC * (1 - headerProgressPct / 100);
 
-  if (teams.length === 0) return <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>;
+  if (teams.length === 0) return <div className="flex items-center justify-center flex-1 text-ink-muted">加载中…</div>;
 
   // Team overview strip (战队总览) -- one shared block for both phases so
   // there's exactly one place that renders it, not two. Captain
@@ -1040,7 +1040,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
       <div className="shrink-0 border-b border-panel-line/80 bg-void/30 backdrop-blur-sm px-5 sm:px-8 h-20 flex items-center gap-6">
         <div className="flex-1 min-w-0 flex items-center gap-4">
           <span
-            className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full tracking-widest"
+            className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-md tracking-widest"
             style={{
               background: draftPhase === "captain" ? "rgba(34,197,94,0.12)" : "rgba(34,229,255,0.12)",
               color: draftPhase === "captain" ? "#22c55e" : TEAL,
@@ -1070,16 +1070,16 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
         {isStaff && (
           <button onClick={undoLastPick} disabled={draftHistory.length === 0}
             className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border transition-all whitespace-nowrap"
-            style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgba(0,0,0,0.2)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgba(255,255,255,0.06)", color: draftHistory.length > 0 ? "#fbbf24" : "rgba(255,255,255,0.15)", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer" }}>
+            style={{ background: draftHistory.length > 0 ? "rgba(251,191,36,0.08)" : "rgb(var(--color-panel-2) / 0.5)", borderColor: draftHistory.length > 0 ? "#fbbf2466" : "rgb(var(--color-panel-line))", color: draftHistory.length > 0 ? "#fbbf24" : "rgb(var(--color-ink-faint))", cursor: draftHistory.length === 0 ? "not-allowed" : "pointer" }}>
             ↩ 撤销
-            {draftHistory.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
+            {draftHistory.length > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-md font-black leading-none" style={{ background: "#fbbf2422", color: "#fbbf24" }}>{draftHistory.length}</span>}
           </button>
         )}
 
         <div className="shrink-0 flex items-center gap-4">
           <div className="relative" style={{ width: 52, height: 52 }}>
             <svg width="52" height="52" style={{ transform: "rotate(-90deg)" }}>
-              <circle cx="26" cy="26" r={HEADER_RING_R * 0.7} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="5" />
+              <circle cx="26" cy="26" r={HEADER_RING_R * 0.7} fill="none" stroke="rgb(var(--color-panel-line))" strokeWidth="5" />
               <circle cx="26" cy="26" r={HEADER_RING_R * 0.7} fill="none" stroke={headerRingColor} strokeWidth="5"
                 strokeDasharray={HEADER_RING_CIRC * 0.7} strokeDashoffset={headerRingOffset * 0.7} strokeLinecap="round"
                 style={{ transition: "stroke-dashoffset 500ms" }} />
@@ -1091,14 +1091,14 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
           {isStaff && draftPhase === "captain" && (
             <button onClick={startTeammateDraft} disabled={!(allCaptainsAssigned && roundOrderValid.every(Boolean))}
               className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
-              style={{ background: "rgba(34,229,255,0.07)", borderColor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? TEAL : "rgba(255,255,255,0.08)", color: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "pointer" : "not-allowed" }}>
+              style={{ background: "rgb(var(--color-accent2) / 0.07)", borderColor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "rgb(var(--color-accent2))" : "rgb(var(--color-panel-line))", color: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "rgb(var(--color-accent2))" : "rgb(var(--color-ink-faint))", boxShadow: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "0 0 18px rgb(var(--color-accent2) / 0.28)" : "none", cursor: (allCaptainsAssigned && roundOrderValid.every(Boolean)) ? "pointer" : "not-allowed" }}>
               开始队员选秀 →
             </button>
           )}
           {isStaff && draftPhase === "teammate" && (
             <button onClick={onProceed} disabled={!readyToProceed}
               className="font-bold text-xs px-4 py-2.5 rounded-lg border whitespace-nowrap transition-all"
-              style={{ background: "rgba(34,229,255,0.07)", borderColor: readyToProceed ? TEAL : "rgba(255,255,255,0.08)", color: readyToProceed ? TEAL_SOFT : "rgba(255,255,255,0.2)", boxShadow: readyToProceed ? "0 0 18px rgba(34,229,255,0.28)" : "none", cursor: readyToProceed ? "pointer" : "not-allowed" }}>
+              style={{ background: "rgb(var(--color-accent2) / 0.07)", borderColor: readyToProceed ? "rgb(var(--color-accent2))" : "rgb(var(--color-panel-line))", color: readyToProceed ? "rgb(var(--color-accent2))" : "rgb(var(--color-ink-faint))", boxShadow: readyToProceed ? "0 0 18px rgb(var(--color-accent2) / 0.28)" : "none", cursor: readyToProceed ? "pointer" : "not-allowed" }}>
               进入最终对阵 →
             </button>
           )}
@@ -1138,7 +1138,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   flush against it). */}
               <div className="flex items-center justify-between shrink-0">
                 <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: "#22c55e" }}>队长候选池</h2>
-                <span className="text-xs font-mono text-white/30">{captainCandidates.length} 人未分配</span>
+                <span className="text-xs font-mono text-ink-faint">{captainCandidates.length} 人未分配</span>
               </div>
               <div className="flex-1 lg:min-h-0 overflow-y-auto pt-3">
                 <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
@@ -1164,7 +1164,7 @@ function DraftArena({ tournament, setTournament, onBack, onProceed, tournamentNa
                   above -- see the comment there. */}
               <div className="flex items-center justify-between shrink-0">
                 <h2 className="font-display text-sm font-bold tracking-widest" style={{ color: TEAL }}>待选选手</h2>
-                <span className="text-xs font-mono text-white/30">{pool?.length ?? 0} 人待选</span>
+                <span className="text-xs font-mono text-ink-faint">{pool?.length ?? 0} 人待选</span>
               </div>
               {pool && pool.length > 0 ? (
                 <div className="flex-1 lg:min-h-0 overflow-y-auto pt-3">
@@ -1331,7 +1331,7 @@ function RosterRow({ team, status, selected, onClick }) {
         {teamLabel(team)}
       </span>
       {status === "bye" && (
-        <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white/50">轮空</span>
+        <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-md bg-white/10 text-white/50">轮空</span>
       )}
     </Tag>
   );
@@ -1556,7 +1556,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
       {/* status strip -- same flat, flush-under-the-shell idiom as Draft Arena's own status strip */}
       <div className="shrink-0 border-b border-panel-line/80 bg-void/30 backdrop-blur-sm px-5 sm:px-8 h-20 flex items-center gap-6">
         <div className="flex-1 min-w-0 flex items-center gap-4">
-          <span className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full tracking-widest"
+          <span className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-md tracking-widest"
             style={{
               background: complete ? "rgba(34,229,255,.12)" : "rgba(124,92,255,.12)",
               color: complete ? "#22E5FF" : "#A78BFA",
@@ -1629,7 +1629,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
                     style={{ border: "2px solid rgba(124,92,255,.5)", animation: "fmpRingPulse .6s ease-out forwards" }} />
                   <span className="absolute w-48 h-48 sm:w-56 sm:h-56 rounded-full pointer-events-none"
                     style={{ border: "2px solid rgba(34,229,255,.35)", animation: "fmpRingPulse .6s ease-out .12s forwards" }} />
-                  <div className="font-display font-black text-white"
+                  <div className="font-display font-black text-ink-primary"
                     style={{ fontSize: 140, animation: "fmpCountPulse .6s cubic-bezier(.2,.8,.3,1) forwards", textShadow: "0 0 80px rgba(124,92,255,.9), 0 0 140px rgba(34,229,255,.5)" }}>
                     {reveal.n}
                   </div>
@@ -2292,37 +2292,46 @@ export default function DraftArenaPage({ onExitToLobby, account, onLogout, theme
       title={tournamentName}
       bgVariant="default"
     >
-      <DraftVisualLock>
-        <GlobalStyle />
-        {stage === 'final' && finalMatches ? (
-          <FinalMatchupsStage
-            tournamentName={tournamentName}
-            teams={finalMatches.teams}
-            matchups={finalMatches.matchups}
-            isStaff={isStaff}
-            onEnded={onExitToLobby}
-          />
-        ) : !ready ? (
-          <div className="flex items-center justify-center flex-1 text-white/40">加载中…</div>
-        ) : (
-          <DraftArena
-            tournament={tournament}
-            setTournament={setTournament}
-            onProceed={handleProceed}
-            tournamentName={tournamentName}
-            isStaff={isStaff}
-            onSelectedCaptainChange={(captain) => setSelectedCaptainId(captain?.id ?? null)}
-            initialDraftHistory={seededDraftHistory}
-            onDraftHistoryChange={setDraftHistory}
-          />
-        )}
-        {proceedError && (
-          <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer bg-panel-alt/95 backdrop-blur border border-danger/40 text-danger shadow-[0_0_24px_rgba(255,77,109,0.25)]"
-            onClick={() => setProceedError(null)}>
-            ⚠ {proceedError}（点击关闭）
-          </div>
-        )}
-      </DraftVisualLock>
+      {/* Theme Switcher: this body used to be wrapped in DraftVisualLock
+          (forcing it dark regardless of the account's theme, per DEVLOG
+          Section 3's "self-contained, not meant to be restyled" rule).
+          That exclusion has been lifted for Draft Arena specifically --
+          it now follows the theme like every other page, via the same
+          themed classes (bg-panel, text-ink-primary, and so on).
+          SpectatorPage.jsx still wraps its copy of this same body in
+          DraftVisualLock and was intentionally left alone -- out of this
+          change's scope -- so a spectator currently still sees it locked
+          dark regardless of their own theme choice. Worth flagging if
+          that split isn't what's wanted. */}
+      <GlobalStyle />
+      {stage === 'final' && finalMatches ? (
+        <FinalMatchupsStage
+          tournamentName={tournamentName}
+          teams={finalMatches.teams}
+          matchups={finalMatches.matchups}
+          isStaff={isStaff}
+          onEnded={onExitToLobby}
+        />
+      ) : !ready ? (
+        <div className="flex items-center justify-center flex-1 text-ink-muted">加载中…</div>
+      ) : (
+        <DraftArena
+          tournament={tournament}
+          setTournament={setTournament}
+          onProceed={handleProceed}
+          tournamentName={tournamentName}
+          isStaff={isStaff}
+          onSelectedCaptainChange={(captain) => setSelectedCaptainId(captain?.id ?? null)}
+          initialDraftHistory={seededDraftHistory}
+          onDraftHistoryChange={setDraftHistory}
+        />
+      )}
+      {proceedError && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer bg-panel-alt/95 backdrop-blur border border-danger/40 text-danger shadow-[0_0_24px_rgba(255,77,109,0.25)]"
+          onClick={() => setProceedError(null)}>
+          ⚠ {proceedError}（点击关闭）
+        </div>
+      )}
     </AppShell>
   );
 }

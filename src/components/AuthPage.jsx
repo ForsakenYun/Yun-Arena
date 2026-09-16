@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { login, register, uploadAvatar } from '../lib/auth.js'
 import AppBackground from './AppBackground.jsx'
+import { DARK_THEME_LOCK_STYLE } from './AppShell.jsx'
 
 /* ---------- inline icons (no external icon package needed) ---------- */
 const Icon = {
@@ -193,7 +194,10 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
   }
 
   return (
-    <div className="min-h-screen w-full text-ink-primary font-body flex items-center justify-center px-6 py-10">
+    <div
+      className="min-h-screen w-full text-ink-primary font-body flex items-center justify-center px-6 py-10"
+      style={DARK_THEME_LOCK_STYLE}
+    >
       <AppBackground />
       <div className="w-full max-w-sm">
         {/* brand mark */}
@@ -208,15 +212,15 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
         <div className="accent-frame shadow-accent-glow">
           <div className="bg-panel/90 backdrop-blur-md rounded-[calc(1rem-1px)] px-7 py-8 sm:px-8 sm:py-9">
             {/* tab switcher */}
-            <div className="relative grid grid-cols-2 bg-panel-alt border border-panel-line rounded-full p-1 mb-7">
+            <div className="relative grid grid-cols-2 bg-panel-alt border border-panel-line rounded-lg p-1 mb-7">
               <div
-                className="absolute inset-y-1 w-[calc(50%-4px)] rounded-full bg-accent-gradient shadow-accent-glow transition-transform duration-300 ease-out"
+                className="absolute inset-y-1 w-[calc(50%-4px)] rounded-md bg-accent-gradient shadow-accent-glow transition-transform duration-300 ease-out"
                 style={{ transform: mode === 'login' ? 'translateX(0%)' : 'translateX(calc(100% + 8px))' }}
               />
               <button
                 type="button"
                 onClick={() => switchMode('login')}
-                className={`relative z-10 py-2 rounded-full text-sm font-heading font-semibold tracking-wide transition ${
+                className={`relative z-10 py-2 rounded-md text-sm font-heading font-semibold tracking-wide transition ${
                   mode === 'login' ? 'text-void' : 'text-ink-muted hover:text-ink-primary'
                 }`}
               >
@@ -225,7 +229,7 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
               <button
                 type="button"
                 onClick={() => switchMode('register')}
-                className={`relative z-10 py-2 rounded-full text-sm font-heading font-semibold tracking-wide transition ${
+                className={`relative z-10 py-2 rounded-md text-sm font-heading font-semibold tracking-wide transition ${
                   mode === 'register' ? 'text-void' : 'text-ink-muted hover:text-ink-primary'
                 }`}
               >

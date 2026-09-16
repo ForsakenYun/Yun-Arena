@@ -281,12 +281,12 @@ function GenderIcon({ gender, className = 'w-4 h-4' }) {
 
 function RoleBadge({ role }) {
   if (!role) {
-    return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs text-ink-faint">—</span>
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs text-ink-faint">—</span>
   }
   const isCaptain = role === 'captain'
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
         isCaptain
           ? 'bg-gold/10 text-gold border-gold/40'
           : 'bg-panel-alt text-ink-muted border-panel-line'
@@ -304,7 +304,7 @@ function PermissionBadge({ role }) {
     user: 'bg-panel-alt text-ink-muted border-panel-line',
   }
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${styles[role] || styles.user}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${styles[role] || styles.user}`}>
       {PERMISSION_LABEL[role] || PERMISSION_LABEL.user}
     </span>
   )
@@ -352,7 +352,7 @@ function ModalShell({ title, onClose, children, wide }) {
     <div className="fixed inset-0 z-30 flex items-center justify-center px-4 py-8">
       <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onClose} />
       <div
-        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel/95 backdrop-blur-md border border-accent/20 rounded-2xl shadow-accent-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto light-glow-card accent-top-line`}
+        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel/95 backdrop-blur-md border border-accent/20 rounded-2xl shadow-accent-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto light-glow-card`}
       >
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-base font-display font-semibold tracking-wide text-ink-primary">{title}</h3>
@@ -1013,7 +1013,7 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby, theme, 
                 </thead>
                 <tbody>
                   {filteredUsers.map((u) => (
-                    <tr key={u.id} className="border-b border-panel-line/60 hover:bg-panel-alt/40 transition">
+                    <tr key={u.id} className="border-b border-panel-line/35 hover:bg-panel-alt/40 transition">
                       <td className="px-3 py-2.5">
                         <Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />
                       </td>

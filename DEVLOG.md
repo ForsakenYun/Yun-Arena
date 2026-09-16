@@ -49,23 +49,35 @@ Core decisions — do not change these without an explicit request:
   never conflate them (Section 4).
 - **Only the Developer permission role manages permissions** — an
   Admin can never promote, demote, or change anyone's permission role.
-- **Simplified Chinese interface**, dark theme with neon teal glow,
-  modern gaming-style UI, consistent across every page — except the
-  Draft Arena, which is an intentionally separate self-contained gold/
-  Cinzel-Orbitron visual system (see Section 8) that was delivered
-  pre-built and is not meant to be restyled to match the rest of the
-  app. **Exception, by explicit request:** Final Matchups' five admin
-  action buttons (定角锁定/随机生成剩余对阵/重置/解除本场对阵/结束锦标赛)
+- **Simplified Chinese interface**, gaming-style UI with a Theme
+  Switcher (dark with a neon teal glow, or a light "Cyber-Teal" mode —
+  see the account dropdown's 暗色模式/亮色模式 toggle), consistent across
+  every page **including** the Draft Arena and Spectator Page as of the
+  Theme Switcher's light-mode rollout: `bg-panel`/`text-ink-*`/
+  `border-panel-line` and friends inside `DraftArena.jsx` now follow the
+  ambient theme the same as everywhere else (`DraftVisualLock`, which
+  used to force this dark regardless of the account's saved theme, has
+  been removed from both `DraftArena.jsx` and `SpectatorPage.jsx` — see
+  Section 8). What's still **not** restyled is Draft Arena's own gold/
+  Cinzel-Orbitron *brand identity* — the Orbitron/Cinzel display fonts,
+  the neon purple/cyan glow system (`TEAL`/`TEAL_SOFT` constants and the
+  `rgba(124,92,255,...)`/`rgba(34,229,255,...)` accent glows scattered
+  through captain/teammate cards and the Final Matchups poster), and the
+  overall gold Final Matchups treatment all stay fixed regardless of
+  theme, the same as before. In short: Draft Arena's *surfaces and text*
+  now theme like the rest of the app; its *brand glow* doesn't. **Exception,
+  by explicit request:** Final Matchups' five admin action buttons
+  (定角锁定/随机生成剩余对阵/重置/解除本场对阵/结束锦标赛)
   now render through `MatchupAction`, a verbatim copy of Tournament
   Lobby's own `RailAction` (same classes: `flex items-center gap-2.5
   px-3 py-2.5 rounded-lg border text-sm font-medium`, same default/
   danger hover treatment, same `disabled:opacity-50`), paired with a
   local `MatchupIcon` stroke-icon set matching the site's icon style —
   replacing emoji and one previously hand-rolled inline-styled button.
-  This is scoped to just those five buttons — the rest of Final
-  Matchups and all of the Captain/Teammate draft screens keep the
-  gold/Cinzel system untouched. Don't read this as license to restyle
-  more of Draft Arena without being asked again.
+  This was originally scoped to just those five buttons before the
+  Theme Switcher's light-mode support broadened it — don't read *this*
+  note as license to touch Draft Arena's brand glow/fonts without being
+  asked again.
 - **Login/Registration stays a single centered card** — no side panels
   or decorative graphics.
 - **Validation is deliberately low-friction** (e.g. `1` is a valid
@@ -421,12 +433,24 @@ needs Section 9 (Spectator Page) inspected and updated in the same
 change.**
 
 Reached via 开始比赛 from the Tournament Lobby (validated, see Section
-7). `src/components/DraftArena.jsx` — its own self-contained visual
-system (Orbitron/Cinzel display fonts, dark radial background,
-teal-glow panel components for the captain/teammate stages, a separate
-gold theme for the Final Matchups poster) is intentionally **not**
-restyled to match the rest of the app's Tailwind teal theme — leave it
-alone unless a change is explicitly requested.
+7). `src/components/DraftArena.jsx` has its own visual identity
+(Orbitron/Cinzel display fonts, a neon purple/cyan glow system, a
+separate gold theme for the Final Matchups poster) that is intentionally
+**not** restyled to match the rest of the app's Tailwind accent theme —
+leave the fonts and glow colors alone unless a change is explicitly
+requested. As of the Theme Switcher's light-mode rollout, this page is
+**no longer dark-locked**, though: it used to render through
+`DraftVisualLock` (an `AppShell.jsx` export that force-pinned every
+`bg-panel`/`text-ink-*`/`border-panel-line`-style CSS variable back to
+dark, regardless of the account's saved theme), but that wrapper has
+been removed from `DraftArenaPage`'s render — the page's surfaces and
+text now follow the ambient theme exactly like Tournament Lobby/Admin
+Dashboard do, while the brand fonts/glow stay fixed. If you're touching
+styling in here, the working split is: theme-following → use the shared
+`bg-panel`/`text-ink-primary`/`text-ink-muted`/`border-panel-line`
+tokens (same as everywhere else in the app); brand-fixed → leave the
+`TEAL`/`TEAL_SOFT` constants and the purple/cyan `rgba(...)` glows as
+literal hex, not tokens.
 
 Three stages, in order: **Captain assignment → Teammate draft (snake
 order) → Final Matchups.**
@@ -833,6 +857,20 @@ all (not merely disabled), and every mutating click handler no-ops —
 but visually nothing is missing: both stages' spectator-replay paths
 (Section 8) fire the identical animations for every pick/roll as they
 happen live, not just the final state.
+
+**Theme Switcher: follows Section 8, not independent of it.** This page
+used to wrap its copy of the `DraftArena`/`FinalMatchupsStage` body in
+`DraftVisualLock` too, pinning it dark regardless of the *viewer's own*
+saved theme — a second, separate dark-lock from Draft Arena's, and
+exactly the kind of drift Section 3's "one system" rule exists to catch.
+That wrapper has been removed here as well, so a spectator now sees the
+same theme-following surfaces/text (and the same fixed brand glow/fonts)
+as the admin does on the actual Draft Arena page, just driven by the
+spectator's own account theme rather than the admin's. If Draft Arena's
+theming split (Section 8: surfaces/text follow the theme, brand glow/
+fonts don't) ever changes, this page's body renders it automatically
+since it's the literal same components — but double check anyway,
+per this section's own warning banner above.
 
 **Persistence-first, not connection-first.** This page's job is to
 render whatever is currently *saved* in Supabase — it never depends on

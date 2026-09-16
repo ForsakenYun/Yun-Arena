@@ -48,7 +48,19 @@
   --color-panel: 255 255 255;
   --color-panel-alt: 248 250 252;
   --color-panel-2: 226 232 240;
-  --color-panel-line: 203 213 225;
+  /* Slate-400 (148 163 184) as the plain "R G B" triple this token has
+     always used -- see tailwind.config.js's withOpacityValue() comment
+     above: baking a fixed alpha directly into this variable (e.g. a
+     trailing "/ 0.35") would break every existing `border-panel-line/NN`
+     Tailwind usage AND the handful of literal `rgb(var(--color-panel-line)
+     / 0.7)`-style inline styles in DraftArena.jsx, which all append their
+     own `/<alpha>` after this variable expands. Slate-400 already reads
+     as a soft, subtle line at the modifiers those call sites already use
+     (/60, /80, /40, /0.7, etc.) -- callers that want the specific 35%
+     look from a design request (e.g. table gridlines) apply it directly
+     via `border-panel-line/35` or an explicit rgba(), same as any other
+     themed color in this system. */
+  --color-panel-line: 148 163 184;
   --color-ink-primary: 15 23 42;
   --color-ink-muted: 71 85 105;
   --color-ink-faint: 148 163 184;
@@ -126,12 +138,56 @@ input:-webkit-autofill:focus {
     @apply relative bg-panel/80 backdrop-blur-sm border border-panel-line rounded-2xl shadow-card-lift;
   }
   /* Cyber-Teal light identity: every primary Lobby/Admin card is a
-     .glass-panel, so giving it the accent elevation + top line here
-     covers all of them in one place instead of touching every call
-     site. No-op in dark mode (existing shadow-card-lift is untouched). */
+     .glass-panel, so giving it the accent elevation here covers all of
+     them in one place instead of touching every call site. No-op in
+     dark mode (existing shadow-card-lift is untouched). Top edge is
+     intentionally left flat -- no accent border -- per design direction. */
   [data-theme='light'] .glass-panel {
     box-shadow: 0 4px 20px -2px rgb(var(--color-accent) / 0.12), 0 0 0 1px rgb(var(--color-accent) / 0.15);
-    border-top: 4px solid rgb(var(--color-accent)) !important;
+  }
+
+  /* DraftSequenceStrip (DraftArena.jsx): the R1/R2/R3 round labels and the
+     pick-number digits use fixed low-opacity cyan/green tints (0.3-0.45
+     alpha) tuned to sit on a dark panel. On a light panel those same
+     tints read as near-invisible -- this is a request to trade the
+     cyan/green micro-distinction for flat legibility in light mode
+     specifically, not a general re-theming, so it's scoped to
+     [data-theme='light'] only; dark mode's original pale cyan/green
+     stays untouched. !important is required here because it has to beat
+     the inline `style={{color: ...}}` set directly in JSX -- inline
+     styles otherwise always win over an external stylesheet rule, `!imp
+     ortant` or not, except this one direction (a stylesheet's `!import
+     ant` does out-rank a plain, non-important inline style). The
+     "current pick" chip's green background/border (the highlight itself)
+     is untouched -- only the digit color changes, so black-on-pale-green
+     is what actually renders there. */
+  [data-theme='light'] .seq-round-label,
+  [data-theme='light'] .seq-pick-num {
+    color: rgb(var(--color-ink-primary)) !important;
+  }
+  /* Completed picks get their own muted "done" treatment -- deliberately
+     softer than the plain ink-primary color .seq-pick-num sets above (this
+     rule needs to come after it in the stylesheet to win on `color` for
+     just this state), so a finished pick reads as visually settled/past,
+     distinct from both the green "current" pill and the black-bordered
+     "upcoming" pills below. */
+  [data-theme='light'] .seq-pick-past {
+    background: rgb(var(--color-panel-2) / 0.5) !important;
+    border-color: rgb(var(--color-panel-line)) !important;
+    color: rgb(var(--color-ink-muted)) !important;
+  }
+  /* Same strip, same reasoning: the round-divider hairline and the
+     upcoming-pick pill border are fixed pale-cyan lines that vanish on a
+     light panel. border-panel-line reads as a crisp, clearly-defined
+     line in light mode without going full black (softer than the text
+     fix above, appropriate for a structural line vs. content). Dark
+     mode's original cyan tinge is untouched -- light-mode-only, same
+     !important-over-inline-style reasoning as above. */
+  [data-theme='light'] .seq-divider {
+    background: rgba(0, 0, 0, 0.6) !important;
+  }
+  [data-theme='light'] .seq-pick-upcoming {
+    border-color: rgba(0, 0, 0, 0.6) !important;
   }
 
   /* gradient-bordered accent panel (used for hero/emphasis cards) --
@@ -148,25 +204,15 @@ input:-webkit-autofill:focus {
     border-radius: inherit;
   }
 
-  /* Cyber-Teal light identity: card elevation + accent header line.
-     Both are no-ops in dark mode by design -- dark cards already have
-     their own shadow-card-lift/shadow-accent-glow treatment and never
-     had a top accent line, so gating these behind [data-theme='light']
-     means applying the classNames below anywhere is safe in dark mode
-     (dark mode stays pixel-identical) while flat white-on-white light
-     cards get a depth cue and a gaming-style accent header. */
+  /* Cyber-Teal light identity: card elevation only -- no accent header
+     line (removed per design direction; the top edge stays flat, using
+     the same border-panel-line as the rest of the card). No-op in dark
+     mode by design -- dark cards already have their own shadow-card-
+     lift/shadow-accent-glow treatment, so applying this classNames
+     anywhere is safe in dark mode (dark mode stays pixel-identical)
+     while flat white-on-white light cards get a depth cue. */
   [data-theme='light'] .light-glow-card {
     box-shadow: 0 4px 20px -2px rgb(var(--color-accent) / 0.15), 0 0 0 1px rgb(var(--color-accent) / 0.2);
-  }
-  [data-theme='light'] .accent-top-line {
-    /* !important is needed here specifically: this class is meant to be
-       combined with Tailwind's own `border`/`border-{color}` utilities
-       (e.g. ConfirmDialog's `border ${styles.panel}`), which live in
-       Tailwind's utilities layer and load after this components-layer
-       rule -- without it, `border-width:1px`/`border-color:...` from
-       those utilities would silently win on the top edge and the accent
-       line would never show. */
-    border-top: 4px solid rgb(var(--color-accent)) !important;
   }
 
   /* clipped-corner esports card shape */
