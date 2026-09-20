@@ -1,0 +1,315 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- Theme Switcher: surface/text tokens ----------
+   Dark is the baseline (`:root`) -- these are just names for the colors
+   this app always used, stored as "R G B" triples (not hex/rgba) because
+   tailwind.config.js's withOpacityValue() plugs them into
+   `rgb(var(--x) / <alpha>)`, which is what makes opacity-modified classes
+   like `bg-panel-alt/60` or `border-panel-line/40` work against a
+   variable. `[data-theme="light"]` overrides them; App.jsx sets that
+   attribute on <html> from the account's saved theme (Theme Switcher
+   Step 1). Every existing `bg-panel`, `text-ink-muted`, etc. class
+   anywhere in the app follows automatically, opacity modifier or not.
+
+   Draft Arena / Final Matchups: surfaces and text theme like everywhere
+   else in the app now -- `DraftVisualLock` (which used to force this
+   dark regardless of the account's saved theme) has been removed from
+   both DraftArenaPage and SpectatorPage.jsx (still exported from
+   AppShell.jsx, just unused; see DEVLOG Section 8). What stays
+   deliberately fixed is the page's *brand identity* -- Orbitron/Cinzel
+   fonts and the purple/cyan glow system -- as literal hex, not these
+   variables; see the DraftArena.jsx/DEVLOG comments at each call site
+   for the specific, requested exceptions (Final Matchups' admin
+   buttons, the 队长 badge, the spotlight/BroadcastFrame panels) where
+   part of that fixed system was intentionally made theme-following
+   instead.
+
+   accent/accent-hover/accent-soft/accent2 joined this same system for
+   the "Cyber-Teal" light identity: dark's values below are exactly the
+   app's existing brand purple (#7C5CFF) / cyan (#22E5FF), so every
+   bg-accent-gradient, shadow-accent-glow, text-accent2, btn-primary,
+   badge, focus ring, etc. across the whole app (tailwind.config.js plus
+   the shared classes further down this file) is completely unchanged in
+   dark mode -- only the light override actually differs. */
+:root {
+  --color-void: 6 7 15;
+  --color-panel: 14 16 32;
+  --color-panel-alt: 22 26 51;
+  --color-panel-2: 27 32 64;
+  --color-panel-line: 43 49 89;
+  --color-ink-primary: 244 242 255;
+  --color-ink-muted: 146 141 190;
+  --color-ink-faint: 76 74 121;
+  --color-accent: 124 92 255;
+  --color-accent-hover: 167 139 250;
+  --color-accent-soft: 46 38 92;
+  --color-accent2: 34 229 255;
+  --bg-vignette: rgba(6, 7, 15, 0.55);
+  /* Button/CTA gradient, by explicit request: bg-accent-gradient
+     (tailwind.config.js) used to read straight off --color-accent/
+     --color-accent2 above, so it went violet->cyan in dark mode but a
+     flat, single-stop teal in light mode (both variables resolve to the
+     same Cyber-Teal teal there -- see the [data-theme='light'] block
+     below). --color-accent/--color-accent2 themselves are left alone
+     (still theme-following, still teal in light mode) since other
+     things key off them independently -- text-accent2, border-accent/40,
+     etc. -- and only the gradient fill was reported broken. These two
+     variables are declared *only* here at :root, deliberately not
+     re-declared under [data-theme='light'], so bg-accent-gradient (and
+     therefore every button/toggle/badge built on it: .btn-primary, the
+     AuthPage login/register toggle, Admin Dashboard's role chips, etc.)
+     renders the same violet->cyan gradient in both themes now. */
+  --color-accent-grad-from: 124 92 255;
+  --color-accent-grad-to: 34 229 255;
+}
+
+[data-theme='light'] {
+  --color-void: 241 245 249;
+  --color-panel: 255 255 255;
+  --color-panel-alt: 248 250 252;
+  --color-panel-2: 226 232 240;
+  /* Slate-400 (148 163 184) as the plain "R G B" triple this token has
+     always used -- see tailwind.config.js's withOpacityValue() comment
+     above: baking a fixed alpha directly into this variable (e.g. a
+     trailing "/ 0.35") would break every existing `border-panel-line/NN`
+     Tailwind usage AND the handful of literal `rgb(var(--color-panel-line)
+     / 0.7)`-style inline styles in DraftArena.jsx, which all append their
+     own `/<alpha>` after this variable expands. Slate-400 already reads
+     as a soft, subtle line at the modifiers those call sites already use
+     (/60, /80, /40, /0.7, etc.) -- callers that want the specific 35%
+     look from a design request (e.g. table gridlines) apply it directly
+     via `border-panel-line/35` or an explicit rgba(), same as any other
+     themed color in this system. */
+  --color-panel-line: 148 163 184;
+  --color-ink-primary: 15 23 42;
+  --color-ink-muted: 71 85 105;
+  --color-ink-faint: 148 163 184;
+  /* Cyber-Teal light identity */
+  --color-accent: 13 148 136;
+  --color-accent-hover: 15 118 110;
+  --color-accent-soft: 204 251 241;
+  --color-accent2: 13 148 136;
+  --bg-vignette: rgba(148, 163, 184, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: rgb(var(--color-void));
+  color: rgb(var(--color-ink-primary));
+  font-family: 'Noto Sans SC', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+::selection {
+  background: rgba(124, 92, 255, 0.35);
+  color: #ffffff;
+}
+
+/* thin gradient scrollbar to stay on-brand */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgb(var(--color-panel-alt));
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #7c5cff, #22e5ff);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #8f72ff, #4dedff);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: rgb(var(--color-ink-primary));
+  -webkit-box-shadow: 0 0 0px 1000px rgb(var(--color-panel-alt)) inset;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- shared visual-identity utility classes ---------- */
+@layer components {
+  /* frosted card with a soft gradient hairline border */
+  .glass-panel {
+    @apply relative bg-panel/80 backdrop-blur-sm border border-panel-line rounded-2xl shadow-card-lift;
+  }
+  /* Cyber-Teal light identity: every primary Lobby/Admin card is a
+     .glass-panel, so giving it the accent elevation here covers all of
+     them in one place instead of touching every call site. No-op in
+     dark mode (existing shadow-card-lift is untouched). Top edge is
+     intentionally left flat -- no accent border -- per design direction. */
+  [data-theme='light'] .glass-panel {
+    box-shadow: 0 4px 20px -2px rgb(var(--color-accent) / 0.12), 0 0 0 1px rgb(var(--color-accent) / 0.15);
+  }
+
+  /* DraftSequenceStrip (DraftArena.jsx): the R1/R2/R3 round labels and the
+     pick-number digits use fixed low-opacity cyan/green tints (0.3-0.45
+     alpha) tuned to sit on a dark panel. On a light panel those same
+     tints read as near-invisible -- this is a request to trade the
+     cyan/green micro-distinction for flat legibility in light mode
+     specifically, not a general re-theming, so it's scoped to
+     [data-theme='light'] only; dark mode's original pale cyan/green
+     stays untouched. !important is required here because it has to beat
+     the inline `style={{color: ...}}` set directly in JSX -- inline
+     styles otherwise always win over an external stylesheet rule, `!imp
+     ortant` or not, except this one direction (a stylesheet's `!import
+     ant` does out-rank a plain, non-important inline style). The
+     "current pick" chip's green background/border (the highlight itself)
+     is untouched -- only the digit color changes, so black-on-pale-green
+     is what actually renders there. */
+  [data-theme='light'] .seq-round-label,
+  [data-theme='light'] .seq-pick-num {
+    color: rgb(var(--color-ink-primary)) !important;
+  }
+  /* Completed picks get their own muted "done" treatment -- deliberately
+     softer than the plain ink-primary color .seq-pick-num sets above (this
+     rule needs to come after it in the stylesheet to win on `color` for
+     just this state), so a finished pick reads as visually settled/past,
+     distinct from both the green "current" pill and the upcoming pills
+     below. By explicit request (past/upcoming looked "almost identical"):
+     background is --color-panel-2 (slate-200 in light mode) at a fairly
+     opaque 0.6 -- a clearly grayed-out fill, not just a faint tint;
+     text is --color-ink-faint (slate-400 in light mode) rather than the
+     softer ink-muted used elsewhere, so the digit itself visibly fades;
+     border stays on the same unified panel-line/0.35 every other divider
+     in the app uses. Together this reads as "receded into the
+     background" at a glance, distinct from upcoming's crisp white pill
+     below. */
+  [data-theme='light'] .seq-pick-past {
+    background: rgb(var(--color-panel-2) / 0.6) !important;
+    border-color: rgb(var(--color-panel-line) / 0.35) !important;
+    color: rgb(var(--color-ink-faint)) !important;
+  }
+  /* Same strip, same reasoning: the round-divider hairline and the
+     upcoming-pick pill border are fixed pale-cyan lines that vanish on a
+     light panel. Both now use the unified panel-line/0.35 token+opacity
+     (previously a flat rgba(0,0,0,.6) black, heavier/starker than the
+     rest of the app's divider system). Dark mode's original cyan tinge
+     is untouched -- light-mode-only, same !important-over-inline-style
+     reasoning as above. */
+  [data-theme='light'] .seq-divider {
+    background: rgb(var(--color-panel-line) / 0.35) !important;
+  }
+  /* By explicit request, paired with .seq-pick-past above: upcoming
+     picks get an explicit crisp white fill (--color-panel, which is
+     literal white in light mode) instead of the inline near-transparent
+     cyan wash (rgba(34,229,255,.03) -- effectively invisible on a light
+     panel, and too close to .seq-pick-past's fill once that got a real
+     gray tint). Text stays ink-primary via .seq-pick-num above --
+     already correct/solid, not touched here. Together with the border
+     below, upcoming pills now read as a clean, distinct "ready" surface
+     rather than blending into the past/current states either side of
+     them. */
+  [data-theme='light'] .seq-pick-upcoming {
+    background: rgb(var(--color-panel)) !important;
+    border-color: rgb(var(--color-panel-line) / 0.35) !important;
+  }
+  /* Current pick: already a vibrant, literal green fill/border/glow in
+     both themes (rgba(74,222,128,...)), so it was never the contrast
+     problem -- the ask was to keep it vibrant, not redo it. This just
+     swaps the digit color for a darker emerald in light mode
+     specifically (was the same #4ade80 as dark mode's bright-green-on-
+     dark-panel look, which reads a little washed-out as green-on-pale-
+     green on a light panel) so the current pick's number itself stays
+     crisp, per the requested emerald-700-on-emerald-100 pairing. */
+  [data-theme='light'] .seq-pick-current {
+    color: #047857 !important;
+  }
+
+  /* Final Matchups' BroadcastFrame (DraftArena.jsx): the four corner
+     brackets keep their per-caller literal cyan/purple `glowColor` (part
+     of Draft Arena's fixed brand identity, same as TEAL/the purple-cyan
+     glows -- see DEVLOG Section 8) in both themes, on request. This only
+     softens their opacity a touch in light mode so full-strength neon
+     corners don't read as harsh sitting on a light panel -- dark mode is
+     untouched (opacity defaults to 1, no rule applies there). */
+  [data-theme='light'] .fmp-corner {
+    opacity: 0.65;
+  }
+
+  /* gradient-bordered accent panel (used for hero/emphasis cards) --
+     fully driven by the accent/accent2/panel-line variables above now,
+     so it renders as the app's brand purple->cyan border in dark and the
+     Cyber-Teal border in light automatically. */
+  .accent-frame {
+    position: relative;
+    border-radius: 1rem;
+    background: linear-gradient(155deg, rgb(var(--color-accent) / 0.5), rgb(var(--color-accent2) / 0.12) 40%, rgb(var(--color-panel-line) / 0.6) 100%);
+    padding: 1px;
+  }
+  .accent-frame > * {
+    border-radius: inherit;
+  }
+
+  /* Cyber-Teal light identity: card elevation only -- no accent header
+     line (removed per design direction; the top edge stays flat, using
+     the same border-panel-line as the rest of the card). No-op in dark
+     mode by design -- dark cards already have their own shadow-card-
+     lift/shadow-accent-glow treatment, so applying this classNames
+     anywhere is safe in dark mode (dark mode stays pixel-identical)
+     while flat white-on-white light cards get a depth cue. */
+  [data-theme='light'] .light-glow-card {
+    box-shadow: 0 4px 20px -2px rgb(var(--color-accent) / 0.15), 0 0 0 1px rgb(var(--color-accent) / 0.2);
+  }
+
+  /* clipped-corner esports card shape */
+  .clip-corner {
+    clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  }
+  .clip-corner-sm {
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  }
+
+  /* primary CTA -- gradient fill, lifts on hover */
+  .btn-primary {
+    @apply relative inline-flex items-center justify-center gap-2 font-heading font-bold tracking-wide text-void
+      bg-accent-gradient rounded-lg transition-all duration-200 shadow-accent-glow
+      hover:shadow-accent-glow-lg hover:brightness-110 active:scale-[0.98]
+      disabled:opacity-50 disabled:pointer-events-none disabled:shadow-none;
+  }
+
+  /* ghost / outline button using the accent color */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 font-heading font-semibold tracking-wide
+      text-accent2 border border-accent/40 rounded-lg transition-all duration-200
+      hover:bg-accent/10 hover:border-accent hover:shadow-accent-glow
+      disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 font-heading font-semibold tracking-wide
+      text-danger border border-danger/40 rounded-lg transition-all duration-200
+      hover:bg-danger/10 hover:border-danger disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  /* thin uppercase eyebrow label */
+  .eyebrow {
+    @apply font-heading text-[11px] font-semibold uppercase tracking-[0.28em] text-accent2/80;
+  }
+}

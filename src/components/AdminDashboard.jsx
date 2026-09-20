@@ -1,0 +1,1264 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import ConfirmDialog from './ConfirmDialog.jsx'
+import AppShell from './AppShell.jsx'
+import { TileRow } from './ui.jsx'
+import { uploadAvatar } from '../lib/auth.js'
+import {
+  fetchUsers,
+  subscribeUsers,
+  editUser,
+  deleteUser,
+  promoteUser,
+  demoteUser,
+  fetchInviteCodes,
+  subscribeInviteEvents,
+  createInviteCode,
+  deleteInviteCode,
+} from '../lib/adminApi.js'
+
+/* ---------- inline icons (kept consistent with AuthPage.jsx) ---------- */
+const Icon = {
+  user: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M4.5 20c1.2-3.8 4.2-5.8 7.5-5.8s6.3 2 7.5 5.8" strokeLinecap="round" />
+    </svg>
+  ),
+  lock: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <rect x="4.5" y="10.5" width="15" height="9.5" rx="1.6" />
+      <path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" strokeLinecap="round" />
+    </svg>
+  ),
+  eye: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="2.8" />
+    </svg>
+  ),
+  eyeOff: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M3 3l18 18" strokeLinecap="round" />
+      <path d="M10.6 5.7A10.6 10.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a15.8 15.8 0 0 1-3.4 4.2M6.6 6.8C4 8.5 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.2 0 2.3-.2 3.3-.6" strokeLinecap="round" />
+      <path d="M9.9 10a2.8 2.8 0 0 0 4 4" strokeLinecap="round" />
+    </svg>
+  ),
+  tag: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M11 4.5H6A1.5 1.5 0 0 0 4.5 6v5l8.6 8.6a1.5 1.5 0 0 0 2.12 0l4.38-4.38a1.5 1.5 0 0 0 0-2.12L11 4.5Z" strokeLinejoin="round" />
+      <circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  ),
+  ticket: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M3.5 9a2 2 0 0 0 0 4v2.5a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5V13a2 2 0 0 1 0-4V7.5A1.5 1.5 0 0 0 19 6H5a1.5 1.5 0 0 0-1.5 1.5V9Z" strokeLinejoin="round" />
+      <path d="M9.5 6.5v11" strokeDasharray="2.2 2.2" strokeLinecap="round" />
+    </svg>
+  ),
+  search: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="M20 20l-4.6-4.6" strokeLinecap="round" />
+    </svg>
+  ),
+  edit: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M4 20l.9-3.7L16.6 4.6a1.6 1.6 0 0 1 2.3 0l.5.5a1.6 1.6 0 0 1 0 2.3L7.7 19.1 4 20Z" strokeLinejoin="round" strokeLinecap="round" />
+      <path d="M14.8 6.4l2.8 2.8" strokeLinecap="round" />
+    </svg>
+  ),
+  trash: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M5 7h14M9.5 7V5.2A1.2 1.2 0 0 1 10.7 4h2.6a1.2 1.2 0 0 1 1.2 1.2V7M7.5 7l.7 11.2A1.6 1.6 0 0 0 9.8 19.7h4.4a1.6 1.6 0 0 0 1.6-1.5L16.5 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  copy: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <rect x="9" y="9" width="11" height="11" rx="1.6" />
+      <path d="M15 9V5.6A1.6 1.6 0 0 0 13.4 4H5.6A1.6 1.6 0 0 0 4 5.6v7.8A1.6 1.6 0 0 0 5.6 15H9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  plus: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+    </svg>
+  ),
+  x: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M5 5l14 14M19 5L5 19" strokeLinecap="round" />
+    </svg>
+  ),
+  shield: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M12 3.5l7 2.6v5.4c0 4.3-2.9 7.9-7 9-4.1-1.1-7-4.7-7-9V6.1l7-2.6Z" strokeLinejoin="round" />
+      <path d="M9 12l2.2 2.2L15.5 9.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  alert: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M12 4.2l9 15.6H3l9-15.6Z" strokeLinejoin="round" />
+      <path d="M12 10v3.6" strokeLinecap="round" />
+      <circle cx="12" cy="16.4" r="0.15" fill="currentColor" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
+  logout: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M9.5 20H6a1.5 1.5 0 0 1-1.5-1.5v-13A1.5 1.5 0 0 1 6 4h3.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M15.5 16l4-4-4-4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M19.2 12H9.8" strokeLinecap="round" />
+    </svg>
+  ),
+  promote: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M12 19V6" strokeLinecap="round" />
+      <path d="M6.5 11.5L12 6l5.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  demote: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M12 5v13" strokeLinecap="round" />
+      <path d="M6.5 12.5L12 18l5.5-5.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  flag: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M6 3.5v17" strokeLinecap="round" />
+      <path d="M6 4.5c2-1 4-1 6 0s4 1 6 0v9c-2 1-4 1-6 0s-4-1-6 0v-9Z" strokeLinejoin="round" />
+    </svg>
+  ),
+  camera: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+      <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1-1.8h7l1 1.8h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5v-9Z" strokeLinejoin="round" />
+      <circle cx="12" cy="13" r="3.2" />
+    </svg>
+  ),
+}
+
+const ROLE_LABEL = { captain: '队长', player: '队员' }
+const PERMISSION_LABEL = { developer: '开发者', admin: '管理员', user: '普通用户' }
+
+// Excel-style column sorting (排序) -- priority maps for the three
+// columns that aren't plain alphabetical/numeric. Unset/null always ranks
+// first (0) in all three: an empty 性别/角色 reads as "hasn't been set
+// yet", which belongs before the values that have been, not after or
+// mixed in among them. 身份 has no unset state (accounts.permission_role
+// is `not null default 'user'`), so it starts at developer instead.
+const GENDER_SORT_PRIORITY = { male: 1, female: 2 }
+const TOURNAMENT_ROLE_SORT_PRIORITY = { captain: 1, player: 2 }
+const PERMISSION_SORT_PRIORITY = { developer: 0, admin: 1, user: 2 }
+
+// Cycles a column through ASC -> DESC -> Default (unsorted) on each
+// click, three-state like Excel's own column sort rather than a plain
+// two-state toggle -- clicking a *different* column always starts that
+// column fresh at ASC regardless of what state the previous column was
+// left in.
+function nextSortConfig(current, key) {
+  if (current.key !== key) return { key, direction: 'asc' }
+  if (current.direction === 'asc') return { key, direction: 'desc' }
+  return { key: null, direction: 'asc' }
+}
+
+// `↑`/`↓` next to the active column's label; renders nothing for every
+// other column (including columns with no sort wired up at all, since
+// they never pass a truthy `active`).
+function SortIndicator({ active, direction }) {
+  if (!active) return null
+  return <span className="text-accent2">{direction === 'asc' ? '↑' : '↓'}</span>
+}
+
+// Wraps a `<th>`'s label in a clickable button that requests a sort on
+// `sortKey`, with the arrow indicator built in. Plain `<th>` (no button)
+// stays for 头像/操作, which this app has no sensible sort for -- a photo
+// and a set of action buttons aren't things "ascending" or "descending"
+// means anything for.
+function SortableTh({ label, sortKey, sortConfig, onSort, className = '', align = 'left' }) {
+  return (
+    <th className={`px-3 py-2.5 font-medium ${className}`}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 hover:text-ink-primary transition ${
+          align === 'right' ? 'flex-row-reverse' : ''
+        }`}
+      >
+        {label}
+        <SortIndicator active={sortConfig.key === sortKey} direction={sortConfig.direction} />
+      </button>
+    </th>
+  )
+}
+
+function formatExpiry(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function isExpired(iso) {
+  if (!iso) return false
+  return new Date(iso).getTime() < Date.now()
+}
+
+/* ---------- shared bits ---------- */
+function Field({ icon, ...props }) {
+  const IconCmp = Icon[icon]
+  return (
+    <div className="relative">
+      {IconCmp && <IconCmp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />}
+      <input
+        {...props}
+        className={`w-full bg-panel-2/60 border border-panel-line rounded-lg ${IconCmp ? 'pl-10' : 'pl-3'} pr-3 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-2 focus:shadow-accent-glow`}
+      />
+    </div>
+  )
+}
+
+function PasswordField({ icon, visible, onToggle, ...props }) {
+  const IconCmp = Icon[icon]
+  return (
+    <div className="relative">
+      <IconCmp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />
+      <input
+        {...props}
+        type={visible ? 'text' : 'password'}
+        className="w-full bg-panel-2/60 border border-panel-line rounded-lg pl-10 pr-10 py-2.5 text-sm text-ink-primary placeholder-ink-faint outline-none transition focus:border-accent2/60 focus:bg-panel-2 focus:shadow-accent-glow"
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        tabIndex={-1}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-accent2 transition"
+        aria-label={visible ? '隐藏密码' : '显示密码'}
+      >
+        {visible ? <Icon.eyeOff className="w-4 h-4" /> : <Icon.eye className="w-4 h-4" />}
+      </button>
+    </div>
+  )
+}
+
+function RoleToggle({ value, onChange }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {[
+        { value: 'captain', label: '队长' },
+        { value: 'player', label: '队员' },
+      ].map((opt) => (
+        <label
+          key={opt.value}
+          className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
+            value === opt.value
+              ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
+              : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
+          }`}
+        >
+          <input
+            type="radio"
+            name="edit-role"
+            value={opt.value}
+            checked={value === opt.value}
+            onChange={() => onChange(opt.value)}
+            className="sr-only"
+          />
+          {opt.label}
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function GenderToggle({ value, onChange }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {[
+        { value: 'male', label: '男生' },
+        { value: 'female', label: '女生' },
+      ].map((opt) => (
+        <label
+          key={opt.value}
+          className={`flex items-center justify-center py-2.5 rounded-lg border text-sm cursor-pointer select-none transition ${
+            value === opt.value
+              ? 'bg-accent/10 border-accent text-accent shadow-accent-glow'
+              : 'bg-panel-alt border-panel-line text-ink-muted hover:text-ink-primary'
+          }`}
+        >
+          <input
+            type="radio"
+            name="edit-gender"
+            value={opt.value}
+            checked={value === opt.value}
+            onChange={() => onChange(opt.value)}
+            className="sr-only"
+            required
+          />
+          {opt.label}
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function Avatar({ src, alt, size = 'w-8 h-8' }) {
+  return (
+    <div className={`${size} rounded-md bg-panel-alt border border-panel-line overflow-hidden flex items-center justify-center shrink-0`}>
+      {src ? (
+        <img src={src} alt={alt} className="w-full h-full object-cover" />
+      ) : (
+        <Icon.user className="w-4 h-4 text-ink-muted" />
+      )}
+    </div>
+  )
+}
+
+function GenderIcon({ gender, className = 'w-4 h-4' }) {
+  if (gender === 'male') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className={`${className} text-sky-400`} aria-label="男生">
+        <circle cx="10" cy="14" r="6" />
+        <path d="M14.3 9.7L21 3M21 3h-5.5M21 3v5.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (gender === 'female') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className={`${className} text-pink-400`} aria-label="女生">
+        <circle cx="12" cy="9" r="6.5" />
+        <path d="M12 15.5V22M8.5 19h7" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  return <span className="text-ink-faint text-xs">—</span>
+}
+
+function RoleBadge({ role }) {
+  if (!role) {
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs text-ink-faint">—</span>
+  }
+  const isCaptain = role === 'captain'
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
+        isCaptain
+          ? 'bg-transparent border-[#00A2E8] text-[#00A2E8]'
+          : 'bg-panel-alt text-ink-muted border-panel-line'
+      }`}
+    >
+      {ROLE_LABEL[role]}
+    </span>
+  )
+}
+
+function PermissionBadge({ role }) {
+  const styles = {
+    developer: 'bg-accent-gradient text-void border-transparent shadow-accent-glow font-bold',
+    admin: 'bg-accent2/10 text-accent2 border-accent2/40',
+    user: 'bg-panel-alt text-ink-muted border-panel-line',
+  }
+  return (
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${styles[role] || styles.user}`}>
+      {PERMISSION_LABEL[role] || PERMISSION_LABEL.user}
+    </span>
+  )
+}
+
+function StatChip({ label, value }) {
+  return (
+    <div className="inline-flex items-center gap-2 bg-panel-alt border border-panel-line rounded-lg px-3.5 py-2 shrink-0">
+      <span className="text-sm font-display font-bold text-accent2 tabular-nums leading-none">{value}</span>
+      <span className="text-[11px] text-ink-muted leading-none">{label}</span>
+    </div>
+  )
+}
+
+function RailStat({ icon, label, value }) {
+  const IconCmp = Icon[icon]
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-lg bg-panel-alt/60 border border-panel-line py-2.5">
+      <IconCmp className="w-3.5 h-3.5 text-accent2" />
+      <span className="text-sm font-display font-bold text-ink-primary leading-none tabular-nums">{value}</span>
+      <span className="text-[9px] text-ink-muted leading-none">{label}</span>
+    </div>
+  )
+}
+
+function IconAction({ icon, title, onClick, tone = 'default' }) {
+  const IconCmp = Icon[icon]
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`w-8 h-8 flex items-center justify-center rounded-lg border border-panel-line transition ${
+        tone === 'danger' ? 'text-ink-muted hover:text-danger hover:border-danger/40' : 'text-ink-muted hover:text-accent2 hover:border-accent2/40'
+      }`}
+    >
+      <IconCmp className="w-3.5 h-3.5" />
+    </button>
+  )
+}
+
+/* ---------- modal shell ---------- */
+function ModalShell({ title, onClose, children, wide }) {
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center px-4 py-8">
+      <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className={`relative w-full ${wide ? 'max-w-lg' : 'max-w-sm'} bg-panel/95 backdrop-blur-md border border-accent/20 rounded-2xl shadow-accent-glow px-6 py-6 sm:px-7 sm:py-7 max-h-[88vh] overflow-y-auto light-glow-card`}
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-display font-semibold tracking-wide text-ink-primary">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-ink-muted hover:text-accent2 transition"
+            aria-label="关闭"
+          >
+            <Icon.x className="w-4.5 h-4.5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- edit user modal ---------- */
+function EditUserModal({ user, onClose, onSave, onError, saving }) {
+  const [form, setForm] = useState({
+    username: user.username,
+    displayName: user.display_name,
+    password: '',
+    role: user.tournament_role,
+    gender: user.gender,
+  })
+  const [showPw, setShowPw] = useState(false)
+  const [avatarPreview, setAvatarPreview] = useState(user.avatar_url)
+  const [avatarFile, setAvatarFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+
+  function handleAvatarChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarFile(file)
+    setAvatarPreview(URL.createObjectURL(file))
+  }
+
+  async function submit(e) {
+    e.preventDefault()
+    if (uploading || saving) return
+    try {
+      let avatarUrl = null // null = leave the existing avatar unchanged
+      if (avatarFile) {
+        setUploading(true)
+        avatarUrl = await uploadAvatar(avatarFile)
+      }
+      onSave({
+        id: user.id,
+        username: form.username,
+        displayName: form.displayName,
+        password: form.password,
+        tournamentRole: form.role,
+        gender: form.gender,
+        avatarUrl,
+      })
+    } catch (err) {
+      onError?.(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <ModalShell title="编辑用户" onClose={onClose} wide>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="flex flex-col items-center gap-2 pb-1">
+          <label className="relative cursor-pointer group">
+            <div className="w-20 h-20 rounded-xl bg-panel-alt border border-panel-line overflow-hidden flex items-center justify-center transition group-hover:border-accent2/60 group-hover:shadow-accent-glow">
+              {avatarPreview ? (
+                <img src={avatarPreview} alt="头像预览" className="w-full h-full object-cover" />
+              ) : (
+                <Icon.user className="w-8 h-8 text-ink-muted" />
+              )}
+            </div>
+            <span className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-accent-gradient flex items-center justify-center border-2 border-panel shadow-accent-glow">
+              <Icon.camera className="w-3 h-3 text-void" />
+            </span>
+            <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+          </label>
+          <span className="text-[11px] text-ink-faint">点击上传或更换头像</span>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">账号</label>
+          <Field
+            icon="user"
+            type="text"
+            maxLength={20}
+            pattern="[A-Za-z0-9]+"
+            title="仅支持字母和数字，不含空格"
+            value={form.username}
+            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">昵称</label>
+          <Field
+            icon="tag"
+            type="text"
+            maxLength={20}
+            pattern="[A-Za-z0-9\u4e00-\u9fa5 ]+"
+            title="支持中文、英文、数字和空格"
+            value={form.displayName}
+            onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">密码</label>
+          <PasswordField
+            icon="lock"
+            visible={showPw}
+            onToggle={() => setShowPw((v) => !v)}
+            placeholder="留空则不修改密码"
+            maxLength={20}
+            pattern="[A-Za-z0-9]*"
+            title="仅支持字母和数字，不含空格"
+            value={form.password}
+            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">角色</label>
+          <RoleToggle value={form.role} onChange={(role) => setForm((f) => ({ ...f, role }))} />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">性别</label>
+          <GenderToggle value={form.gender} onChange={(gender) => setForm((f) => ({ ...f, gender }))} />
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted hover:text-ink-primary hover:border-ink-muted transition"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            disabled={uploading || saving}
+            className="btn-primary flex-1 text-sm py-2.5"
+          >
+            {uploading ? '上传头像中…' : saving ? '保存中…' : '保存修改'}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  )
+}
+
+/* ---------- delete confirm modal (generic) ---------- */
+function ConfirmDeleteModal({ title, description, onCancel, onConfirm, confirming }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-8">
+      <div className="absolute inset-0 bg-void/80 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm bg-panel/95 backdrop-blur-md border border-danger/25 rounded-2xl px-6 py-6 shadow-[0_0_28px_rgba(255,77,109,0.18)]">
+        <div className="flex items-start gap-3 mb-5">
+          <span className="w-9 h-9 rounded-full bg-danger/10 border border-danger/30 flex items-center justify-center shrink-0">
+            <Icon.alert className="w-4.5 h-4.5 text-danger" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-ink-primary mb-1">{title}</h3>
+            <p className="text-xs text-ink-muted leading-relaxed">{description}</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted hover:text-ink-primary hover:border-ink-muted transition"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirming}
+            className="flex-1 bg-gradient-to-r from-danger to-hot text-void font-heading font-semibold tracking-wide text-sm py-2.5 rounded-lg transition shadow-hot-glow hover:brightness-110 active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
+          >
+            {confirming ? '处理中…' : '确认删除'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------- create invite code modal ---------- */
+const EXPIRY_OPTIONS = [
+  { value: 'never', label: '永不过期' },
+  { value: '1d', label: '1 天后' },
+  { value: '2d', label: '2 天后' },
+  { value: '3d', label: '3 天后' },
+  { value: 'custom', label: '自定义' },
+]
+
+function CreateInviteModal({ onClose, onCreate, creating }) {
+  const [maxUses, setMaxUses] = useState(1)
+  const [expiryMode, setExpiryMode] = useState('never')
+  const [customExpiry, setCustomExpiry] = useState('')
+
+  function computeExpiresAt() {
+    if (expiryMode === 'never') return null
+    if (expiryMode === 'custom') return customExpiry ? new Date(customExpiry).toISOString() : null
+    const days = { '1d': 1, '2d': 2, '3d': 3 }[expiryMode]
+    const d = new Date()
+    d.setDate(d.getDate() + days)
+    return d.toISOString()
+  }
+
+  function submit(e) {
+    e.preventDefault()
+    const uses = Math.max(1, Number(maxUses) || 1)
+    onCreate({ maxUses: uses, expiresAt: computeExpiresAt() })
+  }
+
+  return (
+    <ModalShell title="生成邀请码" onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">最大使用次数</label>
+          <Field
+            type="number"
+            min={1}
+            step={1}
+            value={maxUses}
+            onChange={(e) => setMaxUses(e.target.value)}
+            required
+          />
+          <p className="text-[11px] text-ink-faint">默认值为 1，可修改为任意正整数</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-xs text-ink-muted">过期时间（可选）</label>
+          <div className="grid grid-cols-3 gap-2">
+            {EXPIRY_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className={`flex items-center justify-center text-center py-2 rounded-lg border text-xs cursor-pointer select-none transition ${
+                  expiryMode === opt.value
+                    ? 'bg-accent-gradient border-transparent text-void shadow-accent-glow font-semibold'
+                    : 'bg-panel-alt/70 border-panel-line text-ink-muted hover:text-ink-primary hover:border-accent2/40'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="expiry-mode"
+                  value={opt.value}
+                  checked={expiryMode === opt.value}
+                  onChange={() => setExpiryMode(opt.value)}
+                  className="sr-only"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+          {expiryMode === 'custom' && (
+            <Field
+              type="datetime-local"
+              value={customExpiry}
+              onChange={(e) => setCustomExpiry(e.target.value)}
+              required
+            />
+          )}
+          <p className="text-[11px] text-ink-faint">默认永不过期，可选择固定天数或自定义到期时间</p>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg border border-panel-line text-sm text-ink-muted hover:text-ink-primary hover:border-ink-muted transition"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            disabled={creating}
+            className="btn-primary flex-1 text-sm py-2.5"
+          >
+            {creating ? '生成中…' : '生成邀请码'}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  )
+}
+
+function InviteCodeCell({ code, revealed, onReveal }) {
+  const mask = code.replace(/[^-]/g, '•')
+  return (
+    <div className="inline-flex items-center gap-2">
+      <span className="inline-flex items-center gap-2 font-mono tracking-wider text-accent2">
+        <Icon.ticket className="w-3.5 h-3.5" />
+        {revealed ? code : mask}
+      </span>
+      {!revealed && (
+        <button
+          type="button"
+          onClick={onReveal}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-panel-line text-[11px] text-ink-muted hover:text-accent2 hover:border-accent2/40 transition"
+        >
+          <Icon.eye className="w-3 h-3" />
+          显示
+        </button>
+      )}
+    </div>
+  )
+}
+
+/* ---------- dashboard tabs ---------- */
+// Config-driven tab list. To add a future tab (Tournament Management,
+// Draft Settings, System Settings, Statistics, ...), add an entry here
+// with a unique id/label/icon and render its section content in
+// AdminDashboard below, guarded by `activeTab === '<id>'`. No changes to
+// TabNav or the page layout are needed.
+const DASHBOARD_TABS = [
+  { id: 'users', label: '已注册用户', icon: 'user' },
+  { id: 'invites', label: '邀请码管理', icon: 'ticket' },
+]
+
+function TabNav({ tabs, activeTab, onChange }) {
+  return (
+    <div className="flex gap-1 overflow-x-auto bg-panel/80 backdrop-blur-sm border border-panel-line rounded-xl p-1.5">
+      {tabs.map((tab) => {
+        const TabIcon = Icon[tab.icon]
+        const isActive = activeTab === tab.id
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={`inline-flex items-center gap-2 shrink-0 px-4 py-2.5 rounded-lg text-sm font-heading font-semibold tracking-wide transition ${
+              isActive
+                ? 'bg-accent-gradient text-void shadow-accent-glow'
+                : 'text-ink-muted border border-transparent hover:text-ink-primary hover:bg-panel-alt'
+            }`}
+          >
+            {TabIcon && <TabIcon className="w-4 h-4" />}
+            {tab.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ---------- main dashboard ---------- */
+export default function AdminDashboard({ account, onLogout, onOpenLobby, theme, onThemeChange }) {
+  const isDeveloper = account.permission_role === 'developer'
+
+  const [users, setUsers] = useState([])
+  const [invites, setInvites] = useState([])
+  const [search, setSearch] = useState('')
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' })
+  const [editingUser, setEditingUser] = useState(null)
+  const [deletingUser, setDeletingUser] = useState(null)
+  const [promotingUser, setPromotingUser] = useState(null)
+  const [demotingUser, setDemotingUser] = useState(null)
+  const [roleChangeBusy, setRoleChangeBusy] = useState(false)
+  const [deletingInvite, setDeletingInvite] = useState(null)
+  const [creatingInvite, setCreatingInvite] = useState(false)
+  const [revealedInvites, setRevealedInvites] = useState(() => new Set())
+  const [activeTab, setActiveTab] = useState(DASHBOARD_TABS[0].id)
+  const [toast, setToast] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [confirmingLogout, setConfirmingLogout] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
+  const toastTimer = useRef(null)
+
+  function showToast(msg) {
+    clearTimeout(toastTimer.current)
+    setToast(msg)
+    toastTimer.current = setTimeout(() => setToast(null), 2400)
+  }
+
+  async function confirmLogout() {
+    setLoggingOut(true)
+    try {
+      await onLogout()
+    } catch (err) {
+      setLoggingOut(false)
+      showToast(err.message)
+    }
+  }
+
+  function loadUsers() {
+    fetchUsers()
+      .then(setUsers)
+      .catch((err) => showToast(err.message))
+  }
+
+  function loadInvites() {
+    fetchInviteCodes()
+      .then(setInvites)
+      .catch((err) => showToast(err.message))
+  }
+
+  // Initial load + realtime subscriptions. Users sync directly via
+  // postgres_changes on `accounts`. Invite codes never travel over
+  // realtime themselves — a `sync_events` doorbell tells us to re-fetch
+  // the (permission-checked) list instead.
+  useEffect(() => {
+    loadUsers()
+    loadInvites()
+    const unsubUsers = subscribeUsers(() => loadUsers())
+    const unsubInvites = subscribeInviteEvents(() => loadInvites())
+    return () => {
+      unsubUsers()
+      unsubInvites()
+    }
+  }, [])
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return users
+    return users.filter((u) => u.display_name.toLowerCase().includes(q))
+  }, [users, search])
+
+  // Sorting operates on top of the search-filtered list, not the raw
+  // `users` state -- the active search narrows *which* rows are visible,
+  // sorting only ever reorders those, so this must chain off
+  // `filteredUsers` rather than recombining both independently.
+  const sortedUsers = useMemo(() => {
+    if (!sortConfig.key) return filteredUsers
+    const dir = sortConfig.direction === 'asc' ? 1 : -1
+    return [...filteredUsers].sort((a, b) => {
+      switch (sortConfig.key) {
+        case 'username':
+          return a.username.localeCompare(b.username) * dir
+        case 'displayName':
+          return a.display_name.localeCompare(b.display_name) * dir
+        case 'gender':
+          return ((GENDER_SORT_PRIORITY[a.gender] ?? 0) - (GENDER_SORT_PRIORITY[b.gender] ?? 0)) * dir
+        case 'tournamentRole':
+          return (
+            (TOURNAMENT_ROLE_SORT_PRIORITY[a.tournament_role] ?? 0) -
+            (TOURNAMENT_ROLE_SORT_PRIORITY[b.tournament_role] ?? 0)
+          ) * dir
+        case 'permissionRole':
+          return (PERMISSION_SORT_PRIORITY[a.permission_role] - PERMISSION_SORT_PRIORITY[b.permission_role]) * dir
+        default:
+          return 0
+      }
+    })
+  }, [filteredUsers, sortConfig])
+
+  function handleSort(key) {
+    setSortConfig((current) => nextSortConfig(current, key))
+  }
+
+  const userCounts = useMemo(() => {
+    let captains = 0
+    let players = 0
+    for (const u of users) {
+      if (u.tournament_role === 'captain') captains += 1
+      else if (u.tournament_role === 'player') players += 1
+    }
+    return { total: users.length, captains, players }
+  }, [users])
+
+  const inviteCounts = useMemo(() => {
+    let active = 0
+    for (const inv of invites) {
+      if (!isExpired(inv.expires_at) && inv.used_count < inv.max_uses) active += 1
+    }
+    return { total: invites.length, active }
+  }, [invites])
+
+  async function saveUser(payload) {
+    setBusy(true)
+    try {
+      await editUser(payload)
+      setEditingUser(null)
+      showToast('用户信息已更新')
+      loadUsers()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function confirmDeleteUser() {
+    setBusy(true)
+    try {
+      await deleteUser(deletingUser.id)
+      setDeletingUser(null)
+      showToast('用户已删除')
+      loadUsers()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // System-identity (身份) actions — Developer-only (Section 5, DEVLOG). These
+  // only ever touch permission_role, never the team role (角色: 队长/队员).
+  // Both are gated behind a confirmation dialog since changing someone's
+  // permissions is an impactful action that shouldn't happen on a
+  // misclick.
+  function handlePromote(user) {
+    setPromotingUser(user)
+  }
+
+  function handleDemote(user) {
+    setDemotingUser(user)
+  }
+
+  async function confirmPromote() {
+    setRoleChangeBusy(true)
+    try {
+      await promoteUser(promotingUser.id)
+      showToast(`${promotingUser.display_name} 已提升为管理员`)
+      setPromotingUser(null)
+      loadUsers()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setRoleChangeBusy(false)
+    }
+  }
+
+  async function confirmDemote() {
+    setRoleChangeBusy(true)
+    try {
+      await demoteUser(demotingUser.id)
+      showToast(`${demotingUser.display_name} 已降级为普通用户`)
+      setDemotingUser(null)
+      loadUsers()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setRoleChangeBusy(false)
+    }
+  }
+
+  async function handleCreateInvite({ maxUses, expiresAt }) {
+    setBusy(true)
+    try {
+      await createInviteCode({ maxUses, expiresAt })
+      setCreatingInvite(false)
+      showToast('邀请码已生成')
+      loadInvites()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function revealInvite(id) {
+    setRevealedInvites((set) => new Set(set).add(id))
+  }
+
+  async function confirmDeleteInvite() {
+    setBusy(true)
+    try {
+      await deleteInviteCode(deletingInvite.id)
+      setDeletingInvite(null)
+      showToast('邀请码已删除')
+      loadInvites()
+    } catch (err) {
+      showToast(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function copyInvite(code) {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(code).catch(() => {})
+    }
+    showToast(`已复制邀请码 ${code}`)
+  }
+
+  const nav = [
+    { key: 'admin', icon: 'admin', label: '管理后台' },
+    { key: 'lobby', icon: 'lobby', label: '锦标赛大厅' },
+    { key: 'draft', icon: 'draft', label: '选秀台' },
+    { key: 'spectate', icon: 'spectate', label: '观赛' },
+  ]
+  function handleNavigate(key) {
+    if (key === 'lobby') return onOpenLobby?.()
+    window.location.hash = key
+  }
+
+  return (
+    <AppShell
+      account={account}
+      section="admin"
+      nav={nav}
+      onNavigate={handleNavigate}
+      onLogout={() => setConfirmingLogout(true)}
+      theme={theme}
+      onThemeChange={onThemeChange}
+    >
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
+        {/* ═══ SIDEBAR: console section switcher ═══ */}
+        <aside className="lg:w-[220px] shrink-0 flex flex-col gap-1.5">
+          <p className="eyebrow px-2 mb-1">控制台</p>
+          {DASHBOARD_TABS.map((tab) => {
+            const TabIcon = Icon[tab.icon]
+            const isActive = activeTab === tab.id
+            const count = tab.id === 'users' ? userCounts.total : inviteCounts.total
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-heading font-semibold tracking-wide transition ${
+                  isActive
+                    ? 'bg-accent-gradient text-void shadow-accent-glow'
+                    : 'text-ink-muted hover:text-ink-primary hover:bg-panel-alt'
+                }`}
+              >
+                <TabIcon className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left">{tab.label}</span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                    isActive
+                      ? // The chip sits directly on bg-accent-gradient, a fixed
+                        // purple→cyan gradient that doesn't change with the
+                        // theme -- so its overlay is a literal white, not the
+                        // void token (which flips from near-black to
+                        // near-white between dark/light and has no reason to
+                        // track the page background here).
+                        'bg-white/20 text-white'
+                      : // ink-faint (slate-400 in light) reads fine on the
+                        // page canvas but is too low-contrast against
+                        // panel-alt specifically; ink-muted (slate-600 in
+                        // light / soft lavender in dark) is the token this
+                        // project already uses for exactly this situation
+                        // (see the equivalent badge in TileRow/Badge, ui.jsx).
+                        'bg-panel-alt text-ink-muted'
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+
+          <div className="hidden lg:block mt-4 pt-4 border-t border-panel-line">
+            <p className="eyebrow px-2 mb-2">概览</p>
+            <div className="grid grid-cols-2 gap-2 px-1">
+              <RailStat icon="user" label="队长" value={userCounts.captains} />
+              <RailStat icon="user" label="队员" value={userCounts.players} />
+            </div>
+          </div>
+        </aside>
+
+        {/* ═══ MAIN: active console section ═══ */}
+        {activeTab === 'users' && (
+        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
+            <div>
+              <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">已注册用户</h1>
+              <p className="text-xs text-ink-muted mt-0.5">共 {userCounts.total} 人 · {userCounts.captains} 队长 · {userCounts.players} 队员</p>
+            </div>
+            <div className="w-full lg:w-64 shrink-0">
+              <Field
+                icon="search"
+                type="text"
+                placeholder="按昵称搜索"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 lg:min-h-0 overflow-auto px-3 pt-0 pb-2">
+            {sortedUsers.length === 0 ? (
+              <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">未找到匹配的用户</div>
+            ) : (
+              <table className="w-full text-sm border-collapse">
+                <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:border-b after:border-panel-line">
+                  <tr className="text-left text-xs text-ink-muted">
+                    <th className="px-3 py-2.5 font-medium">头像</th>
+                    <SortableTh label="账号" sortKey="username" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableTh label="昵称" sortKey="displayName" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableTh label="性别" sortKey="gender" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableTh label="角色" sortKey="tournamentRole" sortConfig={sortConfig} onSort={handleSort} />
+                    <SortableTh label="身份" sortKey="permissionRole" sortConfig={sortConfig} onSort={handleSort} />
+                    <th className="px-3 py-2.5 font-medium text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedUsers.map((u) => (
+                    <tr key={u.id} className="border-b border-panel-line/35 hover:bg-panel-alt/40 transition">
+                      <td className="px-3 py-2.5">
+                        <Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-sm text-ink-primary font-medium font-mono">{u.username}</span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-sm text-ink-primary font-medium">{u.display_name}</span>
+                      </td>
+                      <td className="px-3 py-2.5"><GenderIcon gender={u.gender} /></td>
+                      <td className="px-3 py-2.5"><RoleBadge role={u.tournament_role} /></td>
+                      <td className="px-3 py-2.5"><PermissionBadge role={u.permission_role} /></td>
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex gap-1.5 justify-end">
+                          {isDeveloper && u.permission_role === 'user' && (
+                            <IconAction icon="promote" title="提升为管理员" onClick={() => handlePromote(u)} />
+                          )}
+                          {isDeveloper && u.permission_role === 'admin' && (
+                            <IconAction icon="demote" title="降级为普通用户" tone="danger" onClick={() => handleDemote(u)} />
+                          )}
+                          {(isDeveloper || u.permission_role !== 'developer') && (
+                            <IconAction icon="edit" title="编辑" onClick={() => setEditingUser(u)} />
+                          )}
+                          {u.permission_role !== 'developer' && (
+                            <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingUser(u)} />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+        )}
+
+        {/* invite code management */}
+        {activeTab === 'invites' && (
+        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
+            <div>
+              <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">邀请码管理</h1>
+              <p className="text-xs text-ink-muted mt-0.5">共 {inviteCounts.total} 个 · {inviteCounts.active} 个有效</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCreatingInvite(true)}
+              className="btn-primary text-xs px-3.5 py-2 shrink-0"
+            >
+              <Icon.plus className="w-3.5 h-3.5" />
+              生成邀请码
+            </button>
+          </div>
+
+          <div className="flex-1 lg:min-h-0 overflow-y-auto px-3 py-2">
+            {invites.length === 0 && (
+              <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">暂无邀请码，点击右上角生成</div>
+            )}
+            {invites.map((inv) => {
+              const expired = isExpired(inv.expires_at)
+              return (
+                <TileRow
+                  key={inv.id}
+                  leading={
+                    <span className="w-9 h-9 rounded-lg bg-panel-alt border border-panel-line flex items-center justify-center shrink-0">
+                      <Icon.ticket className="w-4 h-4 text-accent2" />
+                    </span>
+                  }
+                  title={<InviteCodeCell code={inv.code} revealed={revealedInvites.has(inv.id)} onReveal={() => revealInvite(inv.id)} />}
+                  subtitle={
+                    <span className="flex items-center gap-3">
+                      <span className="font-mono">{inv.used_count} / {inv.max_uses} 次</span>
+                      {inv.expires_at ? (
+                        <span className={expired ? 'text-danger' : ''}>{formatExpiry(inv.expires_at)}{expired && ' （已过期）'}</span>
+                      ) : (
+                        <span>永不过期</span>
+                      )}
+                    </span>
+                  }
+                  trailing={
+                    <div className="flex gap-1.5 transition">
+                      <IconAction icon="copy" title="复制" onClick={() => copyInvite(inv.code)} />
+                      <IconAction icon="trash" title="删除" tone="danger" onClick={() => setDeletingInvite(inv)} />
+                    </div>
+                  }
+                />
+              )
+            })}
+          </div>
+        </section>
+        )}
+      </div>
+
+      {/* modals */}
+      {editingUser && (
+        <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onSave={saveUser} onError={showToast} saving={busy} />
+      )}
+      {deletingUser && (
+        <ConfirmDeleteModal
+          title="删除用户"
+          description={`确定要删除用户「${deletingUser.username}」吗？此操作暂不可撤销。`}
+          onCancel={() => setDeletingUser(null)}
+          onConfirm={confirmDeleteUser}
+          confirming={busy}
+        />
+      )}
+      {creatingInvite && (
+        <CreateInviteModal onClose={() => setCreatingInvite(false)} onCreate={handleCreateInvite} creating={busy} />
+      )}
+      {deletingInvite && (
+        <ConfirmDeleteModal
+          title="删除邀请码"
+          description={`确定要删除邀请码「${deletingInvite.code}」吗？此操作暂不可撤销。`}
+          onCancel={() => setDeletingInvite(null)}
+          onConfirm={confirmDeleteInvite}
+          confirming={busy}
+        />
+      )}
+      {confirmingLogout && (
+        <ConfirmDialog
+          title="确认退出登录"
+          message="确定要退出登录吗？"
+          confirmLabel="确认退出"
+          tone="neutral"
+          busy={loggingOut}
+          onCancel={() => setConfirmingLogout(false)}
+          onConfirm={confirmLogout}
+        />
+      )}
+      {promotingUser && (
+        <ConfirmDialog
+          title="确认提升管理员"
+          message={`确定要将「${promotingUser.display_name}」提升为管理员吗？`}
+          confirmLabel="确认提升"
+          tone="neutral"
+          busy={roleChangeBusy}
+          onCancel={() => setPromotingUser(null)}
+          onConfirm={confirmPromote}
+        />
+      )}
+      {demotingUser && (
+        <ConfirmDialog
+          title="确认移除管理员"
+          message={`确定要移除「${demotingUser.display_name}」的管理员权限吗？`}
+          confirmLabel="确认移除"
+          tone="danger"
+          busy={roleChangeBusy}
+          onCancel={() => setDemotingUser(null)}
+          onConfirm={confirmDemote}
+        />
+      )}
+
+      {/* toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-panel-alt/95 backdrop-blur border border-accent2/40 shadow-accent-glow text-ink-primary text-xs px-4 py-3 rounded-lg flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent2 animate-pulseGlow" />
+          {toast}
+        </div>
+      )}
+    </AppShell>
+  )
+}
