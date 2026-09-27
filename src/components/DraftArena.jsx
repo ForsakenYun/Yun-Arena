@@ -469,7 +469,7 @@ const DraftIcon = {
 // Bug fix, by explicit report: `border-panel-line` (no opacity suffix,
 // so effectively the same faint hairline as the `/35`-opacity variants
 // used elsewhere) read as washed-out in the bottom action-bar screenshot
-// -- same shape of issue as FilmChip just above, fixed the same way:
+// fixed the same way as other washed-out borders in this file:
 // explicit theme-branched border+background instead of a thin
 // theme-token border, layered under the existing tone-based hover
 // colors (danger vs default) rather than replacing them.
@@ -556,6 +556,31 @@ function GlobalStyle() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&display=swap');
       .font-display { font-family: 'Orbitron', sans-serif; }
+      /* Scrollbar rules fully removed from here now, by explicit report
+         (a second, later report than the one below -- read together).
+         This <style> tag used to carry its own
+         ::-webkit-scrollbar-track { background: #06070F } (a literal
+         near-black, never theme-aware) AND its own
+         ::-webkit-scrollbar { width: 6px } / ::-webkit-scrollbar-thumb
+         { ... } pair, deliberately thinner than index.css's site-wide
+         8px rule -- "Draft Arena's own thinner scrollbar", kept on
+         purpose during the first fix below. Both were the same root
+         mistake: because this <style> tag mounts later in the document
+         than index.css's, ANY selector re-declared here silently wins
+         over the site-wide rule for that selector, everywhere this
+         component is mounted (all of Draft Arena AND Spectator Page,
+         which reuses this same GlobalStyle). The track-background half
+         was fixed first (see the comment just below, kept for
+         history); the width/thumb half was explicitly kept different
+         on purpose at the time, which is exactly what made Final
+         Matchups' sidebar scrollbar visibly narrower than Tournament
+         Lobby's own -- reported later, fixed now, the same way: removed
+         rather than re-declared, so there is exactly one
+         ::-webkit-scrollbar rule for the whole app again, in
+         index.css, and it can't quietly drift out of sync a third time.
+         The historical comment below is kept as the record of the
+         first half of this same fix; nothing in it needs correcting,
+         it just no longer describes the whole picture on its own. */
       /* Light Mode fix, by explicit request: this used to declare its
          own ::-webkit-scrollbar-track { background: #06070F } -- a
          literal near-black, never theme-aware -- which won over
@@ -566,14 +591,10 @@ function GlobalStyle() {
          rather than re-declared, so there's exactly one rule for this
          selector in the app (index.css's) instead of two that can
          drift out of sync again -- the track now just follows the
-         site-wide rule like everywhere else. Thumb width/gradient
-         (Draft Arena's own thinner 6px scrollbar) is unaffected and
-         kept as-is. input::placeholder had the same issue (literal
-         white at low opacity) and is fixed the same way: no
-         DraftArena.jsx <input> exists to need overriding it in the
-         first place, so it's removed rather than tokenized. */
-      ::-webkit-scrollbar { width: 6px; }
-      ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #7C5CFF, #22E5FF); border-radius: 4px; }
+         site-wide rule like everywhere else. input::placeholder had
+         the same issue (literal white at low opacity) and is fixed the
+         same way: no DraftArena.jsx <input> exists to need overriding
+         it in the first place, so it's removed rather than tokenized. */
       input:focus { outline: none; border-color: ${TEAL} !important; box-shadow: 0 0 10px rgba(34,229,255,0.4); }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -1432,6 +1453,82 @@ function computeComplete(matches, teamsArr) {
 }
 const fmpWait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Timing of one matchup's reveal (ms). Sequence per matchup:
+//   countdown 3-2-1  ->  team rolling (flicker)  ->  reveal  ->  hold  ->  next matchup
+// FMP_ROLL_MS is the total time the teams shuffle. It is played as frames of
+// FMP_ROLL_FRAME_MS (the original cadence), with the last frame absorbing the
+// remainder so the phase lasts exactly FMP_ROLL_MS instead of drifting by up
+// to a frame. FMP_REVEAL_HOLD_MS is an extra still pause on the finished
+// result before the NEXT matchup starts; it is applied unconditionally,
+// including after the last matchup in a batch, so the final rolled result
+// gets the same pause as every other one before the stage settles (see
+// runReveal's own comment at that call site). It is spent inside the reveal
+// phase, not the settled view, because swapping to the settled view replays
+// that view's own scale-in animation, which would make the result visibly
+// pop a second time (this is also why `skipFeaturedPopRef`, near this
+// component's other refs, exists as a second line of defense for the one
+// remaining case that does cross into the settled view -- see its own
+// comment).
+//
+// FMP_REVEAL_MS + FMP_REVEAL_HOLD_MS is how long a real match's settled
+// result stays on screen before the countdown for the next matchup begins
+// (or, for the last matchup in a batch, before the page moves on to
+// whatever comes after it). By explicit report this used to total 2100ms
+// (a 1100ms entrance + a 1000ms hold) and read as sluggish; a later pass
+// cut the hold to just 100ms to speed it up, but that made the settled
+// result fly by too fast to actually read -- so the hold is back to a
+// full 1000ms, kept snappy only on the entrance side: FMP_REVEAL_MS stays
+// at 900ms (comfortably outlasting a typical team's own chip-cascade
+// entrance animation -- a 4-member team's cascade -- CHIPS_PER_ROW --
+// finishes around 820ms into the reveal; see TeammateChip/fmpChipIn) and
+// FMP_REVEAL_HOLD_MS is a full 1000ms on top of that, so a real match's
+// whole on-screen dwell is 1900ms: an ~900ms entrance plus a full 1s of
+// static read time, by explicit request. A team with many more than 4
+// members can still have its cascade run past the entrance window
+// (uncommon; games with very large rosters, at up to 20 members) --
+// pre-existing, not something this specific timing pass fixes.
+const FMP_COUNT_STEP_MS = 600;
+const FMP_ROLL_MS = 2000;
+const FMP_ROLL_FRAME_MS = 110;
+const FMP_REVEAL_MS = 900;
+const FMP_REVEAL_HOLD_MS = 1000;
+// Bye's own hold, after FMP_BYE_DELAY_MS below -- deliberately its own,
+// separate constant from FMP_REVEAL_HOLD_MS (rather than reusing one shared
+// "hold" constant for both, which is what this file used to do): a bye has
+// no reveal animation of its own to briefly outlast, so shortening the real
+// match's hold above for snappiness has no bearing on how long a bye should
+// sit on screen, and the two are free to diverge without the fix for one
+// silently changing the other again.
+const FMP_HOLD_MS = 1000;
+// A bye (`m.b == null`) is never a random outcome -- it is simply "this team
+// had no opponent left" -- so it gets no countdown and no flicker, by
+// explicit request (an odd-sized pool, e.g. 3 teams, used to play the full
+// countdown/flicker/settle show for the one team that couldn't be
+// randomized against anything, which read as fake suspense over a foregone
+// conclusion). Just this short pause instead, then straight to the settled
+// 轮空 · 直接晋级 state -- see runReveal.
+const FMP_BYE_DELAY_MS = 1000;
+
+// How many of this tournament's matchups THIS browser page has genuinely
+// watched play through runReveal below. Deliberately module scope, not
+// component state: App.jsx mounts FinalMatchupsStage/SpectatorPage
+// conditionally by route, so navigating this tab away (e.g. to 锦标赛大厅)
+// and back is a real unmount + remount, and component state/refs do not
+// survive that. This does, for the life of the page (a hard reload resets
+// it, which is fine -- there is no unrevealed animation left to protect at
+// that point).
+//
+// null = never bootstrapped (this stage's very first mount since the page
+// loaded). Whatever matchups already exist right then predate this viewing
+// session entirely -- there is no reveal being skipped, so they are shown
+// as-is, exactly as before this fix, and that snapshot becomes the trusted
+// baseline. Every matchup beyond that baseline, for the rest of this page's
+// life, is only ever shown after runReveal has genuinely played it -- on
+// first arrival and on every remount after that -- so a person can never
+// see a rolled result before its own animation has finished, no matter how
+// many times they switch away and back mid-roll.
+let fmpRevealWatermark = null;
+
 const FMP_ANIM_CSS = `
 @keyframes fmpCountPulse{0%{transform:scale(2.3);opacity:0;}25%{opacity:1;}100%{transform:scale(.65);opacity:0;}}
 @keyframes fmpRingPulse{0%{transform:scale(.5);opacity:.9;}100%{transform:scale(1.7);opacity:0;}}
@@ -1442,8 +1539,10 @@ const FMP_ANIM_CSS = `
 @keyframes fmpRowIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 @keyframes fmpFlashBurst{0%{opacity:0;}10%{opacity:1;}100%{opacity:0;}}
 @keyframes fmpFrameGlow{0%{box-shadow:0 0 0 0 rgba(124,92,255,0);}35%{box-shadow:0 0 70px rgba(124,92,255,.6),0 0 120px rgba(34,229,255,.32);}100%{box-shadow:0 0 0 0 rgba(124,92,255,0);}}
+@keyframes fmpSubIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+@keyframes fmpChipIn{from{opacity:0;transform:translateY(6px) scale(.92);}to{opacity:1;transform:translateY(0) scale(1);}}
 @media (prefers-reduced-motion: reduce) {
-  #fmpStage2, #fmpStage2 * { animation-duration: 0.001ms !important; }
+  #fmpStage2, #fmpStage2 * { animation-duration: 0.001ms !important; animation-delay: 0s !important; }
 }
 `;
 
@@ -1475,22 +1574,47 @@ const FMP_ANIM_CSS = `
 // border plus a real shadow in light mode, and a slate border with a
 // soft violet glow-outline in dark mode -- both meaningfully more
 // visible than the old flat 35%-alpha line regardless of theme.
-function BroadcastFrame({ children, pulse = false, glowColor = "rgba(34,229,255,.9)" }) {
+// The four glowing corner brackets themselves, factored out of
+// BroadcastFrame so the completed Final Lineup grid's cards can use the
+// exact same HUD-frame accent, by explicit request (previously only the
+// single-match spotlight above had it). `size` controls both the bracket
+// arm length (`w/h`) and its offset past the card edge (`-inset`), since a
+// smaller card reads better with a proportionally smaller bracket.
+function CornerBrackets({ glowColor = "rgba(34,229,255,.9)", size = 20 }) {
+  const inset = -Math.round(size / 5);
+  const style = { borderColor: glowColor, width: size, height: size };
   return (
-    <div className="relative px-10 py-8 sm:px-16 sm:py-10 rounded-2xl"
+    <>
+      {[
+        `border-t-2 border-l-2 rounded-tl-md`,
+        `border-t-2 border-r-2 rounded-tr-md`,
+        `border-b-2 border-l-2 rounded-bl-md`,
+        `border-b-2 border-r-2 rounded-br-md`,
+      ].map((cls, i) => (
+        <span key={i} className={`fmp-corner absolute ${cls} pointer-events-none`}
+          style={{
+            ...style,
+            top: i < 2 ? inset : undefined, bottom: i >= 2 ? inset : undefined,
+            left: i % 2 === 0 ? inset : undefined, right: i % 2 === 1 ? inset : undefined,
+          }} />
+      ))}
+    </>
+  );
+}
+
+function BroadcastFrame({ children, pulse = false, glowColor = "rgba(34,229,255,.9)", chips = false }) {
+  // `chips`: a teammate-chip row is present (TeamFace reserves its height, see
+  // below), so the bottom padding is trimmed a little to keep the frame
+  // visually balanced instead of reading bottom-heavy.
+  return (
+    <div className="relative w-full max-w-[980px] px-6 py-8 sm:px-10 sm:py-10 xl:px-12 rounded-2xl"
       style={{
         border: "1px solid rgb(var(--color-accent) / .35)",
         background: "rgb(var(--color-panel) / .6)",
         animation: pulse ? "fmpFrameGlow 1s ease-out" : undefined,
+        paddingBottom: chips ? 26 : undefined,
       }}>
-      {[
-        "-top-1 -left-1 border-t-2 border-l-2 rounded-tl-md",
-        "-top-1 -right-1 border-t-2 border-r-2 rounded-tr-md",
-        "-bottom-1 -left-1 border-b-2 border-l-2 rounded-bl-md",
-        "-bottom-1 -right-1 border-b-2 border-r-2 rounded-br-md",
-      ].map((cls, i) => (
-        <span key={i} className={`fmp-corner absolute ${cls} w-5 h-5 pointer-events-none`} style={{ borderColor: glowColor }} />
-      ))}
+      <CornerBrackets glowColor={glowColor} />
       {children}
     </div>
   );
@@ -1515,101 +1639,322 @@ function VsLabel({ className = "", style, children = "VS" }) {
   );
 }
 
-function TeamFace({ team, dim = false, animateIn = false }) {
-  const name = team ? teamLabel(team) : "？？？";
+// Team details for the spotlight (Final Matchups). A face is: captain
+// Avatar, a primary title "队长 · <captain name>" (large, bold), a muted
+// subtitle with the team name ("N号战队", from the team's idx -- the same
+// name the draft stage's TeamCards use), and one chip per teammate
+// underneath. From `xl` up the two faces sit side by side and the
+// right one is an exact mirror (avatar outermost, text right-aligned, chips
+// starting at the right edge and flowing toward the VS); below `xl` they
+// stack and both align left, since a mirrored layout means nothing there.
+//
+// Layout stability: the chip row reserves ceil(members / CHIPS_PER_ROW) rows
+// of height (what a typical team actually needs). While the teams are
+// rolling (`hideChips`) the row keeps that reserved height but draws nothing
+// -- by explicit request, since dashed placeholder pills looked noisy
+// mid-shuffle -- so the frame is already the right height when the real
+// chips cascade in and nothing jumps. Every team in a tournament is the same
+// size, so the height also stays constant from match to match.
+//
+// `team.members` is absent on snapshots taken before this existed (a
+// tournament already at Final Matchups) -- those faces simply have no chip
+// row, never an empty gap.
+//
+// CHIPS_PER_ROW=4 (was an implicit /3, sized for the old, roomier chip):
+// by explicit request, at least 4 teammate tags should fit on one row before
+// wrapping. Tightened alongside CHIP_GAP and TeammateChip's own padding/icon/
+// max-width below to make the width, not just this constant, actually
+// deliver 4 -- this constant only affects the *reserved height* estimate
+// used above; TeammateChip's real, independent flex-wrap is what decides
+// wrapping. Verified against real 2-4 character member names (this app's
+// typical case, matching every sample tournament used throughout
+// development) at the narrowest real card width: the completed Final
+// Lineup grid's two-per-row layout (`min-[1900px]:grid-cols-2`), where a
+// face's chip row is ~312px wide -- the tightest a chip row gets anywhere in
+// this file. Four chips fit on one row there, including one truncated at
+// CHIP_MAX_W. Uncommonly long member names (5+ CJK characters *each*, on
+// every one of the 4) can still wrap to a second row -- an inherent width
+// limit, not a bug -- CHIP_ROW_H's reservation still accounts for that via
+// the same ceil() math, just against 4 instead of 3.
+const CHIPS_PER_ROW = 4;
+const CHIP_ROW_H = 28;
+const CHIP_GAP = 5;
+const CHIP_MAX_W = 96;
+
+function chipInitial(name) {
+  const ch = Array.from(String(name || "").trim())[0];
+  return ch ? ch.toUpperCase() : "?";
+}
+
+function hasChipRow(...teams) {
+  return teams.some((t) => Array.isArray(t?.members) && t.members.length > 0);
+}
+
+function TeammateChip({ name, animateIn = false, delay = 0 }) {
+  const hue = hashSeed(name) % 360;
   return (
-    <div className={`flex flex-col items-center gap-3 transition-opacity ${dim ? "opacity-40" : ""}`} style={{ minWidth: 112 }}>
-      <Avatar avatarUrl={team?.captainAvatarUrl} size={72} glow />
-      <span className="font-display font-bold text-xl sm:text-2xl text-ink-primary text-center leading-tight max-w-[220px] truncate"
-        style={animateIn ? { animation: "fmpNameSlam .6s cubic-bezier(.2,.8,.2,1) forwards", textShadow: "0 0 26px rgba(34,229,255,.55)" } : undefined}>
-        {name}
+    <span
+      className="inline-flex items-center gap-1 h-7 pl-1 pr-2 rounded-full text-xs leading-tight"
+      style={{
+        // Reverted at the owner's request to the originally previewed styling
+        // (--color-panel-line at .55). A stronger --color-ink-muted at .6 was
+        // tried first, for visibility, and deliberately rolled back -- don't
+        // "fix" this back without asking.
+        border: "1px solid rgb(var(--color-panel-line) / .55)",
+        background: "rgb(var(--color-panel-alt) / .7)",
+        maxWidth: CHIP_MAX_W,
+        animation: animateIn ? `fmpChipIn .32s cubic-bezier(.2,.8,.2,1) ${delay}ms both` : undefined,
+      }}
+    >
+      <span
+        className="w-[18px] h-[18px] rounded-md shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
+        style={{ background: `linear-gradient(135deg, hsl(${hue} 65% 55%), hsl(${(hue + 40) % 360} 65% 42%))` }}
+      >
+        {chipInitial(name)}
       </span>
-      <span className="text-[9px] font-heading font-semibold tracking-[0.3em] uppercase text-violet-600 dark:text-[#40C2F0]">Captain</span>
+      <span className="truncate min-w-0 text-ink-primary">{name}</span>
+    </span>
+  );
+}
+
+function TeamFace({ team, side = "left", dim = false, animateIn = false, hideChips = false }) {
+  const right = side === "right";
+  const unknown = !team;
+  const members = !unknown && Array.isArray(team.members) && team.members.length > 0 ? team.members : null;
+  const rows = members ? Math.ceil(members.length / CHIPS_PER_ROW) : 0;
+  return (
+    <div className={`relative w-full max-w-[340px] xl:flex-1 xl:min-w-0 transition-opacity ${dim ? "opacity-40" : ""}`}>
+      <div className={`flex items-center gap-4 ${right ? "xl:flex-row-reverse xl:text-right" : ""}`}>
+        <Avatar avatarUrl={team?.captainAvatarUrl} size={72} glow />
+        <div className="min-w-0 flex-1">
+          {/* Primary title: "队长 · <captain name>". It carries the existing name-slam. The
+              队长 word keeps the literal VsLabel-matched colors (see VsLabel's comment) -- that
+              color rule predates this layout and still applies. The name is --ink-primary
+              (white in dark mode), not a literal white, so it stays legible on the light panel. */}
+          <div className="font-display font-bold text-2xl leading-tight text-ink-primary truncate"
+            style={animateIn ? { animation: "fmpNameSlam .6s cubic-bezier(.2,.8,.2,1) forwards", textShadow: "0 0 26px rgba(34,229,255,.55)" } : undefined}>
+            {unknown ? "？？？" : (
+              <>
+                <span className="text-violet-600 dark:text-[#40C2F0]">队长</span>
+                <span className="font-normal text-ink-muted"> · </span>
+                {team.captainName}
+              </>
+            )}
+          </div>
+          {/* Secondary: the team name, smaller and muted. */}
+          {!unknown && (
+            <div className="mt-1 text-[13px] font-semibold tracking-wide text-ink-muted truncate"
+              style={animateIn ? { animation: "fmpSubIn .35s ease .2s both" } : undefined}>
+              {team.idx + 1}号战队
+            </div>
+          )}
+        </div>
+      </div>
+      {members && (
+        <div className={`flex flex-wrap content-start mt-4 ${right ? "xl:flex-row-reverse" : ""}`}
+          style={{ gap: CHIP_GAP, minHeight: rows * CHIP_ROW_H + (rows - 1) * CHIP_GAP }}>
+          {!hideChips && members.map((m, i) => (
+            <TeammateChip key={`${m.id ?? m.name}-${i}`} name={m.name} animateIn={animateIn} delay={320 + i * 60} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
+// Row holding [face] [VS] [face]. Side by side from `xl`, stacked below.
+function FaceRow({ children, center = false, style }) {
+  return (
+    <div className={`w-full flex flex-col items-center gap-5 xl:flex-row xl:items-start xl:gap-8 ${center ? "xl:justify-center" : "xl:justify-between"}`} style={style}>
+      {children}
+    </div>
+  );
+}
+
+// The VS (or 轮空 pill) is pinned to the avatar row (72px), not centered on the
+// whole face, so it never shifts when a chip row appears, wraps, or is absent.
+function VsSlot({ children }) {
+  return <div className="shrink-0 flex items-center justify-center xl:h-[72px] xl:min-w-[70px]">{children}</div>;
+}
+
+// The countdown-less part of the reveal (flicker + settle): two faces, VS.
+function RevealDuel({ reveal, teamByIdx, displayMatches }) {
+  const isReveal = reveal.phase === "reveal";
+  const match = displayMatches[reveal.idx];
+  const teamA = isReveal ? teamByIdx.get(match?.a) : reveal.flickerA;
+  const teamB = isReveal ? teamByIdx.get(match?.b) : reveal.flickerB;
+  return (
+    <BroadcastFrame pulse={isReveal} glowColor={isReveal ? "#7C5CFF" : "#22E5FF"} chips={hasChipRow(teamA, teamB)}>
+      <FaceRow key={reveal.phase} style={{ animation: reveal.phase === "flicker" ? "fmpFlicker .35s ease-in-out infinite" : undefined }}>
+        <TeamFace team={teamA} side="left" hideChips={!isReveal} animateIn={isReveal} />
+        <VsSlot>
+          <VsLabel
+            className="text-2xl sm:text-3xl"
+            style={isReveal ? { animation: "fmpVsPop .5s cubic-bezier(.2,.8,.2,1) forwards" } : undefined}
+          />
+        </VsSlot>
+        <TeamFace team={teamB} side="right" hideChips={!isReveal} dim={isReveal && match?.b == null} animateIn={isReveal} />
+      </FaceRow>
+    </BroadcastFrame>
+  );
+}
+
+// Redesigned, by explicit request, to the same row anatomy as
+// AdminDashboard.jsx's/TournamentLobby.jsx's own sidebar rows
+// (RailAction, the nav tabs): borderless, state shown by background
+// color only -- never a border -- with an 8px squircle avatar instead of
+// a glowing circular one. Previewed against a live mockup of the whole
+// rail before being built (see DEVLOG Section 8); the two open questions
+// from that preview were decided in the author's favor, both flagged as
+// the recommended option there: 220px rail width (was 280px) and a solid
+// gradient fill for the selected state (was an outline). `team`/`status`/
+// `selected`/`onClick` and all click behavior are unchanged.
+// Original dot-only indicator, restored by explicit request (an
+// intermediate version swapped the dot for an `x` + danger-hover styling
+// as an affordance for click-to-remove; that visual is gone again, but
+// the row stays clickable for staff on a matched team -- see
+// FinalMatchupsStage's matchOfTeam/requestRemoveMatch just below, which
+// now opens a confirm dialog instead of removing immediately).
 function RosterRow({ team, status, selected, onClick }) {
   const isUsed = status !== "idle";
   const clickable = !!onClick;
   const Tag = clickable ? "button" : "div";
   return (
-    <Tag type={clickable ? "button" : undefined} onClick={onClick}
-      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg border transition-colors duration-500 text-left ${
-        selected ? "border-accent bg-accent/15 shadow-accent-glow"
-          : isUsed ? "border-accent2/35 bg-accent2/5"
-          : "border-panel-line/35 bg-void/30"
-      } ${clickable ? "cursor-pointer hover:border-accent2/40" : ""}`}>
-      <Avatar avatarUrl={team.captainAvatarUrl} size={28} glow={isUsed || selected} glowColor={selected ? ACCENT : TEAL} />
-      <span className={`flex-1 min-w-0 truncate text-xs font-heading font-semibold ${
-        selected ? "text-accent-soft" : isUsed ? "text-accent2" : "text-ink-muted"
-      }`}>
+    <Tag type={clickable ? "button" : undefined} onClick={onClick} disabled={clickable ? undefined : true}
+      className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left transition-colors ${
+        selected ? "bg-accent-gradient text-void shadow-accent-glow"
+          : isUsed ? "bg-accent2/8 text-accent2 hover:bg-accent2/13"
+          : "text-ink-muted"
+      } ${clickable ? "cursor-pointer hover:bg-panel-alt" : ""}`}>
+      <Avatar avatarUrl={team.captainAvatarUrl} size={26} />
+      <span className="flex-1 min-w-0 truncate text-xs font-heading font-semibold">
         {teamLabel(team)}
       </span>
+      {isUsed && status !== "bye" && !selected && (
+        <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-accent2" aria-hidden="true" />
+      )}
+      {/* Glowing accent pill instead of the old plain gray badge
+          (bg-panel-2/70 text-ink-muted), by explicit request -- matches
+          the accent2 border/bg/text + shadow-accent-glow treatment
+          already used for the 轮空 · 直接晋级 pill on the spotlight below. */}
       {status === "bye" && (
-        // Light Mode fix, same root cause as the subtitle above: literal
-        // bg-white/10 text-white/50 read as a near-invisible pale pill
-        // against a light canvas. panel-2/ink-muted are the same tokens
-        // used for this row's own idle-state fill/text just above.
-        <span className="shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-md bg-panel-2/60 text-ink-muted">轮空</span>
+        <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded-md border ${
+          selected ? "border-void/30 bg-void/20 text-void" : "border-accent2/50 bg-accent2/10 text-accent2 shadow-accent-glow"
+        }`}>轮空</span>
       )}
     </Tag>
   );
 }
 
-
-
-// Bug fix, by explicit report: the inactive-state border/background here
-// (`border-panel-line/35 bg-void/30`) and the "MATCH 0x" sublabel
-// (`text-ink-faint`) were both reported washed-out in the top control
-// strip's screenshot. Inactive cards now get an explicit, theme-branched
-// border+background (not a thin theme-token opacity) so the card outline
-// itself reads clearly against the strip's background in either theme;
-// the active state's `border-accent2`/glow is untouched since that one
-// was never the complaint. The sublabel moves off `text-ink-faint` onto
-// an explicit brighter color per theme for the same reason.
-function FilmChip({ idx, match, teamByIdx, active, onClick }) {
-  const a = teamByIdx.get(match.a);
-  const b = match.b != null ? teamByIdx.get(match.b) : null;
+// For the relocated 对阵操作 buttons below (moved from a horizontal bar
+// under the spotlight into the rail, by explicit request). Deliberately
+// NOT a change to `DraftAction` above -- that component is shared with
+// the Draft Captain/Player header's own buttons (撤销, elsewhere in this
+// file), a different stage this request never named, and its own comment
+// already explains why it still carries a border: this app's established
+// pattern is to give each rail/section its own copy of a shared button
+// rather than let two unrelated areas drift together through one shared
+// component. This one matches TournamentLobby.jsx's current `RailAction`
+// exactly (the borderless restyle it already went through -- see its own
+// comment) instead of `DraftAction`'s older bordered look, since these
+// buttons now live in a rail styled to match Admin/Lobby and a bordered
+// button directly under borderless `RosterRow` rows would have
+// visibly clashed with that.
+function FmpRailAction({ icon: IconCmp, label, onClick, disabled, tone = "default", title }) {
   return (
-    <button type="button" onClick={onClick}
-      className={`shrink-0 w-[140px] px-2.5 py-2 rounded-lg border text-left transition-all ${
-        active
-          ? "border-accent2 shadow-accent-glow bg-accent2/10"
-          : "border-slate-300 bg-white/80 hover:border-slate-400 hover:bg-white dark:border-slate-700 dark:bg-slate-900/60 dark:hover:border-slate-600 dark:hover:bg-slate-800/60"
+    <button type="button" onClick={onClick} disabled={disabled} title={title}
+      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-heading font-semibold tracking-wide transition disabled:opacity-50 disabled:pointer-events-none ${
+        tone === "danger" ? "text-ink-muted hover:text-danger hover:bg-danger/5" : "text-ink-muted hover:text-ink-primary hover:bg-panel-alt"
       }`}>
-      <div className="text-[8px] font-mono text-slate-600 dark:text-cyan-400 mb-0.5 tracking-wider">MATCH {String(idx + 1).padStart(2, "0")}</div>
-      <div className="text-[11px] font-heading font-semibold text-ink-primary truncate">
-        {b ? `${a?.captainName ?? "?"} / ${b.captainName ?? "?"}` : `${a?.captainName ?? "?"} 轮空`}
-      </div>
+      <IconCmp className="w-4 h-4 shrink-0" />
+      <span className="flex-1 text-left">{label}</span>
     </button>
   );
 }
 
+
 export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, onEnded = () => {} }) {
   const initialMatches = useMemo(() => matchups.map((m) => ({ a: m.a, b: m.b, locked: !!m.locked })), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // See fmpRevealWatermark's own comment above. Bootstrap it on this
+  // stage's very first-ever mount only; every later mount (a genuine
+  // remount, from navigating away and back) trusts what the mount before
+  // it left behind instead of re-trusting whatever is on screen right
+  // now -- that re-trusting is exactly the bug being fixed. Also clamp it
+  // down to what currently exists: a reset/new tournament can genuinely
+  // be shorter than the last thing watched.
+  if (fmpRevealWatermark === null) fmpRevealWatermark = initialMatches.length;
+  fmpRevealWatermark = Math.min(fmpRevealWatermark, initialMatches.length);
+  const watermarkAtMount = useRef(fmpRevealWatermark).current;
+
   const [displayTeams, setDisplayTeams] = useState(teams);
-  const [displayMatches, setDisplayMatches] = useState(initialMatches);
+  // Seeded from the watermark, not from `initialMatches` directly: only
+  // matches this page has actually watched reveal are shown right away.
+  // Anything beyond that is picked up by the live-sync effect below
+  // (`matchups.length > displayMatchesRef.current.length`) and played
+  // through runReveal exactly as a brand-new live roll would be.
+  const [displayMatches, setDisplayMatches] = useState(() => initialMatches.slice(0, watermarkAtMount));
   const [selected, setSelected] = useState([]);
   const [featuredIdx, setFeaturedIdx] = useState(() => {
-    if (initialMatches.length === 0) return null;
-    return computeComplete(initialMatches, teams) ? null : initialMatches.length - 1;
+    if (watermarkAtMount === 0) return null;
+    const shown = initialMatches.slice(0, watermarkAtMount);
+    return computeComplete(shown, teams) ? null : watermarkAtMount - 1;
   });
   const [reveal, setReveal] = useState(null); // { idx, phase: 'countdown'|'flicker'|'reveal', n, flickerA, flickerB }
   const [busyAction, setBusyAction] = useState(null);
   const [error, setError] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  // {idx, aName, bName} of the matchup a staff member just clicked a
+  // team of, awaiting confirmation -- by explicit request, click-to-remove
+  // (see matchOfTeam/requestRemoveMatch below) no longer removes immediately.
+  const [confirmRemoveIdx, setConfirmRemoveIdx] = useState(null);
 
   const revealingRef = useRef(false);
   const displayMatchesRef = useRef(displayMatches);
-  const pendingActionRef = useRef({ reset: null, end: null });
+  const pendingActionRef = useRef({ reset: null, end: null, remove: null });
   useEffect(() => { displayMatchesRef.current = displayMatches; }, [displayMatches]);
+  // Bug fix, by explicit report: a real match's own reveal (RevealDuel,
+  // settled "reveal" phase) already animates that match's teams/chips/VS
+  // in and holds them still. Right after, runReveal calls
+  // `setReveal(null)`, which switches the render from RevealDuel to the
+  // "featured" branch further down -- a *different* element in the tree,
+  // so React mounts it fresh, and that branch's own `fmpSlamIn` entrance
+  // animation plays too, for the exact same match that was just shown.
+  // The result was a visible second, shorter pop -- "shows for 1s in the
+  // reveal, then flashes again for well under a second" (the owner's
+  // report), on every real match, immediately after its own hold. This
+  // ref/read pair suppresses just that one redundant entrance: runReveal
+  // sets it to `true` right before its own `setReveal(null)` (see the
+  // real-match branch below), the featured branch reads it once per
+  // render to decide whether to skip `fmpSlamIn` this time, and the
+  // `useLayoutEffect` (not a plain read-and-reset here in the render body)
+  // resets it back to `false` right after that render commits -- doing
+  // the reset in an effect, not inline during render, keeps this correct
+  // under StrictMode's double-invoked render bodies in development (an
+  // inline reset would get consumed by the throwaway first pass, leaving
+  // the real, committed render with the flag already cleared). A bye's
+  // own entrance into the featured branch never sets this flag (it has no
+  // preceding RevealDuel animation to have already played), so a bye's
+  // `fmpSlamIn` is untouched and still plays normally.
+  const skipFeaturedPopRef = useRef(false);
+  const skipFeaturedPop = skipFeaturedPopRef.current;
+  useLayoutEffect(() => { skipFeaturedPopRef.current = false; });
 
   const teamByIdx = useMemo(() => new Map(displayTeams.map((t) => [t.idx, t])), [displayTeams]);
   const usedIdxs = useMemo(() => computeUsedIdxs(displayMatches), [displayMatches]);
   const remaining = useMemo(() => displayTeams.filter((t) => !usedIdxs.has(t.idx)), [displayTeams, usedIdxs]);
   const byeIdxs = useMemo(() => new Set(displayMatches.filter((m) => m.a != null && m.b == null).map((m) => m.a)), [displayMatches]);
+  // idx -> that team's match index, for the 参赛战队 rail's click-to-remove
+  // (replaces the old filmstrip + featuredIdx-based 解除本场对阵 button).
+  const matchOfTeam = useMemo(() => {
+    const m = new Map();
+    displayMatches.forEach((match, i) => {
+      if (match.a != null) m.set(match.a, i);
+      if (match.b != null) m.set(match.b, i);
+    });
+    return m;
+  }, [displayMatches]);
   const complete = displayMatches.length > 0 && remaining.length === 0;
 
   // If another connected admin locks/pairs/rolls a team this client
@@ -1637,17 +1982,72 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
     revealingRef.current = true;
     for (let k = 0; k < appended.length; k++) {
       const idx = startIdx + k;
+      if (appended[k].b == null) {
+        // Deterministic bye -- no countdown, no flicker (see
+        // FMP_BYE_DELAY_MS above). `reveal` stays null for this whole
+        // step, so the spotlight shows nothing new during the pause
+        // (whichever match was on screen a moment ago just holds); then
+        // the bye's own data and featuredIdx commit together (both
+        // setState calls land in the same batch, so there's no frame
+        // where featuredIdx points at an index displayMatches doesn't
+        // have yet), and the ordinary `featured`/lineupView render path
+        // (further down this file) draws the settled 轮空 · 直接晋级 state
+        // immediately -- the exact same state a real match's reveal
+        // would land on, just without playing a show to get there.
+        //
+        // Reverted, by explicit request: a short-lived version of this
+        // branch tried to special-case a *terminal* bye (one that
+        // completes the whole lineup) by committing `featuredIdx(null)`
+        // directly here instead of `featuredIdx(idx)`, to avoid it
+        // showing once in the single-match spotlight and then again a
+        // moment later in the completed grid. That turned out not to be
+        // the actual double-render the owner was seeing (see the
+        // "no-op re-render" bug fix a few lines below runReveal's own
+        // closing brace, which is the real cause and the real fix) --
+        // so this bye branch is back to its original, simpler form:
+        // always spotlight the bye at `idx`, exactly like a real match,
+        // and let the ordinary post-loop `computeComplete` check (below)
+        // decide when to hand off to the grid, same as it always has.
+        await fmpWait(FMP_BYE_DELAY_MS);
+        setDisplayMatches((prev) => { const next = prev.slice(); next[idx] = appended[k]; return next; });
+        setFeaturedIdx(idx);
+        fmpRevealWatermark = Math.max(fmpRevealWatermark, idx + 1);
+        await fmpWait(FMP_HOLD_MS);
+        continue;
+      }
       setFeaturedIdx(idx);
-      for (const n of [3, 2, 1]) { setReveal({ idx, phase: "countdown", n }); await fmpWait(600); }
-      for (let f = 0; f < 8; f++) {
+      for (const n of [3, 2, 1]) { setReveal({ idx, phase: "countdown", n }); await fmpWait(FMP_COUNT_STEP_MS); }
+      const rollFrames = Math.floor(FMP_ROLL_MS / FMP_ROLL_FRAME_MS);
+      for (let f = 0; f < rollFrames; f++) {
         const flickerA = labelTeams[Math.floor(Math.random() * labelTeams.length)] || null;
         const flickerB = labelTeams[Math.floor(Math.random() * labelTeams.length)] || null;
         setReveal({ idx, phase: "flicker", flickerA, flickerB });
-        await fmpWait(110);
+        // Last frame holds for whatever is left, so the roll totals FMP_ROLL_MS exactly.
+        await fmpWait(f === rollFrames - 1 ? FMP_ROLL_MS - FMP_ROLL_FRAME_MS * (rollFrames - 1) : FMP_ROLL_FRAME_MS);
       }
       setDisplayMatches((prev) => { const next = prev.slice(); next[idx] = appended[k]; return next; });
       setReveal({ idx, phase: "reveal" });
-      await fmpWait(1100);
+      await fmpWait(FMP_REVEAL_MS);
+      // This matchup's own reveal has now genuinely played for this
+      // viewer -- advance the durable watermark so a remount (switching
+      // this tab away and back) never has to re-hide it.
+      fmpRevealWatermark = Math.max(fmpRevealWatermark, idx + 1);
+      // Still hold on the finished result before rolling the next matchup
+      // -- unconditionally, including after the last one in this batch, so
+      // the final rolled result gets the same pause as every other one
+      // before the stage settles. FMP_REVEAL_HOLD_MS, not FMP_HOLD_MS: see
+      // both constants' own comments above -- this one is a full 1000ms by
+      // explicit request, so a real match's whole on-screen dwell
+      // (FMP_REVEAL_MS + FMP_REVEAL_HOLD_MS) gives a full second of static
+      // read time after the ~900ms entrance, not the rushed 100ms this
+      // regressed to briefly.
+      await fmpWait(FMP_REVEAL_HOLD_MS);
+      // See skipFeaturedPopRef's own comment, near the other refs above:
+      // this real match's reveal already animated it in and held it, so
+      // the upcoming switch to the "featured" branch (which happens the
+      // instant `reveal` clears, right below) should not play its own
+      // separate entrance pop for the same match.
+      skipFeaturedPopRef.current = true;
       setReveal(null);
     }
     setDisplayMatches(finalMatches);
@@ -1670,6 +2070,19 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
     if (newMatches.length > prevLen) {
       runReveal(newMatches.slice(prevLen), prevLen, newMatches, teams);
     } else {
+      // Bug fix, by explicit report: a shrink (重置's full clear, or a
+      // single 解除本场对阵 removal) means whatever fmpRevealWatermark
+      // was tracking no longer all exists -- clamp it down live, right
+      // here, not just once at mount against a frozen snapshot. Without
+      // this, resetting and re-rolling within the SAME mounted session
+      // left the watermark sitting at the prior (now-gone) roll's count;
+      // a later remount mid the NEW roll then wrongly trusted that stale
+      // number against the new roll's own already-resolved data and
+      // skipped straight to its final result. This also correctly covers
+      // a single manual removal: if a freed slot gets a different
+      // matchup later, that one must still play its own full reveal
+      // rather than inheriting the removed matchup's trust.
+      fmpRevealWatermark = Math.min(fmpRevealWatermark, newMatches.length);
       setDisplayMatches(newMatches);
       const nowComplete = computeComplete(newMatches, teams);
       setFeaturedIdx((prev) => {
@@ -1729,9 +2142,13 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
     });
   }
 
-  async function handleRemove() {
-    if (featuredIdx == null || busyAction || reveal) return;
-    const idx = featuredIdx;
+  // Takes an explicit match index (the 参赛战队 rail passes the clicked
+  // team's own match, via matchOfTeam) rather than implicitly reading
+  // featuredIdx -- there is no more filmstrip/button to have set it, by
+  // explicit request; featuredIdx now only ever tracks which match the
+  // build-in-progress spotlight is currently showing.
+  async function handleRemoveMatch(idx) {
+    if (idx == null || busyAction || reveal) return;
     await withBusy(`remove:${idx}`, async () => {
       const result = await removeTournamentMatchup(idx);
       const newTeams = result.teams && result.teams.length > 0 ? result.teams : teams;
@@ -1740,6 +2157,20 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
       setDisplayMatches(newMatches);
       setFeaturedIdx(newMatches.length > 0 ? Math.min(idx, newMatches.length - 1) : null);
     });
+  }
+
+  // Rail click on a matched team (either side of a pair, or a bye) no
+  // longer removes immediately, by explicit request: it opens a confirm
+  // dialog first, same idiom as 重置/结束锦标赛 just below (a
+  // pendingActionRef slot set here, actually run from onConfirm). Reads
+  // team names fresh off displayMatches/teamByIdx at click time so the
+  // dialog's own message can name both teams.
+  function requestRemoveMatch(idx) {
+    if (idx == null || busyAction || reveal) return;
+    const match = displayMatches[idx];
+    if (!match) return;
+    pendingActionRef.current.remove = () => handleRemoveMatch(idx);
+    setConfirmRemoveIdx(idx);
   }
 
   function handleResetClick() {
@@ -1777,6 +2208,10 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
   }
 
   const featured = featuredIdx != null ? displayMatches[featuredIdx] : null;
+  // The completed 对阵表已揭晓 list. featuredIdx is forced to null whenever the
+  // lineup completes (see every setFeaturedIdx above), so this is simply
+  // "complete, and no single match is being featured / rolled right now".
+  const lineupView = complete && featuredIdx === null;
   const rollDisabled = busyAction || !!reveal || complete || (selected.length === 0 && remaining.length < 1);
   const lockDisabled = busyAction || !!reveal || selected.length < 2;
 
@@ -1784,41 +2219,88 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
     <div id="fmpStage2" className="w-full flex flex-col flex-1 lg:min-h-0 lg:overflow-hidden">
       <style>{FMP_ANIM_CSS}</style>
 
-      {/* status strip -- same flat, flush-under-the-shell idiom as Draft Arena's own status strip */}
-      <div className="shrink-0 border-b border-panel-line/35 bg-void/30 backdrop-blur-sm px-5 sm:px-8 h-20 flex items-center gap-6">
-        <div className="flex-1 min-w-0 flex items-center gap-4">
-          <span className="shrink-0 text-[10px] font-black px-2.5 py-1 rounded-md tracking-widest"
-            style={{
-              background: complete ? "rgba(34,229,255,.12)" : "rgba(124,92,255,.12)",
-              color: complete ? "#22E5FF" : "#A78BFA",
-              border: `1px solid ${complete ? "rgba(34,229,255,.4)" : "rgba(124,92,255,.35)"}`,
-            }}>
-            {complete ? "对阵已就绪" : "对阵抽签"}
-          </span>
-          <GlowHeading size="text-xl" className="truncate block">
-            {reveal ? `MATCH ${String(reveal.idx + 1).padStart(2, "0")} 生成中…`
-              : complete ? "全部对阵已生成 🏆"
-              : featured ? `MATCH ${String(featuredIdx + 1).padStart(2, "0")}`
-              : "等待生成首个对阵"}
-          </GlowHeading>
-        </div>
-      </div>
+      {/* Top status strip removed, by explicit request, to match Admin/
+          Lobby's own layout -- neither has a header bar above their
+          <aside>/main split either. Its two pieces of information both
+          stay findable elsewhere: which match is on screen only matters
+          while the lineup is still being built (the completed 对阵表已揭晓
+          view shows every match at once), and during a build "reveal in
+          progress" is directly visible in the spotlight itself
+          (the countdown/roll/reveal it's already showing). `complete` is
+          still read below (the spotlight's own "对阵表已揭晓" copy), so
+          it's untouched even though this specific usage is gone. */}
 
-      {/* body: roster + pairing rail, spotlight reveal as the dominant surface */}
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row lg:overflow-hidden">
-        <aside className="lg:w-[280px] shrink-0 lg:h-full lg:overflow-y-auto px-4 sm:px-5 lg:px-4 py-4 flex flex-col gap-2">
-          <p className="eyebrow px-1">参赛战队 · {displayTeams.length}</p>
+      {/* body: roster + pairing rail, spotlight reveal as the dominant surface.
+          Bug fix, by explicit report: the <aside> below was already
+          `lg:w-[220px]`, textually identical to Admin/Lobby's own width,
+          but this wrapper was missing the `gap-5 p-4 sm:p-5 lg:p-6`
+          Lobby's equivalent wrapper carries -- Lobby puts that spacing on
+          the page wrapper, outside its <aside>, while this one put
+          spacing (px-4 sm:px-5 lg:px-4 py-4) directly ON the <aside>,
+          which is subtracted from its own 220px (border-box). Same
+          declared width, genuinely narrower usable content. Moved the
+          spacing out to this wrapper, exactly where Lobby keeps it, so
+          the two sidebars now match in both size and position, not just
+          in the number in their className.
+          Full-height pass: the wrapper no longer carries any vertical
+          padding from `lg` up (`lg:px-6 lg:py-0`), so the main column
+          below runs flush from the header to the page bottom. The rail's
+          old top/bottom spacing moved onto the <aside> itself (`lg:py-6`,
+          same on Admin/Lobby's asides) so the rails stay where they were.
+          Same idea horizontally: no right padding and no gap from `lg`
+          up, so the column runs flush against the rail and the viewport's
+          right edge. The rail's old right-hand spacing (its 4px `pr-1`
+          plus the 20px gap) moved onto the aside as `lg:pr-6`, and its
+          declared width grew 220 -> 240 to compensate, so its usable
+          content (216px) and the position of the column's left edge
+          (264px from the page's left) are exactly what they were. */}
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 lg:gap-0 p-4 sm:p-5 lg:pl-6 lg:pr-0 lg:py-0 overflow-y-auto lg:overflow-hidden">
+        <aside className="lg:w-[240px] shrink-0 lg:h-full lg:overflow-y-auto lg:pr-6 lg:py-6 flex flex-col gap-1.5">
+          <p className="eyebrow px-1 mb-0.5">参赛战队 · {displayTeams.length}</p>
           {displayTeams.map((t) => {
             const status = byeIdxs.has(t.idx) ? "bye" : usedIdxs.has(t.idx) ? "used" : "idle";
+            const matchIdx = matchOfTeam.get(t.idx);
             return (
               <RosterRow key={t.idx} team={t} status={status}
                 selected={selected.includes(t.idx)}
-                onClick={isStaff && status === "idle" ? () => toggleSelect(t.idx) : undefined} />
+                onClick={
+                  isStaff && status === "idle" ? () => toggleSelect(t.idx)
+                    : isStaff && status !== "idle" ? () => requestRemoveMatch(matchIdx)
+                    : undefined
+                } />
             );
           })}
+
+          {/* 对阵操作: relocated here from a horizontal bar under the
+              spotlight, by explicit request, directly below the team
+              list. Same handlers/disabled logic, unchanged -- only the
+              container (vertical flex-col instead of a horizontal wrap)
+              and the button component (FmpRailAction, borderless, see its
+              own comment above) changed. Matches Lobby's own 赛事管理 block
+              (its RailAction list + a trailing status line use exactly
+              this shape). Down to four buttons now: 解除本场对阵 moved out
+              of this list entirely, onto the roster rows above (click a
+              matched team, or its `x`) -- see matchOfTeam/
+              handleRemoveMatch, by explicit request. */}
+          {isStaff && (
+            <div className="mt-4 pt-4 border-t border-panel-line">
+              <p className="eyebrow px-1 mb-2">对阵操作</p>
+              <div className="flex flex-col gap-1.5">
+                <FmpRailAction icon={DraftIcon.lock} label="定角锁定" onClick={handleLockOrRoll} disabled={lockDisabled} />
+                <FmpRailAction icon={DraftIcon.dice} label="随机生成剩余对阵" onClick={handleRoll} disabled={rollDisabled} />
+                <FmpRailAction icon={DraftIcon.refresh} label="重置" onClick={handleResetClick} disabled={busyAction || !!reveal} />
+                <FmpRailAction icon={DraftIcon.flag} label="结束锦标赛" onClick={handleEndClick} disabled={busyAction || !!reveal} tone="danger" />
+              </div>
+              {(selected.length > 0 || remaining.length > 0) && (
+                <p className="text-[11px] text-ink-muted mt-2 px-1">
+                  {selected.length > 0 ? `已选择 ${selected.length} 支战队` : `未选择 · 将随机排位剩余 ${remaining.length} 支战队`}
+                </p>
+              )}
+            </div>
+          )}
         </aside>
 
-        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-panel-line/35 px-5 sm:px-6 py-4 gap-4">
+        <div className="flex-1 lg:min-h-0 flex flex-col lg:overflow-hidden border-t lg:border-t-0 lg:border-l border-panel-line/35 px-5 sm:px-6 lg:px-0 py-4 lg:py-0 gap-4 lg:gap-0">
           {/* spotlight -- Light Mode fix: background/border used to be
               literal dark hex (#141833/#0a0c1c) that never adapted, so
               text using theme tokens (text-ink-primary etc.) went
@@ -1832,7 +2314,7 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
               a legibility issue -- but now via --color-accent/accent2 so
               they resolve to the Cyber-Teal light identity instead of
               literal cyan/purple hex sitting harshly on a light panel. */}
-          <div className="relative flex-1 min-h-[380px] rounded-2xl border overflow-hidden flex items-center justify-center p-8 sm:p-10"
+          <div className={`relative flex-1 min-h-[380px] rounded-none border lg:border-0 flex justify-center p-8 sm:p-10 ${lineupView ? "overflow-y-auto items-start lg:px-6" : "overflow-hidden items-center"}`}
             style={{
               background: "radial-gradient(ellipse at 50% 0%, rgb(var(--color-accent) / .14), transparent 60%), linear-gradient(180deg, rgb(var(--color-panel)), rgb(var(--color-void)) 80%)",
               borderColor: complete ? "rgb(var(--color-accent2) / .35)" : "rgb(var(--color-accent) / .25)",
@@ -1850,23 +2332,36 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
                   background: "radial-gradient(circle at 50% 45%, rgb(var(--color-ink-primary) / .55), rgb(var(--color-accent) / .5) 30%, rgb(var(--color-accent2) / .3) 50%, transparent 72%)",
                 }} />
             )}
-            {complete && featuredIdx === null ? (
-              <div key={displayMatches.length} className="w-full max-w-2xl flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .7s ease forwards" }}>
-                <div className="text-[11px] font-heading font-semibold uppercase tracking-[0.3em] text-accent2/90">对阵表已揭晓 · Final Lineup</div>
-                <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {lineupView ? (
+              <div key={displayMatches.length} className="w-full max-w-[980px] lg:max-w-none my-auto flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .7s ease forwards" }}>
+                <div className="text-center text-2xl sm:text-3xl font-heading font-bold uppercase tracking-[0.2em] text-accent2">对阵表已揭晓 · Final Lineup</div>
+                {/* One full-width card per match, built from the same TeamFace/FaceRow/
+                    VsSlot pieces as the single-match spotlight above so each card shows
+                    exactly that layout: captain avatar, 队长 · name, N号战队, then the
+                    teammate chips. No CornerBrackets here -- a short-lived version added
+                    the spotlight's own glowing-cyan HUD corners to these cards too, by
+                    explicit request; that was then reverted, also by explicit request, back
+                    to a clean plain border. `CornerBrackets` itself stays defined and is
+                    still used by `BroadcastFrame` above (the single-match spotlight), which
+                    is unaffected -- only this grid's own usage was removed. */}
+                <div className="w-full grid grid-cols-1 min-[1900px]:grid-cols-2 gap-4">
                   {displayMatches.map((m, i) => (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-panel-alt/50 border border-panel-line/35"
+                    <div key={i} className="relative px-6 pt-8 pb-6 sm:px-8 xl:px-10 min-[1900px]:px-6 min-[1900px]:[&:nth-child(odd):last-child]:col-span-2 rounded-xl bg-panel-alt/50 border border-panel-line/35"
                       style={{ animation: "fmpRowIn .45s ease forwards", animationDelay: `${i * 110}ms`, opacity: 0 }}>
-                      <span className="text-[10px] font-mono text-accent2/70 w-6 shrink-0">0{i + 1}</span>
-                      <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate">{teamByIdx.get(m.a)?.captainName ?? "?"}</span>
-                      {m.b != null ? (
-                        <>
-                          <VsLabel className="text-[10px]" />
-                          <span className="flex-1 min-w-0 text-sm font-heading font-semibold text-ink-primary truncate text-right">{teamByIdx.get(m.b)?.captainName ?? "?"}</span>
-                        </>
-                      ) : (
-                        <span className="shrink-0 text-xs text-ink-muted">轮空 · 直接晋级</span>
-                      )}
+                      <span className="absolute top-3 left-4 text-[10px] font-mono text-accent2/70">0{i + 1}</span>
+                      <FaceRow center={m.b == null}>
+                        <TeamFace team={teamByIdx.get(m.a)} side="left" />
+                        {m.b != null ? (
+                          <>
+                            <VsSlot><VsLabel className="text-2xl sm:text-3xl" /></VsSlot>
+                            <TeamFace team={teamByIdx.get(m.b)} side="right" />
+                          </>
+                        ) : (
+                          <VsSlot>
+                            <span className="px-4 py-2 rounded-lg bg-accent2/10 border border-accent2/40 text-accent2 font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
+                          </VsSlot>
+                        )}
+                      </FaceRow>
                     </div>
                   ))}
                 </div>
@@ -1884,42 +2379,27 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
                   </div>
                 </div>
               ) : (
-                <BroadcastFrame pulse={reveal.phase === "reveal"} glowColor={reveal.phase === "reveal" ? "#7C5CFF" : "#22E5FF"}>
-                  <div key={reveal.phase} className="flex items-center gap-8 sm:gap-14"
-                    style={{ animation: reveal.phase === "flicker" ? "fmpFlicker .35s ease-in-out infinite" : undefined }}>
-                    <TeamFace team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.a) : reveal.flickerA} animateIn={reveal.phase === "reveal"} />
-                    <VsLabel
-                      className="text-2xl sm:text-3xl"
-                      style={reveal.phase === "reveal" ? { animation: "fmpVsPop .5s cubic-bezier(.2,.8,.2,1) forwards" } : undefined}
-                    />
-                    <TeamFace
-                      team={reveal.phase === "reveal" ? teamByIdx.get(displayMatches[reveal.idx]?.b) : reveal.flickerB}
-                      dim={reveal.phase === "reveal" && displayMatches[reveal.idx]?.b == null}
-                      animateIn={reveal.phase === "reveal"}
-                    />
-                  </div>
-                </BroadcastFrame>
+                <RevealDuel reveal={reveal} teamByIdx={teamByIdx} displayMatches={displayMatches} />
               )
             ) : featured ? (
-              <div key={featuredIdx} className="flex flex-col items-center gap-6" style={{ animation: "fmpSlamIn .5s ease forwards" }}>
-                <BroadcastFrame glowColor="rgba(124,92,255,.6)">
-                  <div className="flex items-center gap-8 sm:gap-14">
-                    <TeamFace team={teamByIdx.get(featured.a)} />
+              <div key={featuredIdx} className="w-full flex flex-col items-center gap-6"
+                style={skipFeaturedPop ? undefined : { animation: "fmpSlamIn .5s ease forwards" }}>
+                <BroadcastFrame glowColor="rgba(124,92,255,.6)"
+                  chips={hasChipRow(teamByIdx.get(featured.a), featured.b != null ? teamByIdx.get(featured.b) : null)}>
+                  <FaceRow center={featured.b == null}>
+                    <TeamFace team={teamByIdx.get(featured.a)} side="left" />
                     {featured.b != null ? (
                       <>
-                        <VsLabel className="text-2xl sm:text-3xl" />
-                        <TeamFace team={teamByIdx.get(featured.b)} />
+                        <VsSlot><VsLabel className="text-2xl sm:text-3xl" /></VsSlot>
+                        <TeamFace team={teamByIdx.get(featured.b)} side="right" />
                       </>
                     ) : (
-                      <span className="px-4 py-2 rounded-lg bg-accent2/10 border border-accent2/40 text-accent2 font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
+                      <VsSlot>
+                        <span className="px-4 py-2 rounded-lg bg-accent2/10 border border-accent2/40 text-accent2 font-heading font-bold text-sm whitespace-nowrap">轮空 · 直接晋级</span>
+                      </VsSlot>
                     )}
-                  </div>
+                  </FaceRow>
                 </BroadcastFrame>
-                {complete && (
-                  <button type="button" onClick={() => setFeaturedIdx(null)} className="text-xs text-ink-muted hover:text-accent2 transition font-heading">
-                    ← 返回完整对阵表
-                  </button>
-                )}
               </div>
             ) : (
               <div className="text-center text-ink-faint text-sm max-w-xs leading-relaxed">
@@ -1930,41 +2410,24 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
             )}
           </div>
 
-          {/* filmstrip */}
-          {displayMatches.length > 0 && (
-            <div className="shrink-0 flex gap-2 overflow-x-auto pb-1">
-              {displayMatches.map((m, i) => (
-                <FilmChip key={i} idx={i} match={m} teamByIdx={teamByIdx} active={featuredIdx === i}
-                  onClick={() => { if (!reveal) setFeaturedIdx(i); }} />
-              ))}
-            </div>
-          )}
+          {/* No MATCH 01/02/... filmstrip in any state, by explicit request --
+              it's gone entirely, not just hidden once the lineup completes (an
+              earlier version only did the latter, then still showed it while a
+              lineup was being built). Removing a matchup now happens from the
+              参赛战队 rail above instead (click a matched team, or its `x`; see
+              matchOfTeam/handleRemoveMatch), which covers every state including
+              mid-build, so no replacement control is needed here. */}
 
-          {/* actions -- refactored onto DraftAction (a verbatim copy of
-              TournamentLobby.jsx's RailAction, see its comment above)
-              instead of the btn-primary/btn-ghost/btn-danger pill
-              classes, per explicit request to match the 赛事管理 panel's
-              exact button component/classes rather than the site's other
-              CTA-style buttons. Originally scoped to just these five
-              buttons (component was named MatchupAction/MatchupIcon);
-              renamed to DraftAction/DraftIcon when the same treatment
-              was extended to the Draft Captain/Player header buttons
-              below, on request. tone mirrors RailAction's own
-              default/danger split: default for the two matchup-generating
-              actions and the non-destructive 重置, danger for the two
-              that undo/end something. */}
-          {isStaff && (
-            <div className="shrink-0 flex items-center gap-3 flex-wrap">
-              <DraftAction icon={DraftIcon.lock} label="定角锁定" onClick={handleLockOrRoll} disabled={lockDisabled} />
-              <DraftAction icon={DraftIcon.dice} label="随机生成剩余对阵" onClick={handleRoll} disabled={rollDisabled} />
-              <DraftAction icon={DraftIcon.refresh} label="重置" onClick={handleResetClick} disabled={busyAction || !!reveal} />
-              <DraftAction icon={DraftIcon.x} label="解除本场对阵" onClick={handleRemove} disabled={!featured || busyAction || !!reveal} tone="danger" />
-              <DraftAction icon={DraftIcon.flag} label="结束锦标赛" onClick={handleEndClick} disabled={busyAction || !!reveal} tone="danger" />
-              <span className="text-xs text-ink-muted ml-auto">
-                {selected.length > 0 ? `已选择 ${selected.length} 支战队` : remaining.length > 0 ? `未选择 · 将随机排位剩余 ${remaining.length} 支战队` : ""}
-              </span>
-            </div>
-          )}
+          {/* The 对阵操作 action bar that used to sit here (定角锁定,
+              随机生成剩余对阵, 重置, 解除本场对阵, 结束锦标赛, plus the
+              selection-status line) has moved into the rail, directly
+              below the team list -- see the <aside> above, by explicit
+              request. `DraftAction`/`DraftIcon` stay defined and are
+              still used by the Draft Captain/Player header's own 撤销
+              button elsewhere in this file. Of the original five calls,
+              four moved here as-is; 解除本场对阵 moved onto the roster rows
+              themselves instead (see matchOfTeam/handleRemoveMatch above),
+              by explicit request. */}
         </div>
       </div>
 
@@ -1997,6 +2460,24 @@ export function FinalMatchupsStage({ tournamentName, teams, matchups, isStaff, o
           onConfirm={() => { setConfirmEnd(false); pendingActionRef.current.end?.(); }}
         />
       )}
+      {confirmRemoveIdx != null && (() => {
+        const m = displayMatches[confirmRemoveIdx];
+        const aName = m ? teamLabel(teamByIdx.get(m.a)) : "";
+        const bName = m?.b != null ? teamLabel(teamByIdx.get(m.b)) : null;
+        return (
+          <ConfirmDialog
+            title="确认解除本场对阵"
+            message={bName
+              ? `将解除「${aName}」与「${bName}」的对阵，两支战队都会回到未匹配状态。此操作无法撤销。`
+              : `将解除「${aName}」的轮空，该战队会回到未匹配状态。此操作无法撤销。`}
+            confirmLabel="确认解除"
+            tone="danger"
+            busy={busyAction === `remove:${confirmRemoveIdx}`}
+            onCancel={() => setConfirmRemoveIdx(null)}
+            onConfirm={() => { setConfirmRemoveIdx(null); pendingActionRef.current.remove?.(); }}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -292,8 +292,12 @@ export default function AppShell({
       >
         {/* brand */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <span className="w-8 h-8 rounded-lg bg-accent-gradient flex items-center justify-center shadow-accent-glow rotate-3 shrink-0">
-            <span className="font-display font-black text-void text-xs -rotate-3">秀</span>
+          {/* Straight/upright, by explicit request -- previously tilted
+              (rotate-3 on the tile, a counter -rotate-3 on the glyph so
+              the 秀 itself stayed level while the tile visibly tilted).
+              Both classes are simply removed, nothing else changed. */}
+          <span className="w-8 h-8 rounded-lg bg-accent-gradient flex items-center justify-center shadow-accent-glow shrink-0">
+            <span className="font-display font-black text-void text-xs">秀</span>
           </span>
           <span className="font-display font-bold text-sm tracking-[0.1em] text-ink-primary hidden sm:inline">选秀台</span>
         </div>

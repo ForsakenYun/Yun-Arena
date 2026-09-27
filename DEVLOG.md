@@ -59,25 +59,41 @@ Core decisions — do not change these without an explicit request:
   ambient theme the same as everywhere else (`DraftVisualLock`, which
   used to force this dark regardless of the account's saved theme, has
   been removed from both `DraftArena.jsx` and `SpectatorPage.jsx` — see
-  Section 8). What's still **not** restyled is Draft Arena's own gold/
-  Cinzel-Orbitron *brand identity* — the Orbitron/Cinzel display fonts,
-  the neon purple/cyan glow system (`TEAL`/`TEAL_SOFT` constants and the
-  `rgba(124,92,255,...)`/`rgba(34,229,255,...)` accent glows scattered
-  through captain/teammate cards and the Final Matchups poster), and the
-  overall gold Final Matchups treatment all stay fixed regardless of
-  theme, the same as before. In short: Draft Arena's *surfaces and text*
-  now theme like the rest of the app; its *brand glow* doesn't. **Exception,
+  Section 8). What's still **not** restyled is Draft Arena's own *brand
+  glow* — the Orbitron display font at the sizes/weights Draft Arena uses
+  it (the same font family is a site-wide token, Tailwind's `font-display`
+  — Admin/Lobby use it too, just smaller and less often), and the neon
+  purple/cyan glow system (`TEAL`/`TEAL_SOFT` constants, the
+  `rgba(124,92,255,...)`/`rgba(34,229,255,...)` accent glows/text-shadows
+  scattered through captain/teammate cards and the Final Matchups
+  spotlight, and BroadcastFrame's corner brackets/pulse) all stay fixed
+  regardless of theme, the same as before. (Corrected by the Section 8
+  visual audit below: this paragraph used to say "gold/Cinzel-Orbitron"
+  and "the overall gold Final Matchups treatment" — stale, describing an
+  earlier poster-style design that predates the VS-duel spotlight this
+  doc's own Section 8 already documents; there is no Cinzel font and no
+  gold color anywhere in the current implementation.) In short: Draft
+  Arena's *surfaces and text* now theme like the rest of the app; its
+  *brand glow* doesn't. **Exception,
   by explicit request:** all of Draft Arena's admin-only action buttons —
   Final Matchups' five (定角锁定/随机生成剩余对阵/重置/解除本场对阵/
   结束锦标赛) plus the Draft Captain/Player header strip's three
-  (撤销/开始队员选秀/进入最终对阵) — now render through `DraftAction`,
+  (撤销/开始队员选秀/进入最终对阵) — rendered through `DraftAction`,
   a bordered button component that started as a copy of Tournament
   Lobby's `RailAction` (classes: `flex items-center gap-2.5 px-3 py-2.5
   rounded-lg border text-sm font-medium`, default/danger hover
   treatment, `disabled:opacity-50`). Tournament Lobby's own `RailAction`
-  has since moved to the borderless sidebar-row style (Section 7), so
-  the two are now independent — `DraftAction` keeps the bordered look,
-  and a change to one does not need mirroring in the other. It is paired
+  has since moved to the borderless sidebar-row style (Section 7). Final
+  Matchups' own five buttons have since moved again, off `DraftAction`
+  entirely and into the rail as `FmpRailAction` (Section 8), matching
+  `RailAction`'s current borderless look; `DraftAction` now renders only
+  the Draft Captain/Player header strip's three buttons, still bordered,
+  on purpose (Section 8 explains why: relocating Final Matchups' buttons
+  into a now-borderless rail without also updating their own style would
+  have visibly clashed, but restyling the shared `DraftAction` itself
+  would have silently changed this other, unrelated strip's buttons
+  too). The three names are independent components now — a change to one
+  does not need mirroring in the others. It is paired
   with a local `DraftIcon` stroke-icon
   set matching the site's icon style — replacing emoji, the header
   strip's three hand-rolled inline-styled buttons (previously amber for
@@ -246,6 +262,49 @@ not dialogs/modals):
   Tournament Lobby additionally carry a page-level left sidebar for
   their own controls (Section 7) — that sidebar is not navigation
   between pages.
+- **Full-bleed main cards (Admin Dashboard 已注册用户, Tournament Lobby
+  参赛名单, Final Matchups' spotlight column), by explicit request.** From
+  `lg` up the page wrapper carries only a left inset (`lg:pl-6 lg:pr-0
+  lg:py-0 lg:gap-0`; it's still `gap-5 p-4 sm:p-5` below `lg`), so the main
+  card runs flush against the header, the page bottom, the viewport's right
+  edge, and the sidebar. **The rail's old spacing moved onto each
+  `<aside>`** so the three rails sit exactly where they did: `lg:py-6`
+  (content still starts 24px below the header) and a right padding standing
+  in for the old gap (`lg:pr-5` on Admin; `lg:pr-6` on Lobby/Draft Arena,
+  which is their old 4px `pr-1` plus the 20px gap). Their declared width
+  grew `lg:w-[220px]` -> `lg:w-[240px]` to pay for it, so **usable rail
+  content is unchanged: 220px on Admin, 216px on Lobby/Draft Arena, with
+  the card's left edge still 264px from the page's left.** (Padding on an
+  `<aside>` is subtracted from its declared width -- see Section 8's
+  sidebar bug fix -- so never change one of these without the other.)
+  **Keep the width and padding on all three asides in step.** Admin and
+  Lobby put the square-edge utilities directly on their `.glass-panel`
+  sections: **`rounded-none` at every breakpoint** (by explicit request;
+  sharp corners, so nothing shows in the corners where the card meets the
+  header, the page bottom, the sidebar seam and the viewport edge), plus,
+  from `lg` up, `lg:border-y-0 lg:border-r-0` and `lg:[clip-path:inset(0)]`
+  (no shadow or light-mode ring bleeds over the header or onto the
+  sidebar). Its **left border stays, as the seam against the sidebar**.
+  The Final Matchups spotlight does the same (`rounded-none` +
+  `lg:border-0`) and the seam there is the column's own `lg:border-l`.
+  **These live in the JSX on purpose, not in an index.css helper class:**
+  an earlier version used a `.glass-panel-flush` class in index.css, and
+  when that file wasn't updated alongside the components the cards fell
+  back to `.glass-panel`'s default `rounded-2xl` and showed a rounded
+  corner right under the header. Don't move this back into CSS. Below `lg`
+  the cards keep their bordered, padded, stacked layout (they're just
+  square now); the page scrolls.
+  **Using the extra space:** the scroll areas were already `flex-1
+  lg:min-h-0 overflow-auto`, so they show more rows; table rows are roomier
+  (`lg:py-3` on every `<td>`, was `py-2.5`); and on the two tables
+  every header/data cell's horizontal padding scales up
+  (`px-3 lg:px-5 xl:px-7`, headers and cells always changed together so
+  columns stay aligned) with the table's scroll area at `lg:px-4` and the
+  card header's title inset to match (`lg:px-9 xl:px-11` = scroll-area
+  padding + cell padding, so the title lines up with the first column).
+  Admin's 邀请码管理 section is the same card in the same slot, so it got
+  the same flush treatment rather than jumping when you switch tabs (its
+  header just takes `lg:px-6`, since its rows aren't table cells).
 - The UI must still remain responsive for smaller screens: below the
   `lg` breakpoint, everything falls back to normal stacked, full-page
   scroll for mobile.
@@ -578,7 +637,7 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
   drift apart.
 - **Page layout: left sidebar + roster, mirroring Admin Dashboard.**
   `TournamentLobby.jsx`'s `<aside>` is built from the same anatomy as
-  `AdminDashboard.jsx`'s (`lg:w-[220px]`, `eyebrow` labels, `border-t`
+  `AdminDashboard.jsx`'s (`lg:w-[240px]` -- 220px usable, see Section 3 -- `eyebrow` labels, `border-t`
   separated blocks, the same compact `RailStat` tile, sidebar-row
   buttons) — the two are separate copies, not a shared component, so
   keep them visually in step. Top to bottom: **锦标赛大厅** (Tournament
@@ -796,6 +855,61 @@ tournament. `App.jsx` routes Admin/Developer → `#admin`, everyone else
   they'll follow the in-app toggle automatically with no further config
   needed).
 
+- **Every 角色 badge app-wide is now a `rounded-full` pill; 身份 and
+  Draft Arena's own 队长 tag deliberately are not.** First applied to just
+  `TournamentLobby.jsx`'s `RoleBadge`/`StatusBadge` (角色 and 状态
+  columns), then, by an explicit follow-up request, extended to every
+  other 角色 badge in the app: `AdminDashboard.jsx`'s `RoleBadge` (its own
+  角色 column) and `AddParticipantsDialog.jsx`'s `RoleBadge`. Every time:
+  colors, borders, and every other class unchanged -- only the corner
+  radius.
+  - **`AddParticipantsDialog.jsx`'s `RoleBadge` has now flipped shape four
+    times** across four separate explicit requests: `rounded-md` (verbatim
+    duplicate of the other two pages) -> `rounded-full` with a tint/glow
+    (its own entry above) -> reverted back to `rounded-md` (a third,
+    separate request -- "the corner radius every other badge in this app
+    already uses") -> `rounded-full` again, this time. The `w-fit`/
+    `justify-center` grid-stretch fix and the `#00A2E8` tint/glow from its
+    own history are untouched by any of this -- only the radius keeps
+    moving.
+  - **`AdminDashboard.jsx`'s `PermissionBadge` (身份: 开发者/管理员/
+    普通用户) deliberately stays `rounded-md`.** It reads a different
+    field (`permission_role`, not `tournament_role`) and the request was
+    specifically for 角色/状态 badges; 身份 and 角色 have been kept
+    deliberately distinct since Section 4's Terminology Refactoring, so
+    this was not folded in without being asked.
+  - **`DraftArena.jsx`'s `CaptainBadge`** (the small 队长 tag on a
+    drafted captain's TeamCard, Draft Arena's own draft-stage UI, not a
+    table column) **deliberately stays `rounded-md`** too -- a different
+    page and a differently-shaped element (an inline confirmation tag, not
+    a table-row badge), and Draft Arena's own visual identity is
+    established elsewhere in this doc as something not to restyle without
+    an explicit ask naming Draft Arena specifically.
+  - The shared `ui.jsx` `Badge` component is unchanged and, as of this
+    writing, has no consumers anywhere in the app (`grep` finds no
+    `<Badge` usage outside its own definition) -- there is currently
+    nothing rendered by it to be inconsistent with anything else.
+  - So, after this change: `TournamentLobby.jsx`'s `RoleBadge`/
+    `StatusBadge`, `AdminDashboard.jsx`'s `RoleBadge`, and
+    `AddParticipantsDialog.jsx`'s `RoleBadge` are all pills.
+    `AdminDashboard.jsx`'s `PermissionBadge` and `DraftArena.jsx`'s
+    `CaptainBadge` stay `rounded-md`, on purpose, pending an explicit
+    request to include them too.
+
+- **Brand mark (the gradient-square "秀" tile) straightened, by explicit
+  request.** It appears in exactly two places, `AppShell.jsx` (the 8x8
+  nav-bar logo) and `AuthPage.jsx` (its own separate 14x14 copy on the
+  login screen) -- both were `rotate-3` on the tile with a counter
+  `-rotate-3` on the 秀 glyph itself (so the glyph stayed level while the
+  tile visibly tilted). Both classes are simply removed from both copies;
+  nothing else (size, gradient, glow, corner radius) changed. Checked for
+  any other copy of this mark (e.g. a third one on some other page,
+  following this app's established "verbatim duplicate per page" pattern)
+  -- there isn't one; every other `bg-accent-gradient` tile in the app
+  (the avatar-edit camera badge, `TournamentLobby.jsx`'s `StatCard` icon
+  tile, its pick-number badge) is a different, unrelated icon and was
+  never rotated to begin with.
+
 - **编辑参赛选手 (Admin/Developer-only, `EditParticipantDialog.jsx`, opened
   from a new pencil icon in the roster table's own 操作 column, right
   beside the existing 删除 button):** the same "编辑用户" form Admin
@@ -906,12 +1020,12 @@ Reached via 开始比赛 from the Tournament Lobby to *start* a draft
 (validated, see Section 7's already-started guard too), or directly via
 the 选秀台 nav tab to check in on one already running (see this
 section's own "选秀台 nav tab" note further down). `src/components/
-DraftArena.jsx` has its own visual identity
-(Orbitron/Cinzel display fonts, a neon purple/cyan glow system, a
-separate gold theme for the Final Matchups poster) that is intentionally
-**not** restyled to match the rest of the app's Tailwind accent theme —
-leave the fonts and glow colors alone unless a change is explicitly
-requested. As of the Theme Switcher's light-mode rollout, this page is
+DraftArena.jsx` has its own visual identity (Orbitron display font at
+its own sizes/weights, and a neon purple/cyan glow system -- see Section
+3's own corrected description of exactly what this covers) that is
+intentionally **not** restyled to match the rest of the app's flatter
+Tailwind look -- leave the fonts and glow colors alone unless a change
+is explicitly requested. As of the Theme Switcher's light-mode rollout, this page is
 **no longer dark-locked**, though: it used to render through
 `DraftVisualLock` (an `AppShell.jsx` export that force-pinned every
 `bg-panel`/`text-ink-*`/`border-panel-line`-style CSS variable back to
@@ -1374,9 +1488,10 @@ than that first attempt), each narrower than the last:
   `text-violet-600`. This also turned out to be an incomplete fix the
   first time: `VsLabel` only covered the two big broadcast-animation "VS"
   instances (reveal phase, featured single match); the *third* "VS" --
-  the small `text-[10px]` label inside each card of the completed Final
-  Lineup grid (对阵表已揭晓, the `complete && featuredIdx === null`
-  branch) -- was still a bare `text-accent-soft` span and still
+  the small label inside each card of the completed Final Lineup list
+  (对阵表已揭晓, the `complete && featuredIdx === null` branch; it was a
+  `text-[10px]` label then, and is `text-2xl sm:text-3xl` now -- see the
+  Final Lineup bullet under "Team details in the spotlight" below) -- was still a bare `text-accent-soft` span and still
   low-contrast, caught in the same round of screenshots. All three now
   render through the one `VsLabel` component (sized via its `className`
   prop) rather than three independent copies -- if a fourth "VS" is ever
@@ -1396,8 +1511,13 @@ text theme, brand glow doesn't" split doesn't by itself catch this) --
 wrong for text wherever else it might get reached for.
 
 **Bug fix, by explicit report, the pending border follow-up above
-arrived:** the specific target was the top MATCH-card control strip
-(`FilmChip`) and the bottom action-bar buttons (`DraftAction`) --
+arrived** (historical: `FilmChip` and its "MATCH 0x" strip described
+throughout this bullet were removed entirely later on, by explicit
+request -- see the Final Matchups section further down. This bullet is
+kept as-is for the fix pattern it documents, which still applies to
+`DraftAction` and every other component named in it): the specific
+target was the top MATCH-card control strip (`FilmChip`) and the bottom
+action-bar buttons (`DraftAction`) --
 `定角锁定`/`随机生成剩余对阵`/`重置`/`解除本场对阵`/`结束锦标赛`. Both had
 the exact same shape of problem as `BroadcastFrame`'s border before its
 own Light Mode fix (Section 8, further up): `FilmChip`'s inactive state
@@ -1418,23 +1538,18 @@ so that pass carries there too -- consistent with every other instance
 of this class of bug being fixed at the shared component, not the call
 site.
 
-**Bug fix, by explicit report:** `TeamFace`'s own "CAPTAIN" sublabel
-(under the team name in the featured VS/reveal card -- the element the
-paragraph at the top of this Light Mode fix already flagged as sitting
-on a `text-ink-faint` token) was never actually moved off that token
-when the rest of this stage was fixed -- it was still reading as a
-near-invisible dark purple on the dark-mode panel and a washed-out pale
-grey in light mode, reported with screenshots of both themes. First
-fix pass matched it to `FilmChip`'s "MATCH 0x" sublabel colors
-(`text-slate-600` light / `text-cyan-400` dark), but a follow-up
-explicit request asked for it to strictly match `VsLabel` instead --
-the same VS text sitting right next to it in the same card, not the
-filmstrip's unrelated sublabel. Now reads `text-violet-600` (light) /
-`text-[#40C2F0]` (dark), i.e. the exact literal values `VsLabel` itself
-uses (Section 8 above, "VS text, round 2") rather than a separately
--chosen pair that happens to look similar -- if `VsLabel`'s colors ever
-change, update this span to match rather than assuming they're still
-in sync.
+**Captain line color (formerly the "CAPTAIN" sublabel):** what used to be
+the small caption under the team name in the spotlight is now the "队长"
+word of the primary title `队长 · <captain name>` (see "Team details in the
+spotlight" below).
+Its color rule is unchanged, and the history is why it must not drift: it
+was once a near-invisible `text-ink-faint`, was then matched to
+`FilmChip`'s "MATCH 0x" sublabel, and -- by explicit request -- was finally
+matched strictly to `VsLabel`, the VS text sitting right next to it:
+`text-violet-600` (light) / `text-[#40C2F0]` (dark), the exact literal
+values `VsLabel` itself uses (Section 8 above, "VS text, round 2"). If
+`VsLabel`'s colors ever change, update the 队长 span to match rather than
+assuming they're still in sync.
 
 Only the *data/logic* layer was carried over unchanged: `teams`/
 `matchups` props (kept live via Realtime), and the same RPC-backed
@@ -1444,9 +1559,671 @@ React state (`reveal` = `{idx, phase, n, flickerA, flickerB}`) rather
 than manual class-toggling, but keeps the same real-server-data-driven
 guarantee described further down.
 
+**Team details in the spotlight (by explicit request; previewed and
+confirmed before it was built).** Both spotlight faces -- `TeamFace`, used by
+the reveal, the settled/featured view, and the bye view -- show the whole
+team, not just the captain. Hierarchy, by explicit request: the **primary
+title** is `队长 · <captain name>` (24px, bold; the name in `--ink-primary` --
+white in dark mode, not a literal white, which would vanish on the light
+panel -- with the 队长 word keeping its VsLabel-matched accent color and a
+muted "·" between), and the **subtitle** beneath it is the team name as
+`N号战队` (`team.idx + 1`, the same name the draft stage's TeamCards use) in
+13px semibold `--ink-muted`. One chip per teammate sits underneath (a small
+squircle initial tile in the Avatar's corner ratio, plus the name; max 112px,
+ellipsis). The title carries the existing name-slam and the subtitle the
+`fmpSubIn` fade. Because the title now holds the captain's name it is the one
+element that truncates (with an ellipsis) if a name is very long. **The rail and
+filmstrip intentionally still label teams by captain ("谢斌DD 战队")** --
+confirmed by the owner, since the captain line ties the two together. If
+those are ever relabeled, make it its own change. (The final-lineup list
+no longer follows this rule: its cards now use these same faces -- see the
+Final Lineup bullet below.)
+- **Data.** `toFinalMatchupTeam()` (tournamentApi.js) now also stores
+  `members: [{id, name}]` in draft order, taken from the team's `slots`.
+  Names only -- initials are all the chips show, so no avatar URLs are
+  stored. It is a plain addition to the jsonb snapshot: **no migration**;
+  the schema.sql comments describing the snapshot were updated. Snapshots
+  taken before this existed have no `members`; those faces render the name
+  and captain line with no chip row and no reserved height (never an empty
+  gap). Tournaments already at Final Matchups therefore do not get chips
+  retroactively -- accepted by the owner; new tournaments do.
+- **Layout.** From `xl` (1280px) up the faces sit side by side and the right
+  one is an exact mirror: avatar outermost, text right-aligned, chips
+  starting at the right edge and flowing inward toward the VS
+  (`xl:flex-row-reverse`). Below `xl` they stack and both align left.
+  Faces are `max-w-[340px]`. `FaceRow`/`VsSlot` pin the VS to the 72px
+  avatar row, so it never shifts when a chip row appears, wraps, or is
+  absent. `BroadcastFrame` is `w-full max-w-[980px]`. **The settled
+  (featured) wrapper must also be `w-full`:** it is a shrink-to-fit flex
+  column, so without it the frame's `w-full` resolved to content width and
+  the frame changed width -- and the left team's chips re-wrapped -- at the
+  instant the reveal settled. Found and fixed while verifying.
+- **Final Lineup list (对阵表已揭晓, `complete && featuredIdx === null`),
+  by explicit request.** Each match is now a full-width card built from the
+  same `TeamFace`/`FaceRow`/`VsSlot` pieces as the settled view -- captain
+  avatar, `队长 · name`, `N号战队`, and the teammate chips for both sides,
+  with a `VsLabel` (`text-2xl sm:text-3xl`) between -- instead of the old
+  captain-name-only row in a two-column grid. Cards are one per row (two per row from 1900px, see the full-bleed
+  entry below) inside a wrapper that's `max-w-[980px]` below `lg` and
+  uncapped from `lg` up (was `max-w-2xl`; the faces need the width), with a
+  small `01`/`02` index tag in each card's top-left corner. A bye card is
+  centered with the `轮空 · 直接晋级` pill, same as the settled bye view. Cards
+  are display-only. No
+  `animateIn`: the card's own `fmpRowIn` stagger is the entrance, not the
+  name-slam/chip cascade. The heading `对阵表已揭晓 · Final Lineup` went from
+  `text-[11px]` to `text-2xl sm:text-3xl`, bold, full `accent2`, tracking
+  `0.2em` (was `0.3em`, too wide at this size), centered. **Scrolling:** the
+  cards are taller than the old rows, so in this view the spotlight box is
+  `overflow-y-auto` + `items-start` (its inner wrapper uses `my-auto`, which
+  centers when short and scrolls when tall -- plain `items-center` would clip
+  the top of an overflowing list unreachably) instead of the usual
+  `overflow-hidden items-center`. Spectators get this automatically (same
+  component).
+- **Corner brackets on the Final Lineup grid cards: added, then reverted,
+  both by explicit request.** They were added first (reference: the
+  single-match spotlight's own HUD-frame accent, `BroadcastFrame`'s glowing
+  cyan corners, which the completed grid's cards didn't have), by factoring
+  the four `<span>`s out of `BroadcastFrame` into a standalone
+  `CornerBrackets` component (`glowColor`, `size` props) and calling it from
+  each grid card too. A follow-up request asked for a plain, clean border on
+  these cards again, with no corner accent -- **the grid cards' own
+  `<CornerBrackets>` call is removed**, leaving them with just their
+  original `border border-panel-line/35`. `CornerBrackets` itself, and
+  `BroadcastFrame`'s own use of it, are untouched by this revert: the
+  single-match spotlight (both the flicker/reveal phase, via `RevealDuel`,
+  and the settled single-match view before the lineup completes) still
+  shows its glowing corners exactly as it always has -- verified against
+  real components (stubbed data layer): 4 `.fmp-corner` elements render
+  during a real match's flicker/reveal and its settled pre-completion view,
+  and 0 render anywhere in the completed 对阵表已揭晓 grid. If corner accents
+  come back for the grid a third time, reuse `CornerBrackets` again rather
+  than re-inlining the four spans -- it still exists for exactly this.
+  **Teammate tags now fit 4 per row, by explicit request** (they wrapped
+  after 3 on a typical team in the grid's two-per-row layout, where a
+  face's chip row is only ~305-312px wide -- the tightest a chip row gets
+  anywhere in this file; the roomy single-match spotlight already fit 4
+  before this, since it has far more width per face). Reused
+  `TeammateChip` everywhere (the grid cards, the spotlight, and the reveal
+  cascade), so tightening it changes all three at once, on purpose --
+  they're meant to be the same component. Changed: `CHIP_GAP` 6px -> 5px;
+  the chip's own `gap-1.5`/`pr-2.5` -> `gap-1`/`pr-2`; its avatar-initial
+  badge `w-5 h-5` (20px) -> `w-[18px] h-[18px]`; its `max-w-[112px]` cap ->
+  a new `CHIP_MAX_W` constant, 96px (still just a safety cap against
+  unusually long member names -- typical 2-4 character names sit well
+  under it and are never truncated). `TeamFace`'s reserved-height math
+  (`rows`, just above) moved off a bare `/ 3` onto a new `CHIPS_PER_ROW = 4`
+  constant so the two stay in sync if either changes again. This part is
+  unaffected by the corner-brackets revert above -- it stayed in the same
+  request that also reverted the corners, but is a separate, still-current
+  change. Verified against real components (stubbed data layer) with this
+  conversation's own sample rosters, including a name long enough to hit
+  the truncation cap: at 1920px wide (`min-[1900px]:grid-cols-2` active,
+  ~305px per face) and at 1280px (one column, ~340px per face), every
+  face with 4 members renders on exactly one row, on every card including
+  the bye card; at 700px wide the stacked mobile layout is unaffected.
+  **Known limit, not a bug:** if every one of a team's 4 members has an
+  unusually long name (5+ CJK characters each, all four at once), the row
+  can still wrap to a second row in the narrower two-per-row grid layout --
+  an inherent width limit at that combination, not something either of
+  these two changes
+  broke. `CHIP_ROW_H`'s reservation still accounts for that correctly, via
+  the same `ceil()` math, now against 4 instead of 3.
+- **No "MATCH 01/02/..." filmstrip and no "← 返回完整对阵表" link, in ANY
+  state, by explicit request.** `FilmChip` and its render block are gone
+  entirely (not just hidden once the lineup completes -- an intermediate
+  version only did that, then still showed the strip while a lineup was
+  being built; a follow-up request explicitly called that out and this
+  removed it from every state). The back link was already removed earlier
+  and stays gone. The whole completed-view gate is still one flag,
+  `lineupView = complete && featuredIdx === null` (drives the spotlight's
+  scroll mode and the Final Lineup list branch); `featuredIdx` itself now
+  only ever tracks which match the build-in-progress spotlight is showing
+  (set by `runReveal`, or by the sync effect after a remove/reset), never
+  something a person clicks.
+  **Removing a matchup moved onto the 参赛战队 rail instead, in every
+  state (build in progress or complete), not just where the strip used to
+  cover:** each roster row's own `status` (`idle`/`used`/`bye`) already
+  said whether that team is in a matchup; a `matchOfTeam` map (`idx -> that
+  team's match index`, built from `displayMatches`, alongside
+  `usedIdxs`/`byeIdxs`) is what a click needs to know *which* one. For
+  staff, a `used` or `bye` row is itself a button. Clicking **either** team
+  of a pair, or a bye row, no longer removes immediately, by a direct
+  follow-up request: **it opens a confirm dialog first** --
+  `requestRemoveMatch(matchOfTeam.get(team.idx))` reads that match's two
+  team names off `displayMatches`/`teamByIdx` right then, stores the actual
+  removal as `pendingActionRef.current.remove`, and sets `confirmRemoveIdx`;
+  a `<ConfirmDialog>` (same shared component and idiom as 重置/结束锦标赛,
+  further down) shows a tailored message -- both team names for a pair,
+  one for a bye -- and only on "确认解除" does `onConfirm` call
+  `pendingActionRef.current.remove()`, which runs `handleRemoveMatch(idx)`,
+  a generalized version of the old `handleRemove` that takes an explicit
+  match index instead of implicitly reading `featuredIdx`. Cancelling
+  clears `confirmRemoveIdx` and removes nothing. **`RosterRow`'s own visual
+  is back to the plain status dot** (a short-lived intermediate version
+  swapped it for an `x` icon plus a danger-tinted row hover as a
+  click-to-remove affordance; that's reverted, by explicit request -- the
+  dot is unconditional again, same as every status before this feature
+  existed, and gives no visual hint a matched row is clickable beyond the
+  cursor and hover background it already had). The dialog itself is now
+  what carries that signal, and is the only thing standing between a click
+  and an actual removal. Guarded the same way as before request: `reveal`
+  blocks *opening* the dialog (so a stale index can't be queued mid-roll);
+  the dialog's own `busy={busyAction === \`remove:${confirmRemoveIdx}\`}`
+  disables its confirm button while the request is in flight, so it can't
+  be double-fired. `idle` rows are unaffected -- still plain pool-selection
+  clicks for 定角锁定/随机生成剩余对阵, never a remove target. The rail's
+  对阵操作 list stays at four buttons (解除本场对阵 is still gone from
+  there, unchanged from before this request -- only *how* the per-row
+  click behaves changed, not that it moved out of that list).
+  **Consequence to know about, unchanged from before this request:**
+  removal isn't disabled once the lineup completes -- since it doesn't
+  depend on a "featured" selection, staff can remove a match from a
+  *completed* 对阵表已揭晓 view too, directly from the rail. If that's
+  unwanted, gate the rail's `onClick` on `!lineupView` as well.
+  Verified against real components (stubbed data layer, not the live
+  Supabase backend): the dot renders (no `x` anywhere in the file);
+  clicking a matched team opens the dialog and calls
+  `removeTournamentMatchup` zero times until confirmed; the dialog's
+  message names both teams for a pair (`将解除「A 战队」与「B 战队」的对阵...`)
+  or the one team for a bye; Cancel closes the dialog with zero removal
+  calls; Confirm removes exactly the clicked pair's match index.
+- **Layout stability.** The chip row reserves `ceil(members / CHIPS_PER_ROW)`
+  rows (28px rows, `CHIP_GAP` gaps -- both constants, alongside `CHIP_MAX_W`,
+  live next to `CHIPS_PER_ROW` itself; see the corner-brackets/4-per-row
+  bullet further down for their current values and why). While the teams
+  are rolling (`hideChips`) the row keeps that reserved height but draws
+  nothing -- by explicit request, since dashed placeholder pills looked
+  noisy mid-shuffle. Do not remove the empty row itself: it is what keeps
+  the frame's layout height identical across flicker, reveal, and settled
+  (measured 218px in all three at the time this was written, before the
+  chip-tightening pass below changed `CHIP_ROW_H`'s inputs -- re-measure if
+  this number matters again, since a fixed row height with a smaller
+  chip footprint isn't guaranteed to land on the same total). Team size is
+  configurable up to 20 players, so the row simply wraps and grows; every
+  team in a tournament is the same size, so height is also constant from
+  match to match. Frame bottom padding is trimmed to 26px when a chip row
+  exists so the reserved space doesn't read as bottom-heavy.
+- **Reveal.** All the reveal's animations are unchanged (timings: see the
+  next bullet). Added:
+  `fmpSubIn` (subtitle fades in, .2s delay) and `fmpChipIn` (chips
+  cascade from 320ms, 60ms apart, from the outer edge inward; the last ends
+  around 820ms, inside the reveal window). During the flicker only the title
+  and subtitle shuffle; the chip row is blank (names are not shuffled at
+  110ms). The
+  reduced-motion rule now also zeroes `animation-delay`, otherwise chips
+  would sit invisible for up to half a second.
+- **Reveal timing (by explicit request).** The constants sit next to
+  `fmpWait` in DraftArena.jsx and `runReveal` reads them. Per matchup:
+  countdown 3-2-1 (`FMP_COUNT_STEP_MS`, 600ms each) -> **team rolling,
+  `FMP_ROLL_MS` = 2000ms** -> reveal (`FMP_REVEAL_MS`) -> **hold,
+  `FMP_REVEAL_HOLD_MS`** on the finished result -> the next matchup.
+  (`FMP_REVEAL_MS`/`FMP_REVEAL_HOLD_MS` were originally 1100ms/1000ms; a
+  later request retimed them to total exactly 1000ms combined -- see the
+  dedicated timing-pass bullet further down for the current split and why.
+  `FMP_HOLD_MS`, 1000ms, still exists separately and is now the *bye's*
+  own hold only, not the real-match one -- also covered in that later
+  bullet.) The rolling used to be 8 frames (~880ms). It still plays in
+  frames of `FMP_ROLL_FRAME_MS` = 110ms (the original shuffle cadence)
+  with the last frame absorbing the remainder, so the phase is exactly
+  2000ms rather than 1980. **The hold is spent inside the reveal phase,
+  not the settled view:** switching to the settled view would replay that
+  view's own scale-in animation, and the result would visibly pop a
+  second time. Every reveal animation has finished by about 1s, so during
+  the hold the frame is fully still (verified: no running animations).
+  **This assumption turned out to be incomplete, not wrong:** it correctly
+  avoided a pop *during* the hold, but didn't anticipate that the
+  *unavoidable* switch to the settled "featured" view immediately *after*
+  the hold ends would replay that view's own separate entrance animation
+  for the same match -- a real, later-reported bug, fixed by
+  `skipFeaturedPopRef`; see its own bullet further down. **Updated, by
+  explicit report: the hold now also applies after the LAST matchup of a
+  roll**, not just the ones in between -- it used to be skipped there
+  ("nothing follows it"), but the owner wanted the final rolled result
+  held for the same 1s as every other one before the stage moves on to
+  its plain settled view. A random roll of N matchups took about N x 5.9s
+  at the time this was written (4 matchups was roughly 23.6s); the later
+  timing pass below shortened this considerably. The roll buttons stay
+  locked for the whole roll (`busyAction`/`revealingRef`, unchanged).
+  Spectators replay through the same `runReveal`, so they get the same
+  timing. Known, pre-existing limitation, now a wider window: the live-sync
+  effect skips updates while a reveal is playing (`revealingRef`) and only
+  re-runs when `matchups`/`teams` next change, so a *different* admin's
+  change landing mid-reveal is not re-applied until the next update.
+- **Bye matches skip the roll animation entirely, by explicit request**
+  (an odd-sized pool -- 3 teams is the example that was reported -- used to
+  play the full countdown-3-2-1 / team-rolling flicker / reveal show for
+  the one team left with no opponent, which reads as fake suspense: a bye
+  is never a random outcome, so there was nothing to actually roll). A bye
+  is unambiguous: `m.b == null` on an appended match, which only ever
+  happens for a genuine bye (`createManualMatchup` always takes two
+  selected teams; a bye only ever comes out of
+  `rollTournamentMatchupsPool` on an odd-sized pool) -- so `runReveal`
+  checks that per matchup and, for a bye, skips straight past the
+  countdown/flicker/reveal block: `reveal` stays `null` for that whole
+  step (so nothing new draws over whatever the previous matchup left on
+  screen), waits **`FMP_BYE_DELAY_MS` = 1000ms** (next to the other timing
+  constants), then commits that matchup's data and `featuredIdx` together
+  (same React-18 auto-batched update, so there's never a frame where
+  `featuredIdx` points at an index `displayMatches` doesn't have yet) and
+  holds for the same `FMP_HOLD_MS` as every other matchup before moving
+  on. The ordinary settled-view render path -- unchanged, the same one a
+  real match's reveal always lands on -- draws the 轮空 · 直接晋级 state
+  immediately, since there's no reveal state left to render anything else.
+  A pool of exactly one team behaves the same way (a lone bye with no
+  preceding pair in that roll). Verified against a real component (stubbed
+  data layer) on a 3-team pool ([{a,b} pair, {a,null} bye] returned from
+  one roll call): the countdown digits (3/2/1) appear exactly once across
+  the whole sequence, never a second time for the bye; the bye's own
+  `轮空`/`直接晋级` text appears roughly `FMP_BYE_DELAY_MS` after the paired
+  match's hold ends, with no flicker in between.
+- **A follow-up "terminal bye" fix was tried, then fully reverted, both by
+  explicit request.** It changed the bye branch above to special-case a
+  bye that happens to be the last team placed (jumping `featuredIdx`
+  straight to `null` instead of the bye's own index, to avoid a suspected
+  double-display), on the theory that the real double-render the owner
+  was reporting was specific to a *terminal bye*. A follow-up report
+  clarified the actual sequence: the double flash happened on the
+  **first, real (non-bye) match** of that same 3-team example ("Ok林仔 VS
+  黄翔LongDD"), not the bye at all, and the terminal-bye special case
+  wasn't the fix for it -- so it was reverted in full, back to the
+  simpler form described just above (bye branch always spotlights the bye
+  at its own `idx`, exactly like a real match, with the ordinary
+  post-loop `computeComplete` check deciding the hand-off to the grid).
+  The bullet directly below this one is the fix for the real, reported
+  bug.
+- **The real bug, and its fix: a real match's own settled result flashed
+  a second time, briefly, right after its normal reveal -- by explicit
+  report.** Sequence: a real match's reveal (`RevealDuel`, phase
+  `"reveal"`) plays its own entrance (`fmpNameSlam`/`fmpVsPop`/chip
+  cascade) and holds for `FMP_REVEAL_HOLD_MS`, all correct and exactly once.
+  Immediately after, `runReveal` calls `setReveal(null)`, which switches
+  the render from `RevealDuel` to the separate "featured" branch further
+  down (`featured ? <div key={featuredIdx} style={{ animation:
+  "fmpSlamIn .5s ease forwards" }}>...` ) -- a *different* element at a
+  different position in the tree, so React unmounts `RevealDuel` and
+  mounts this one fresh, playing its own `fmpSlamIn` entrance for the
+  exact same match that had just finished settling a moment ago. That's
+  the second flash: shorter than the first (`fmpSlamIn` is .5s vs. the
+  reveal's own ~1s total dwell), and it happens for every real match, not
+  just a bye. **Fix:** a new `skipFeaturedPopRef` (next to `revealingRef`
+  and the other coordination refs already in this component) records
+  "the match about to appear in the featured branch was *just* animated
+  in by RevealDuel a moment ago, so don't replay its entrance." Set to
+  `true` right before the real-match branch's own `setReveal(null)`;
+  read once (`skipFeaturedPop = skipFeaturedPopRef.current`) at the top
+  of the component's render to decide whether the featured branch's
+  outer `<div>` gets the `fmpSlamIn` style at all this render; and reset
+  back to `false` in a `useLayoutEffect` with no dependency array (runs
+  after every commit) -- deliberately *not* reset inline during render,
+  because this component renders inside `<React.StrictMode>`
+  (`main.jsx`), which double-invokes render bodies in development; an
+  inline read-and-reset would get consumed by the throwaway first pass,
+  leaving the real, committed render with the flag already cleared and
+  the bug looking unfixed in dev. A bye's own entrance into the featured
+  branch never sets this flag (it has no preceding `RevealDuel` animation
+  to have already played), so a bye's own `fmpSlamIn` -- and the initial
+  `fmpSlamIn` when the live-sync effect mounts straight into a featured
+  match with no local reveal at all (e.g. a spectator's first paint, or
+  another admin's change arriving via Realtime) -- are both untouched and
+  still play normally; only the one redundant replay, immediately
+  following this component's own local reveal for the same match, is
+  suppressed. Verified against a real component (stubbed data layer) by
+  listening for the browser's own `animationstart` events with
+  timestamps across an entire 3-team roll (one real pair, then a bye):
+  **without** this fix, `fmpSlamIn` fires twice before the completed grid
+  appears -- once ~1.7s after the real match's reveal animation (the bug)
+  and once for the bye's own legitimate entrance; **with** the fix, it
+  fires only once (the bye's), confirming the redundant one is gone and
+  the legitimate ones are untouched.
+- **Real match reveal shortened to exactly 1000ms total on-screen dwell,
+  by explicit report ("staying on screen too long, longer than 1
+  second").** Previously `FMP_REVEAL_MS` (1100ms, the settle/entrance
+  animation) + `FMP_HOLD_MS` (1000ms, the still pause after it) totalled
+  2100ms from when a real match's result first settles to when it moves
+  on -- noticeably sluggish once the double-pop bug above was already
+  fixed and this became the next-most-visible thing. Split into two
+  constants that no longer share one name/value:
+  **`FMP_REVEAL_MS` = 900ms, `FMP_REVEAL_HOLD_MS` = 100ms**, summing to
+  exactly 1000ms as requested. `FMP_REVEAL_MS` couldn't just be scaled
+  down proportionally (900:1000 -- roughly half the original 1100:2100
+  ratio -- would have cut a typical 4-member team's own `fmpChipIn`
+  cascade off mid-animation, which finishes around 820ms into the reveal;
+  see that bullet's own comment above): 900ms was chosen specifically to
+  clear that with a real, verified margin, not scaled from the old ratio.
+  **`FMP_HOLD_MS` (1000ms) still exists, but is now the *bye's own* hold
+  only** (`FMP_BYE_DELAY_MS` then `FMP_HOLD_MS`, unchanged, ~2000ms
+  total) -- deliberately kept as a separate constant from
+  `FMP_REVEAL_HOLD_MS` rather than reusing one shared "hold" for both, so
+  that retiming the real match's dwell (this request) can never silently
+  retime the bye's dwell too (which wasn't reported as a problem and
+  wasn't touched). Verified against a real component (stubbed data
+  layer, 3-team pool, a 4-member roster to exercise the fullest realistic
+  chip cascade) via `animationstart`/`animationend` timestamps: the last
+  `fmpChipIn` instance ends about 670ms into the reveal, comfortably
+  inside the new 900ms `FMP_REVEAL_MS` window (roughly 230ms of margin);
+  no extra `fmpSlamIn` fires between the reveal's own entrance and the
+  next legitimate one (the bye's), confirming the skipFeaturedPopRef fix
+  above still holds at the new timing; and the gap from reveal-start to
+  the bye's own entrance is consistent with exactly 1000ms of real-match
+  dwell followed by the bye's own untouched ~2000ms pacing.
+- **Results no longer bypass the reveal on a remount, by explicit
+  report.** App.jsx mounts `DraftArena`/`SpectatorPage` (and so
+  `FinalMatchupsStage`) conditionally by `route` (`isDraft`/`isSpectate`),
+  so navigating this tab away (e.g. to 锦标赛大厅) and back is a genuine
+  unmount + remount, not just a re-render -- React component state and
+  refs do not survive that. `FinalMatchupsStage` used to derive its
+  initial `displayMatches`/`featuredIdx` straight from the current
+  `matchups` prop on every mount, which is correct for a truly fresh page
+  load, but wrong for a remount: the roll's RPC already writes the full,
+  final result the instant it resolves (the whole point of `runReveal` is
+  to reveal that already-known result gradually), so remounting mid-roll
+  showed the finished matchups instantly, with the countdown/roll/reveal
+  entirely skipped -- exactly what was reported.
+  - **Fix: `fmpRevealWatermark`,** a module-scope (not component-state)
+    counter of how many of this tournament's matchups THIS browser page
+    has genuinely watched `runReveal` play through. Module scope
+    specifically because it must survive the unmount/remount above; a
+    hard page reload resetting it is fine, since there is no in-flight
+    reveal left to protect at that point.
+  - **Bootstrapping.** `null` means "never set this page load" -- true
+    only on this stage's very first-ever mount since the page loaded.
+    Whatever matchups already exist right then predate this viewing
+    session entirely (there is no reveal being skipped, so nothing needs
+    protecting) and become the trusted baseline, exactly as before this
+    fix. Every later mount trusts what the mount before it left behind
+    instead of re-trusting the live prop, which is exactly the bug.
+    Clamped down to the current matchup count on every mount too, so a
+    reset/new tournament (genuinely shorter than the last thing watched)
+    can't leave a stale, too-high watermark behind.
+  - **Where it advances.** `runReveal` bumps it right after each
+    matchup's own `FMP_REVEAL_MS` wait completes -- that specific
+    matchup's reveal has genuinely played, so it's now safe to show
+    instantly on any future remount, hold included: the hold only delays
+    the transition to the *next* matchup (or to settled), it is not part
+    of protecting *this* matchup's own result.
+  - **What actually changes on mount:** `displayMatches`/`featuredIdx`
+    seed from `initialMatches.slice(0, watermark)` instead of the full
+    prop. The existing live-sync effect already treats "prop has more
+    matches than currently displayed" as "a roll happened, replay it via
+    `runReveal`" (added for the Realtime multi-admin case) -- it needed no
+    changes at all: seeding from the watermark instead of the full prop is
+    what makes it fire correctly on a remount, since the effect can no
+    longer see the un-revealed tail as already displayed.
+  - **What a remount looks like now, at every point in a roll:** mid
+    countdown/rolling -> that matchup restarts its full countdown-roll-
+    reveal-hold sequence from the beginning (not an exact resume of the
+    interrupted frame, which is both simpler and, on reflection, no worse
+    a user experience -- either way the whole sequence plays before the
+    result is shown); already-revealed matchups earlier in the same roll
+    -> shown instantly, not replayed a second time; everything already
+    fully settled before this page's first mount, or before this browser
+    session started -> shown instantly, as it always has been. Verified
+    on the real component: forcing a remount mid-countdown, mid-roll of
+    the *last* matchup in a batch, and after full completion all produced
+    the behavior above.
+  - Spectators get this automatically (same component, same module).
+  - **Follow-up bug, by explicit report: 重置 then a new roll, switching
+    tabs mid-animation, instantly exposed the second roll's results too.**
+    Cause: `fmpRevealWatermark` was only ever clamped down once, at mount
+    time, against that mount's own frozen `initialMatches` snapshot. If
+    重置 happened while the SAME instance stayed mounted (the normal case
+    -- an admin clicking 重置 then 随机生成剩余对阵 again without ever
+    navigating away), nothing clamped the watermark down at that point, so
+    it kept sitting at whatever count the FIRST, already-completed roll
+    had left behind. Once the second roll's own matches started resolving
+    live, a remount mid-way through it clamped the stale watermark against
+    the *second* roll's already-current length -- which by then could
+    already meet or exceed the old stale number -- and wrongly inherited
+    the first roll's trust onto matchups that had never actually been
+    watched.
+    **Fix:** the live-sync effect's "did not grow" branch (already the
+    one place that already directly handles 重置's shrink to the eye,
+    and any single 解除本场对阵 removal) now also clamps
+    `fmpRevealWatermark` down to the *live* `newMatches.length` right
+    there, the moment the shrink is observed -- not just once, later, at
+    whatever mount happens to come next. A 重置 (shrink to 0) now zeroes
+    it out immediately, and a later remount mid a fresh roll can no longer
+    find a stale, too-high number to wrongly trust. A partial removal is
+    covered the same way and for the same reason: a different matchup
+    later filling that freed slot must still play its own full reveal, not
+    inherit the removed one's trust.
+    Verified directly on the real component, with a negative control: a
+    roll that fully settles, then 重置, then a second (differently-paired)
+    roll, with a forced remount mid the second roll's flicker -- before
+    this fix the remount showed the second roll's final result instantly;
+    after it, the remount correctly restarted that matchup's countdown
+    instead. All of the earlier watermark scenarios above were re-verified
+    unaffected.
+- **Chip border -- reverted, by explicit request.**
+ The chips use
+  `1px solid rgb(var(--color-panel-line) / .55)` on `--color-panel-alt` at
+  .7: the styling that was originally previewed and approved. A stronger
+  `rgb(var(--color-ink-muted) / .6)` outline was tried once, on a report that
+  the border was hard to see, and was then rolled back at the owner's
+  request. If visibility comes up again, ask before changing it; this has
+  now gone back and forth once.
+- The Spectator Page gets all of this automatically (same component, same
+  snapshot row).
+
+- **参赛战队 rail redesigned to Admin/Lobby's own `<aside>` anatomy, by
+  explicit request.** Previewed as a live, clickable Today-vs-Redesign
+  mockup before any code changed, with two open questions -- rail width
+  and the selected-team treatment -- each flagged with a recommended
+  option; both were approved as recommended.
+  - **`RosterRow`:** was a bordered card (`border border-panel-line/35`)
+    with a glowing circular avatar. Now borderless, state shown by
+    background color only, matching `AdminDashboard.jsx`'s/
+    `TournamentLobby.jsx`'s own sidebar rows (`RailAction`, the nav
+    tabs) exactly: idle is plain muted text, used is a soft accent2
+    tint with a small dot (no border anywhere), and **selected
+    (`定角锁定`'s two-team pick) is a solid `bg-accent-gradient` fill**
+    with void-colored text -- the same fill Admin's own active nav tab
+    uses -- replacing the old accent-bordered glow-ring outline. 轮空
+    keeps its small tag, recolored so it stays legible on top of either
+    the flat or the solid-gradient background. `Avatar` itself needed no
+    change -- it was already a proportionally-rounded squircle, not a
+    true circle as the old bordered card made it look; only the row
+    around it changed.
+  - **Rail width: 216px of usable content, matching Lobby's own aside**
+    (was a one-off 280px; declared as `lg:w-[240px]` with `lg:pr-6`,
+    see the full-bleed pass below and Section 3). Team names already
+    truncated with an ellipsis before this change; they now do so a
+    little sooner.
+  - **No 概览 stat block.** The rail is the 参赛战队 roster list plus, for
+    staff, the 对阵操作 buttons -- nothing below them. An earlier version
+    carried a 概览 tile row (战队/已配对/待定 counts) under the buttons;
+    it was removed by explicit request, along with this file's own
+    `RailStat` copy and the `users`/`check`/`clock` `DraftIcon` entries
+    that existed only for it. Admin Dashboard's 概览 and Tournament
+    Lobby's 实时统计 are separate and unaffected. Spectators see the same
+    change automatically (same component).
+  - Verified on the real component, both themes: the rail measured
+    exactly 220px at the time (216px of usable content now that its
+    right spacing lives on the aside, see the full-bleed pass below);
+    clicking an idle row renders the real
+    `linear-gradient(135deg, #7C5CFF, #22E5FF)` fill with void text
+    color; a bye row's tag stays legible; the admin action bar
+    (定角锁定 etc.) still operates correctly against the redesigned
+    rows; the layout still stacks correctly and stays overflow-free at
+    narrow widths. Everything to the right of the rail -- the spotlight,
+    reveal, and match list -- is untouched; this was a rail-only change.
+  - Spectators get this automatically too (same component).
+
+- **Top status strip removed and 对阵操作 relocated into the rail, both
+  by explicit request, continuing the same Admin/Lobby-match direction as
+  the rail redesign just above.**
+  - **Status strip (对阵抽签/对阵已就绪 badge + the "MATCH 0x" / 等待生成
+    首个对阵 / 全部对阵已生成 heading) is gone entirely**, not moved --
+    neither Admin Dashboard nor Tournament Lobby has a header bar above
+    their own `<aside>`/main split, so removing it (rather than
+    relocating its text somewhere) is the literal match. Both pieces of
+    information it carried stay findable elsewhere: which match is
+    showing is still the highlighted `FilmChip` in the strip under the
+    spotlight, and "a reveal is in progress" is directly visible in the
+    spotlight itself (it's already showing the countdown/roll/reveal).
+    `complete`/`reveal`/`featuredIdx` are all still read elsewhere in the
+    component (the spotlight's own "对阵表已揭晓" copy, the rail, etc.) --
+    only this one usage went away.
+  - **All five action buttons (定角锁定, 随机生成剩余对阵, 重置, 解除
+    本场对阵, 结束锦标赛) moved from a horizontal bar under the spotlight
+    into the rail, directly below the team list** **-- "all", not just the four named in the request; 结束
+    锦标赛 is the fifth member of the same action group and leaving it
+    alone in the old spot while everything else moved would have read as
+    broken, not as a deliberate choice.** Same handlers, same `disabled`
+    logic, same `isStaff` gate -- verified on the real component:
+    `定角锁定` is disabled with 0 selected and enables at exactly 2, the
+    status line below the buttons still updates to "已选择 N 支战队" /
+    "未选择 · 将随机排位剩余 N 支战队" (now hidden entirely when there is
+    nothing to say, since the old `ml-auto` right-alignment trick it used
+    doesn't mean anything in a vertical rail and an empty line is worse
+    than no line there), and no buttons were left behind outside the rail.
+  - **New button style, `FmpRailAction`, not a change to the shared
+    `DraftAction`.** `DraftAction`'s own header comment already says it's
+    supposed to be "a verbatim copy of TournamentLobby.jsx's RailAction",
+    but `RailAction` was restyled borderless since then (its own entry
+    above) and `DraftAction` was never updated to match -- pre-existing
+    drift, not introduced here. Relocating these five buttons as-is,
+    still bordered, directly under the now-borderless `RosterRow`
+    rows would have visibly clashed and undercut the entire
+    point of this rail redesign. `DraftAction` is also still used by the
+    Draft Captain/Player header's own 撤销 button elsewhere in this file
+    -- a different stage this request never named -- so instead of
+    changing it (and silently restyling that unrelated button too), a
+    new component, `FmpRailAction`, was added that matches `RailAction`'s
+    *current* borderless styling exactly, scoped to only these five
+    calls. Same per-file-duplication precedent as `RoleBadge`/
+    `RailStat`/`RailAction` elsewhere in this doc.
+
+- **Sidebar bug fix, by explicit report: this rail's usable width was
+  genuinely narrower than Admin/Lobby's own, despite an identical
+  `lg:w-[220px]` on the `<aside>` itself.** Cause: Lobby puts its page-
+  level spacing (`gap-5 p-4 sm:p-5 lg:p-6`) on the *wrapper outside* its
+  `<aside>`, so the full 220px is available inside it; this rail instead
+  put spacing (`px-4 sm:px-5 lg:px-4 py-4`) directly *on* the `<aside>`,
+  which -- border-box -- is subtracted from that same 220px, leaving
+  roughly 188px of actual content width. Same declared number, visibly
+  smaller sidebar. Fix: moved the spacing to the wrapper div, exactly
+  where Lobby keeps it (`gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto` added
+  there), and stripped the `<aside>` down to `lg:pr-1`, matching Lobby's
+  own `<aside>` exactly, char for char. The main content div's own
+  padding/border (`px-5 sm:px-6 py-4`, `lg:border-l`) is untouched --
+  out of scope for a sidebar-width report, and analogous to how Lobby's
+  own main section layers its header's padding on top of the same outer
+  wrapper spacing. Verified by rendering both sidebars' real markup side
+  by side against the app's own compiled CSS: identical 220px width,
+  identical 24px inset from the page edge on all sides, pixel-aligned in
+  a screenshot. All of the previous two entries' own checks (button
+  wiring, disabled states, both themes, narrow-width stacking) were
+  re-run afterward and still pass.
+
+- **Full-bleed spotlight column, by explicit request** (see the Browser
+  Layout Standard rule in Section 3 for the shared rule). The wrapper
+  above has no vertical padding, no right padding and no gap from `lg` up
+  (`lg:pl-6 lg:pr-0 lg:py-0 lg:gap-0`); the rail's old spacing moved onto
+  the `<aside>` (`lg:py-6`, `lg:pr-6`, width 220 -> 240, so its usable
+  content stays 216px), which supersedes the "wrapper carries all the
+  spacing" wording of the sidebar bug-fix entry above for everything except
+  the left inset. The right-hand column is `lg:px-0 lg:py-0 lg:gap-0` and
+  keeps its `lg:border-l` as the seam against the rail; the spotlight box
+  is `rounded-none lg:border-0` (square at every breakpoint), so it runs edge to edge (its
+  complete/not-complete border tint no longer shows from `lg` up -- the
+  background gradient still carries the brand color). **While a lineup is
+  being built, the filmstrip is attached under the spotlight** as a bottom
+  bar (`lg:py-3 lg:px-6 lg:border-t`, no gap; the `px-6` is its own inset
+  now that the column has none) so it, not the spotlight, is what touches
+  the page bottom; in the completed 对阵表已揭晓 view there's no strip, so
+  the spotlight itself does, and its content scrolls inside it
+  (`overflow-y-auto`, see the Final Lineup bullet). **Final Lineup uses the
+  width:** the lineup wrapper drops its `max-w-[980px]` cap from `lg` up,
+  the spotlight's side padding tightens to `lg:px-6` in that view, and from
+  `min-[1900px]` (the 1920x1080 design target) the cards go **two per row**
+  (`grid-cols-2`, card padding `px-6`), with a lone last card spanning both
+  columns (`[&:nth-child(odd):last-child]:col-span-2`) so an odd match count
+  doesn't leave a hole. The 1900px threshold is deliberate: below it, two
+  cards per row squeeze each face's title (`队长 · name`) into truncation,
+  so 1280-1899px stays one card per row, just wider. The Spectator Page
+  picks all of this up automatically (same component). Verified in a real
+  browser against the compiled CSS at 1920x953, 1600, 1440 and 1280 wide
+  (both themes at 1440): card left edge at 264px and right edge == viewport
+  width on all three pages; rail content position/width unchanged; at 1920
+  two columns with the long-name pairs (`队长 · 黄翔LongDD`,
+  `刘嘉俊Sylor1`) not truncated; and unchanged rounded/stacked behavior at
+  700px.
+
+- **Scrollbar width bug fix, by explicit report, plus a requested visual
+  audit of the rest of the Final Matchups stage against Admin/Lobby.**
+  - **Scrollbar: the second half of an old bug, only half-fixed before.**
+    `GlobalStyle` (mounted around the whole Draft Arena page, including
+    this rail, and reused as-is by Spectator Page) used to carry its own
+    `::-webkit-scrollbar-track` rule, a literal near-black that never
+    followed the theme; that was removed once already (this doc's own
+    earlier entry on it, still accurate as a record). What that entry
+    didn't catch: `GlobalStyle` *also* carried its own
+    `::-webkit-scrollbar { width: 6px }` / `::-webkit-scrollbar-thumb`
+    pair, deliberately narrower than index.css's site-wide 8px rule --
+    "Draft Arena's own thinner scrollbar," kept on purpose at the time.
+    Same root mistake as the track-color bug: this `<style>` tag mounts
+    later than index.css, so anything it re-declares silently wins for
+    the same selector, everywhere the component is mounted. That's
+    exactly what made this rail's scrollbar narrower than Tournament
+    Lobby's own. Fixed the same way as the track color: removed rather
+    than re-declared, so there is exactly one `::-webkit-scrollbar` rule
+    for the whole app again. Verified directly against the CSSOM after
+    mounting (not just a screenshot, since headless Chromium doesn't
+    always paint custom scrollbars the same as a full browser): exactly
+    one `::-webkit-scrollbar`/`-track`/`-thumb` rule set exists anywhere
+    in the document once `GlobalStyle` is mounted, and it is index.css's
+    8px one.
+  - **Audit: everything else in this stage's own scope was already
+    token-based and consistent with Admin/Lobby** -- `BroadcastFrame`,
+    `TeamFace`, `TeammateChip`, `VsLabel`, `RosterRow`,
+    `FmpRailAction` all already read colors from the same `--color-*`
+    tokens Admin/Lobby use (checked by reading each one's source, not by
+    eye). **One real exception found and fixed: `FilmChip`'s inactive
+    state** was still hardcoded to literal Tailwind default swatches
+    (`border-slate-300`, `bg-white/80`, `dark:text-cyan-400`, etc.)
+    instead of this app's own tokens -- the one place left in this stage
+    that wasn't, everything else having already been brought over during
+    the rail redesign above. Its *active* state was already correct
+    (`border-accent2 shadow-accent-glow bg-accent2/10`), which is what
+    made the mismatch visible on close reading. Replaced with
+    `border-panel-line bg-panel-alt/60 hover:border-accent2/40
+    hover:bg-panel-alt` and `text-ink-muted` for the label -- same idle/
+    hover states, now genuinely following the theme instead of
+    coincidentally resembling it. Verified on the real component in both
+    themes by reading the actual computed className (not just the
+    rendered color, which can coincidentally match a token's value in
+    one theme and mask a literal-color bug -- light mode's own
+    `--color-panel-line` happens to equal Tailwind's `slate-400`
+    numerically, which is exactly the kind of false negative a
+    color-only check would miss).
+  - **What the audit found but did *not* change, and why:** the
+    spotlight's corner brackets/pulse glow, the countdown-flicker-reveal
+    choreography, `VsLabel`'s literal (not token) accent color, and the
+    Orbitron sizing in team names are Draft Arena's own protected brand
+    glow (Section 3) -- the standing project rule is that these are not
+    restyled to match Admin/Lobby's flatter look without an explicit,
+    specific request, the same rule that's already been granted
+    itemized exceptions (badges, the rail, this stage's buttons) one at
+    a time throughout this section. Two more things found, both outside
+    Final Matchups' own scope so left alone: `DraftAction` (the Draft
+    Captain/Player header's own three buttons) and `PlayerStatCard` (the
+    teammate-draft player card) carry the exact same hardcoded-slate
+    pattern `FilmChip` had -- a different stage this request never
+    named, not touched here.
+  - **Documentation correction, found while auditing:** Section 3's and
+    this section's own opening description of Draft Arena's "brand
+    identity" still said "gold/Cinzel-Orbitron" and referenced "the
+    Final Matchups poster" -- stale, describing an early design that
+    predates the VS-duel spotlight documented everywhere else in this
+    section. There is no Cinzel font and no gold color anywhere in the
+    current code. Corrected in place (both mentions), with a note left
+    behind recording what the text used to say, in case anything else
+    in this doc still assumes the old description.
+
 **Workflow (admin-controlled, blank canvas -- nothing auto-generated):**
-entering this stage snapshots the drafted teams (captain identity
-only) with zero matchups. From there, freely mixable:
+entering this stage snapshots the drafted teams (captain identity plus a
+light `members` teammate list -- id + name only) with zero matchups. From there, freely mixable:
 - Team selection for both Manual Pairing and Random Roll happens
   directly in the 参赛战队 roster list -- clicking an eligible (not yet
   paired/bye) row toggles it into the current selection; there is no
@@ -1781,3 +2558,7 @@ log.** Going forward:
   every future devlog update, code comment, UI label, error message, and
   architecture/backend doc. Do not reintroduce the old, reversed usage.
 - For install/run/build instructions, see `README.md`.
+- **Deliver full zips, not diffs.** Whenever a code change is made to
+  this project (in any future chat/session), always hand back the
+  COMPLETE, FULL project zip with the change applied — never a partial
+  zip, a single changed file, or a diff/patch on its own.

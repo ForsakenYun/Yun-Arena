@@ -227,8 +227,10 @@ export default function AuthPage({ onLoggedIn, initialMessage }) {
       <div className="w-full max-w-sm">
         {/* brand mark */}
         <div className="flex flex-col items-center gap-2.5 mb-7">
-          <span className="w-14 h-14 rounded-2xl bg-accent-gradient flex items-center justify-center shadow-accent-glow-lg rotate-3">
-            <span className="font-display font-black text-void text-xl -rotate-3">秀</span>
+          {/* Straight/upright, by explicit request -- see AppShell.jsx's
+              identical logo mark for the same fix and its full rationale. */}
+          <span className="w-14 h-14 rounded-2xl bg-accent-gradient flex items-center justify-center shadow-accent-glow-lg">
+            <span className="font-display font-black text-void text-xl">秀</span>
           </span>
           <h1 className="font-display text-2xl font-bold tracking-[0.15em] text-ink-primary">选秀台</h1>
           <p className="eyebrow">DRAFT STAGE · ARENA</p>

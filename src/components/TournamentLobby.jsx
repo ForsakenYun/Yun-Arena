@@ -188,7 +188,7 @@ function SortIndicator({ active, direction }) {
 
 function SortableTh({ label, sortKey, sortConfig, onSort }) {
   return (
-    <th className="px-3 py-2.5 font-medium">
+    <th className="px-3 lg:px-5 xl:px-7 py-2.5 font-medium">
       <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 hover:text-ink-primary transition">
         {label}
         <SortIndicator active={sortConfig.key === sortKey} direction={sortConfig.direction} />
@@ -236,14 +236,22 @@ function Avatar({ src, alt, size = 'w-9 h-9' }) {
   )
 }
 
+// Pill shape (`rounded-full`), by explicit request -- Admin Dashboard's own
+// 角色 column and AddParticipantsDialog.jsx's copy both stay `rounded-md`
+// (the corner radius every other badge in this app uses); this page's
+// RoleBadge/StatusBadge are a deliberate one-off pair, the same kind of
+// intentional divergence AddParticipantsDialog.jsx's own copy already went
+// through once (that one tried `rounded-full` too, then was explicitly
+// reverted back -- see its own entry below). Colors/border/spacing/icon
+// unchanged; only the corner radius changed.
 function RoleBadge({ role }) {
   if (!role) {
-    return <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs text-ink-faint">—</span>
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs text-ink-faint">—</span>
   }
   const isCaptain = role === 'captain'
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
         isCaptain
           ? 'bg-transparent border-[#00A2E8] text-[#00A2E8]'
           : 'bg-panel-alt text-ink-muted border-panel-line'
@@ -290,10 +298,12 @@ function RailAction({ icon, label, onClick, disabled, tone = 'default', title })
   )
 }
 
+// Pill shape, by the same explicit request as RoleBadge just above --
+// same reasoning, this page's own one-off, colors/border/dot unchanged.
 function StatusBadge({ online }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border ${
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border ${
         online ? 'bg-success/10 text-success border-success/40' : 'bg-panel-alt text-ink-muted border-panel-line'
       }`}
     >
@@ -786,12 +796,12 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme,
       theme={theme}
       onThemeChange={onThemeChange}
     >
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 lg:gap-0 p-4 sm:p-5 lg:pl-6 lg:pr-0 lg:py-0 overflow-y-auto lg:overflow-hidden">
         {/* ═══ SIDEBAR: lobby status + tournament controls ═══
             Same anatomy as AdminDashboard.jsx's <aside> (eyebrow labels,
             border-t separated blocks, RailStat tiles, sidebar-row
             buttons): 锦标赛大厅 (join/leave) / 实时统计 / 赛事管理. */}
-        <aside className="lg:w-[220px] shrink-0 flex flex-col gap-1.5 lg:overflow-y-auto lg:pr-1">
+        <aside className="lg:w-[240px] shrink-0 flex flex-col gap-1.5 lg:overflow-y-auto lg:pr-6 lg:py-6">
           {/* join/leave — the single most important action for a non-staff visitor */}
           <div>
             <p className="eyebrow px-2 mb-2">锦标赛大厅</p>
@@ -869,8 +879,8 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme,
         </aside>
 
         {/* ═══ MAIN: roster ═══ */}
-        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
-          <div className="px-5 pt-5 pb-4 shrink-0 flex items-center justify-between gap-3 border-b border-panel-line">
+        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel rounded-none lg:border-y-0 lg:border-r-0 lg:[clip-path:inset(0)] border-accent/15 overflow-hidden">
+          <div className="px-5 lg:px-9 xl:px-11 pt-5 pb-4 shrink-0 flex items-center justify-between gap-3 border-b border-panel-line">
             <div>
               <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">参赛名单</h1>
               <p className="text-xs text-ink-muted mt-0.5">实时同步 · {participants.length} 人已加入</p>
@@ -880,7 +890,7 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme,
             </div>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-auto px-3 pt-0 pb-2">
+          <div className="flex-1 lg:min-h-0 overflow-auto px-3 lg:px-4 pt-0 pb-2">
             {sortedParticipants.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full py-16 text-center text-ink-faint text-sm gap-2">
                 <Icon.users className="w-8 h-8 opacity-40" />
@@ -890,30 +900,30 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme,
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:border-b after:border-panel-line">
                   <tr className="text-left text-xs text-ink-muted">
-                    <th className="px-3 py-2.5 font-medium">头像</th>
+                    <th className="px-3 lg:px-5 xl:px-7 py-2.5 font-medium">头像</th>
                     <SortableTh label="昵称" sortKey="displayName" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="性别" sortKey="gender" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="抽签号" sortKey="rollNumber" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="角色" sortKey="tournamentRole" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="加入时间" sortKey="joinedAt" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="状态" sortKey="status" sortConfig={sortConfig} onSort={handleSort} />
-                    <th className="px-3 py-2.5 font-medium text-right">操作</th>
+                    <th className="px-3 lg:px-5 xl:px-7 py-2.5 font-medium text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedParticipants.map((p) => (
                     <tr key={p.accountId} className="border-b border-panel-line/35 hover:bg-panel-alt/40 transition">
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3">
                         <Avatar src={p.avatarUrl} alt={`${p.displayName} 的头像`} size="w-9 h-9" />
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3">
                         <span className="text-sm text-ink-primary font-medium">
                           {p.displayName}
                           {p.accountId === account.id && <span className="text-accent2 font-normal"> （我）</span>}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5"><GenderIcon gender={p.gender} className="w-4 h-4" /></td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3"><GenderIcon gender={p.gender} className="w-4 h-4" /></td>
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3">
                         {p.rollNumber != null ? (
                           <span className="inline-flex items-center justify-center min-w-[2rem] px-2 py-1 rounded-md bg-accent-gradient text-void text-xs font-bold font-mono shadow-accent-glow">
                             {p.rollNumber}
@@ -922,8 +932,8 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme,
                           <span className="text-ink-faint text-xs">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5"><RoleBadge role={p.tournamentRole} /></td>
-                      <td className="px-3 py-2.5 text-xs text-ink-muted whitespace-nowrap">{formatDateTime(p.joinedAt)}</td>
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3"><RoleBadge role={p.tournamentRole} /></td>
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3 text-xs text-ink-muted whitespace-nowrap">{formatDateTime(p.joinedAt)}</td>
                       {/* Real-time online/offline: `isOnline` is re-evaluated
                           against `now` (ticked every 3s, see the effect
                           above) and `p.lastSeenAt` (kept live by the same
@@ -931,8 +941,8 @@ export default function TournamentLobby({ account, onLogout, onOpenAdmin, theme,
                           this row already depends on) -- no separate sync
                           path needed, this just displays what the rest of
                           the table already tracks. */}
-                      <td className="px-3 py-2.5"><StatusBadge online={isOnline(p.lastSeenAt, now)} /></td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3"><StatusBadge online={isOnline(p.lastSeenAt, now)} /></td>
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3 text-right">
                         <div className="flex gap-1.5 justify-end">
                           {isStaff && (isDeveloper || p.permissionRole !== 'developer') && (
                             <button

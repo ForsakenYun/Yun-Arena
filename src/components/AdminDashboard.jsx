@@ -173,7 +173,7 @@ function SortIndicator({ active, direction }) {
 // means anything for.
 function SortableTh({ label, sortKey, sortConfig, onSort, className = '', align = 'left' }) {
   return (
-    <th className={`px-3 py-2.5 font-medium ${className}`}>
+    <th className={`px-3 lg:px-5 xl:px-7 py-2.5 font-medium ${className}`}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -330,14 +330,21 @@ function GenderIcon({ gender, className = 'w-4 h-4' }) {
   return <span className="text-ink-faint text-xs">—</span>
 }
 
+// Pill shape (`rounded-full`), by explicit request extending the same
+// change to every 角色 badge app-wide, not just TournamentLobby.jsx's copy
+// (Section 8's "参赛名单's RoleBadge/StatusBadge" entry). Colors/border
+// unchanged. `PermissionBadge` right below is 身份 (developer/admin/user),
+// a deliberately distinct concept from 角色 (Section 4's Terminology
+// Refactoring) -- left untouched pending confirmation it's meant to be
+// included too.
 function RoleBadge({ role }) {
   if (!role) {
-    return <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs text-ink-faint">—</span>
+    return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs text-ink-faint">—</span>
   }
   const isCaptain = role === 'captain'
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border ${
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border ${
         isCaptain
           ? 'bg-transparent border-[#00A2E8] text-[#00A2E8]'
           : 'bg-panel-alt text-ink-muted border-panel-line'
@@ -1006,9 +1013,9 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby, theme, 
       theme={theme}
       onThemeChange={onThemeChange}
     >
-      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 p-4 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden">
+      <div className="flex-1 lg:min-h-0 flex flex-col lg:flex-row gap-5 lg:gap-0 p-4 sm:p-5 lg:pl-6 lg:pr-0 lg:py-0 overflow-y-auto lg:overflow-hidden">
         {/* ═══ SIDEBAR: console section switcher ═══ */}
-        <aside className="lg:w-[220px] shrink-0 flex flex-col gap-1.5">
+        <aside className="lg:w-[240px] shrink-0 flex flex-col gap-1.5 lg:pr-5 lg:py-6">
           <p className="eyebrow px-2 mb-1">控制台</p>
           {DASHBOARD_TABS.map((tab) => {
             const TabIcon = Icon[tab.icon]
@@ -1063,8 +1070,8 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby, theme, 
 
         {/* ═══ MAIN: active console section ═══ */}
         {activeTab === 'users' && (
-        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
+        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel rounded-none lg:border-y-0 lg:border-r-0 lg:[clip-path:inset(0)] border-accent/15 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 lg:px-9 xl:px-11 pt-5 pb-4 shrink-0 border-b border-panel-line">
             <div>
               <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">已注册用户</h1>
               <p className="text-xs text-ink-muted mt-0.5">共 {userCounts.total} 人 · {userCounts.captains} 队长 · {userCounts.players} 队员</p>
@@ -1080,38 +1087,38 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby, theme, 
             </div>
           </div>
 
-          <div className="flex-1 lg:min-h-0 overflow-auto px-3 pt-0 pb-2">
+          <div className="flex-1 lg:min-h-0 overflow-auto px-3 lg:px-4 pt-0 pb-2">
             {sortedUsers.length === 0 ? (
               <div className="flex items-center justify-center h-full py-16 text-center text-ink-faint text-sm">未找到匹配的用户</div>
             ) : (
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 z-10 bg-panel/95 backdrop-blur-sm after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:border-b after:border-panel-line">
                   <tr className="text-left text-xs text-ink-muted">
-                    <th className="px-3 py-2.5 font-medium">头像</th>
+                    <th className="px-3 lg:px-5 xl:px-7 py-2.5 font-medium">头像</th>
                     <SortableTh label="账号" sortKey="username" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="昵称" sortKey="displayName" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="性别" sortKey="gender" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="角色" sortKey="tournamentRole" sortConfig={sortConfig} onSort={handleSort} />
                     <SortableTh label="身份" sortKey="permissionRole" sortConfig={sortConfig} onSort={handleSort} />
-                    <th className="px-3 py-2.5 font-medium text-right">操作</th>
+                    <th className="px-3 lg:px-5 xl:px-7 py-2.5 font-medium text-right">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedUsers.map((u) => (
                     <tr key={u.id} className="border-b border-panel-line/35 hover:bg-panel-alt/40 transition">
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3">
                         <Avatar src={u.avatar_url} alt={`${u.display_name} 的头像`} />
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3">
                         <span className="text-sm text-ink-primary font-medium font-mono">{u.username}</span>
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3">
                         <span className="text-sm text-ink-primary font-medium">{u.display_name}</span>
                       </td>
-                      <td className="px-3 py-2.5"><GenderIcon gender={u.gender} /></td>
-                      <td className="px-3 py-2.5"><RoleBadge role={u.tournament_role} /></td>
-                      <td className="px-3 py-2.5"><PermissionBadge role={u.permission_role} /></td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3"><GenderIcon gender={u.gender} /></td>
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3"><RoleBadge role={u.tournament_role} /></td>
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3"><PermissionBadge role={u.permission_role} /></td>
+                      <td className="px-3 lg:px-5 xl:px-7 py-2.5 lg:py-3 text-right">
                         <div className="flex gap-1.5 justify-end">
                           {isDeveloper && u.permission_role === 'user' && (
                             <IconAction icon="promote" title="提升为管理员" onClick={() => handlePromote(u)} />
@@ -1138,8 +1145,8 @@ export default function AdminDashboard({ account, onLogout, onOpenLobby, theme, 
 
         {/* invite code management */}
         {activeTab === 'invites' && (
-        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel border-accent/15 overflow-hidden">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 pt-5 pb-4 shrink-0 border-b border-panel-line">
+        <section className="flex-1 lg:min-h-0 flex flex-col glass-panel rounded-none lg:border-y-0 lg:border-r-0 lg:[clip-path:inset(0)] border-accent/15 overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-5 lg:px-6 pt-5 pb-4 shrink-0 border-b border-panel-line">
             <div>
               <h1 className="font-display text-lg font-bold tracking-wide text-ink-primary">邀请码管理</h1>
               <p className="text-xs text-ink-muted mt-0.5">共 {inviteCounts.total} 个 · {inviteCounts.active} 个有效</p>

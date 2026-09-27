@@ -591,15 +591,24 @@ export async function syncDraftState(state, history = []) {
   return normalizeDraftStateRow(data)
 }
 
-// Builds the exact captain-only shape enterFinalMatchups() persists, from
-// a drafted `teams` array (DraftArena's local tournament.teams -- each
-// {captain: {id,name,avatarUrl}, slots: [...]}). idx is each team's
-// position in that array, which is what matchups[].a/b refer back to.
+// Builds the exact shape enterFinalMatchups() persists, from a drafted
+// `teams` array (DraftArena's local tournament.teams -- each {captain:
+// {id,name,avatarUrl}, slots: [...]}). idx is each team's position in that
+// array, which is what matchups[].a/b refer back to.
+//
+// `members` (id + name only, in draft order -- initials are all the spotlight
+// chips show, so avatar URLs are deliberately not stored) is what lets the
+// Final Matchups spotlight list each team's teammates. It is a plain addition
+// to the jsonb snapshot: no schema change. Snapshots taken before it existed
+// simply have no `members`, and the stage renders those without a chip row.
 export function toFinalMatchupTeam(team, idx) {
   return {
     idx,
     captainAccountId: team.captain?.id ?? null,
     captainName: team.captain?.name ?? '',
     captainAvatarUrl: team.captain?.avatarUrl ?? null,
+    members: (Array.isArray(team.slots) ? team.slots : [])
+      .filter(Boolean)
+      .map((p) => ({ id: p.id ?? null, name: p.name ?? '' })),
   }
 }

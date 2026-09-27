@@ -211,8 +211,8 @@ comment on table public.tournament_settings is
 -- phases themselves are still local-only React state (see DraftArena.jsx),
 -- exactly as documented before this phase. The moment an admin clicks
 -- 进入最终对阵, that local team list is snapshotted here (captain identity
--- only -- id/name/avatar -- not full rosters, since only captain-vs-captain
--- matchups are ever displayed on this stage) via enter_final_matchups(),
+-- plus a light teammate list -- id/name only, for the spotlight's teammate
+-- chips; no avatars or full player records) via enter_final_matchups(),
 -- with matchups starting completely blank -- nothing is auto-generated.
 -- From that point on every connected client (whoever has the Draft Arena
 -- open, regardless of their own local draft progress) renders this row
@@ -227,8 +227,12 @@ comment on table public.tournament_settings is
 -- anywhere in it, and is what create_manual_matchup()/roll_tournament_
 -- matchups() below call a "remaining" team. A slot's identity (what a lock
 -- protects) is its position in this array. teams is a JSON array of
--- {"idx", "captainAccountId", "captainName", "captainAvatarUrl"}, idx
--- matching the a/b values above.
+-- {"idx", "captainAccountId", "captainName", "captainAvatarUrl", "members"},
+-- idx matching the a/b values above. "members" is [{"id", "name"}] in draft
+-- order and is optional: snapshots taken before it existed do not have it,
+-- and the client renders those teams without a teammate row. The column is
+-- plain jsonb and enter_final_matchups() only checks it is an array, so
+-- adding a field to the snapshot needs no migration.
 create table if not exists public.tournament_matches (
   id          boolean primary key default true,
   teams       jsonb not null default '[]'::jsonb,

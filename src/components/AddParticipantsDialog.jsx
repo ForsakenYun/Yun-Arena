@@ -72,14 +72,21 @@ const ROLE_LABEL = { captain: '队长', player: '队员' }
 // column's natural left edge, the same side every other column (头像/
 // 昵称/性别) already aligns to, so 角色 doesn't stand out as the one
 // right-aligned column in an otherwise left-aligned table.
+// Pill shape (`rounded-full`) again, by explicit request extending the
+// change to every 角色 badge app-wide (Section 8, "参赛名单's
+// RoleBadge/StatusBadge"). This specific badge has now gone rounded-md ->
+// rounded-full -> rounded-md -> rounded-full across four separate explicit
+// requests (its own entry above has the full history) -- the `w-fit`/
+// `justify-center` grid-stretch fix and the #00A2E8 tint/glow from that
+// history stay exactly as they were; only the corner radius changed again.
 function RoleBadge({ role }) {
   if (!role) {
-    return <span className="inline-flex items-center justify-center w-fit px-2.5 py-1 rounded-md text-xs text-ink-faint">—</span>
+    return <span className="inline-flex items-center justify-center w-fit px-2.5 py-1 rounded-full text-xs text-ink-faint">—</span>
   }
   const isCaptain = role === 'captain'
   return (
     <span
-      className={`inline-flex items-center justify-center w-fit gap-1 px-2.5 py-1 rounded-md text-xs border ${
+      className={`inline-flex items-center justify-center w-fit gap-1 px-2.5 py-1 rounded-full text-xs border ${
         isCaptain
           ? 'bg-[#00A2E8]/10 border-[#00A2E8]/60 text-[#00A2E8] shadow-[0_0_10px_-2px_rgba(0,162,232,0.6)]'
           : 'bg-panel-alt text-ink-muted border-panel-line'
